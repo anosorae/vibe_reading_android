@@ -177,6 +177,10 @@ class ReaderViewModel(
         _uiState.update { it.copy(settingsVisible = false) }
     }
 
+    fun dismissAllOverlays() {
+        _uiState.update { it.copy(toolbarVisible = false, catalogVisible = false, settingsVisible = false) }
+    }
+
     // ── Reading style updates (persist immediately via DataStore) ──
 
     fun updateReadingSettings(transform: (ReadingSettings) -> ReadingSettings) {

@@ -1,5 +1,6 @@
 package com.vibereading.app.ui.reader
 
+import android.graphics.Bitmap
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -226,19 +227,36 @@ fun ReaderScreen(
         }
     }
 
+    /** 卷页快照对（base=当前页, sheet=目标页）：直接用分页器 layout 绘制，与真实页同源。 */
+    fun curlBitmaps(cur: Int, next: Int): Pair<Bitmap, Bitmap>? {
+        val w = curlContentWidth.toInt()
+        val h = curlContentHeight.toInt()
+        val base = renderPageBitmap(
+            window, cur, state.mode, isDark, pageStyle, density, w, h,
+            bgColor.toArgb(), accentColor.toArgb()
+        ) ?: return null
+        val sheet = renderPageBitmap(
+            window, next, state.mode, isDark, pageStyle, density, w, h,
+            bgColor.toArgb(), accentColor.toArgb()
+        )
+        if (sheet == null) { base.recycle(); return null }
+        return base to sheet
+    }
+
     /** 启动仿真卷页动画（点按翻页用）：从右下角触摸点自动卷出，360ms 落定。 */
     fun startSimFlip(cur: Int, next: Int, goingNext: Boolean) {
         if (simFlip.animating) return
         val w = curlContentWidth.toInt()
         val h = curlContentHeight.toInt()
-        val base = renderPageBitmap(window, cur, state.mode, isDark, pageStyle, density, w, h)
-        val sheet = renderPageBitmap(window, next, state.mode, isDark, pageStyle, density, w, h)
-        if (base == null || sheet == null) {
+        val pair = curlBitmaps(cur, next)
+        if (pair == null) {
             scope.launch {
                 if (pagerState.currentPage != next) pagerState.scrollToPage(next)
             }
             return
         }
+        val base = pair.first
+        val sheet = pair.second
         val wf = w.toFloat()
         val hf = h.toFloat()
         simFlip.curl.setViewSize(wf, hf)
@@ -374,6 +392,11 @@ fun ReaderScreen(
         jumpToChapter(target)
     }
 
+    // 浮层可见性追踪：供 pointerInput 内点按时判断是否拦截翻页（不加入 key 避免手势重启）
+    val overlayVisible by rememberUpdatedState(
+        state.toolbarVisible || state.catalogVisible || state.settingsVisible
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -395,8 +418,8 @@ fun ReaderScreen(
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
-                                // 抬手：卷动越过阈值则完成翻页，否则回弹（停在当前页）
                                 if (curlActive) {
+                                    // 抬手：卷动越过阈值则完成翻页，否则回弹（停在当前页）
                                     val contentW = size.width - padX * 2
                                     val done = if (dir == PageCurl.Direction.NEXT) {
                                         simFlip.touchX < contentW * 0.4f
@@ -404,12 +427,38 @@ fun ReaderScreen(
                                         simFlip.touchX > contentW * 0.6f
                                     }
                                     if (done && target in 0 until window.pageCount) {
-                                        scope.launch { pagerState.scrollToPage(target) }
+                                        // 完成翻页：同一协程内先 snap 到目标页、再清覆盖层，
+                                        // 避免「先清覆盖层露出旧页、再 snap 到新页」的两段跳变（3 次内容切换）
+                                        scope.launch {
+                                            if (pagerState.currentPage != target) {
+                                                pagerState.scrollToPage(target)
+                                            }
+                                            simFlip.animating = false
+                                            simFlip.base = null
+                                            simFlip.sheet = null
+                                        }
+                                    } else {
+                                        // 未越过阈值：回弹（停在当前页），直接清覆盖层
+                                        simFlip.animating = false
+                                        simFlip.base = null
+                                        simFlip.sheet = null
+                                    }
+                                } else if (!dragged && !change.isConsumed) {
+                                    // 单击（未拖拽）：三段点按——左右 1/3 卷页翻页，中间 1/3 开关菜单。
+                                    // 注意排除 isConsumed：点到底栏/顶栏按钮（如「设置」）时不再翻页。
+                                    // 菜单/目录/设置浮层可见时，左右区域不翻页，中间区域关闭浮层。
+                                    val x = down.position.x
+                                    val third = size.width / 3f
+                                    if (overlayVisible) {
+                                        vm.dismissAllOverlays()
+                                    } else {
+                                        when {
+                                            x < third -> goPage(pagerState.currentPage - 1)
+                                            x < third * 2 -> vm.toggleToolbar()
+                                            else -> goPage(pagerState.currentPage + 1)
+                                        }
                                     }
                                 }
-                                simFlip.animating = false
-                                simFlip.base = null
-                                simFlip.sheet = null
                                 break
                             }
                             if (!dragged) {
@@ -423,13 +472,10 @@ fun ReaderScreen(
                                     if (target !in 0 until window.pageCount) break // 边界无页可翻
                                     val w = curlContentWidth.toInt()
                                     val h = curlContentHeight.toInt()
-                                    val base = renderPageBitmap(
-                                        window, pagerState.currentPage, state.mode, isDark, pageStyle, density, w, h
-                                    )
-                                    val sheet = renderPageBitmap(
-                                        window, target, state.mode, isDark, pageStyle, density, w, h
-                                    )
-                                    if (base == null || sheet == null) break
+                                    val pair = curlBitmaps(pagerState.currentPage, target)
+                                    if (pair == null) break
+                                    val base = pair.first
+                                    val sheet = pair.second
                                     val wf = w.toFloat()
                                     val hf = h.toFloat()
                                     simFlip.curl.setViewSize(wf, hf)
@@ -456,17 +502,19 @@ fun ReaderScreen(
                         if (up != null && !up.isConsumed) {
                             val x = down.position.x
                             val third = size.width / 3f
-                            if (isPagerMode) {
+                            if (overlayVisible) {
+                                // 浮层可见时：任意区域点击均关闭浮层，不翻页
+                                vm.dismissAllOverlays()
+                            } else if (isPagerMode) {
                                 when {
                                     x < third -> goPage(pagerState.currentPage - 1)
                                     x < third * 2 -> vm.toggleToolbar()
                                     else -> goPage(pagerState.currentPage + 1)
                                 }
                             } else {
-                                when {
-                                    x < third -> jumpChapterBy(-1)
-                                    x < third * 2 -> vm.toggleToolbar()
-                                    else -> jumpChapterBy(1)
+                                // 滚动模式：仅中间 1/3 开关菜单；左右 1/3 不响应（上下滚动阅读，左右点按会突兀跳章）
+                                if (x >= third && x < third * 2) {
+                                    vm.toggleToolbar()
                                 }
                             }
                         }

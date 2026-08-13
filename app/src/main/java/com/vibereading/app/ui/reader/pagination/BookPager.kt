@@ -8,14 +8,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -173,7 +169,8 @@ fun ReaderPager(
     paddingH: Int,
     paddingV: Int,
     simFlip: SimFlipState,
-    onRetry: (Long) -> Unit = {}
+    isStreaming: Boolean = false,
+    activeChapterId: Long? = null
 ) {
     val density = LocalDensity.current
     val padH = with(density) { paddingH.dp.toPx() }
@@ -203,7 +200,8 @@ fun ReaderPager(
                     textColor = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal,
                     paddingH = paddingH,
                     paddingV = paddingV,
-                    onRetry = onRetry
+                    isStreaming = isStreaming,
+                    activeChapterId = activeChapterId
                 )
             }
         }
@@ -284,7 +282,8 @@ fun PageRenderer(
     textColor: Color,
     paddingH: Int,
     paddingV: Int,
-    onRetry: (Long) -> Unit = {}
+    isStreaming: Boolean = false,
+    activeChapterId: Long? = null
 ) {
     val density = LocalDensity.current
     // 检测本页所属章节是否已翻译（en 模式下未翻译章节不显示气泡）
@@ -318,10 +317,8 @@ fun PageRenderer(
                         is PageUnit.Title -> PageTitleBlock(
                             section = unit.section,
                             title = unit.title,
-                            status = unit.status,
                             isDark = isDark,
-                            pageStyle = pageStyle,
-                            onRetry = if (chapterId != null) ({ onRetry(chapterId) }) else null
+                            pageStyle = pageStyle
                         )
                         is PageUnit.Para -> {
                             val isLastPara = idx == lastParaIdx
@@ -377,20 +374,24 @@ fun PageRenderer(
                         }
                     }
                 }
-                // en 模式下未翻译章节：标题下方显示状态提示 + 重试按钮
-                if (showEnStatusHint && chapterId != null) {
+                // en 模式下未翻译章节：标题下方显示状态提示
+                if (showEnStatusHint) {
                     Spacer(Modifier.height(16.dp))
-                    val hintText = when (titleStatus) {
-                        Chapter.STATUS_IN_PROGRESS -> "翻译中断"
-                        Chapter.STATUS_FAILED -> "翻译失败"
-                        Chapter.STATUS_PENDING -> "等待翻译"
-                        Chapter.STATUS_TOO_LONG -> "章节过长"
+                    // 区分「翻译中」（正在流式翻译）和「翻译中断」（上次中断）
+                    val isActiveStreaming = isStreaming && chapterId == activeChapterId
+                    val hintText = when {
+                        isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS -> "翻译中…"
+                        titleStatus == Chapter.STATUS_IN_PROGRESS -> "翻译中断"
+                        titleStatus == Chapter.STATUS_FAILED -> "翻译失败"
+                        titleStatus == Chapter.STATUS_PENDING -> "等待翻译"
+                        titleStatus == Chapter.STATUS_TOO_LONG -> "章节过长"
                         else -> "未翻译"
                     }
-                    val hintColor = when (titleStatus) {
-                        Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
-                        Chapter.STATUS_FAILED -> VibeColors.RedMuted
-                        Chapter.STATUS_TOO_LONG -> VibeColors.Amber
+                    val hintColor = when {
+                        isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS -> VibeColors.Sage
+                        titleStatus == Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
+                        titleStatus == Chapter.STATUS_FAILED -> VibeColors.RedMuted
+                        titleStatus == Chapter.STATUS_TOO_LONG -> VibeColors.Amber
                         else -> VibeColors.WarmGray
                     }
                     Row(
@@ -399,14 +400,14 @@ fun PageRenderer(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(hintText, color = hintColor, fontSize = 13.sp)
-                        if (titleStatus == Chapter.STATUS_IN_PROGRESS ||
-                            titleStatus == Chapter.STATUS_FAILED ||
-                            titleStatus == Chapter.STATUS_PENDING
-                        ) {
-                            Spacer(Modifier.width(12.dp))
-                            OutlinedButton(onClick = { onRetry(chapterId) }) {
-                                Text("重新翻译", fontSize = 13.sp)
-                            }
+                        // 正在流式翻译时显示进度指示器
+                        if (isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS) {
+                            Spacer(Modifier.width(8.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                                color = VibeColors.Sage
+                            )
                         }
                     }
                 }
@@ -546,10 +547,8 @@ private fun drawLayout(
 private fun PageTitleBlock(
     section: String?,
     title: String,
-    status: Int,
     isDark: Boolean,
-    pageStyle: PageStyle,
-    onRetry: (() -> Unit)? = null
+    pageStyle: PageStyle
 ) {
     val titleAlign = when (pageStyle.titleMode) {
         ReadingSettings.TITLE_MODE_CENTER -> TextAlign.Center
@@ -572,21 +571,6 @@ private fun PageTitleBlock(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ReaderStatusBadge(status = status)
-            if (onRetry != null && (status == Chapter.STATUS_DONE || status == Chapter.STATUS_FAILED || status == Chapter.STATUS_IN_PROGRESS)) {
-                Spacer(Modifier.width(8.dp))
-                IconButton(onClick = onRetry, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = "重新翻译",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-        }
     }
 }
 

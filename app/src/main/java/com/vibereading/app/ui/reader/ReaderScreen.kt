@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -625,7 +626,8 @@ fun ReaderScreen(
                         paddingH = readingSettings.paddingH,
                         paddingV = readingSettings.paddingV,
                         simFlip = simFlip,
-                        onRetry = { id -> vm.retryTranslation(id) }
+                        isStreaming = state.isStreaming,
+                        activeChapterId = state.activeChapterId
                     )
                 }
             }
@@ -642,7 +644,6 @@ fun ReaderScreen(
                         paddingH = readingSettings.paddingH,
                         paddingV = readingSettings.paddingV,
                         isDark = isDark,
-                        onRetry = { id -> vm.retryTranslation(id) },
                         onJumpChapter = { id ->
                             pendingJumpChapter = id
                             vm.navigateTo(id, 0)
@@ -681,7 +682,7 @@ fun ReaderScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                     )
-                    // Mode toggle
+                    // Mode toggle + 翻译状态小圆点（与目录同款）
                     Row(
                         modifier = Modifier
                             .background(
@@ -692,6 +693,24 @@ fun ReaderScreen(
                     ) {
                         ModeButton("中文", state.mode == "zh", onClick = { vm.switchMode("zh") })
                         ModeButton("英文", state.mode == "en", onClick = { vm.switchMode("en") })
+                    }
+                    // 当前章翻译状态小圆点（颜色与目录一致）
+                    val activeStatus = state.activeChapter?.status
+                    if (activeStatus != null) {
+                        val dotColor = when (activeStatus) {
+                            Chapter.STATUS_DONE -> VibeColors.Sage
+                            Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
+                            Chapter.STATUS_FAILED -> VibeColors.RedMuted
+                            Chapter.STATUS_TOO_LONG -> VibeColors.Amber
+                            else -> VibeColors.Sand
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(dotColor)
+                        )
                     }
                 }
             }
@@ -710,11 +729,16 @@ fun ReaderScreen(
                 nightMode = state.nightMode,
                 accentColor = accentColor,
                 barColor = bgColor,
+                isRetryEnabled = !state.isStreaming
+                    && state.activeChapter?.status in setOf(
+                        Chapter.STATUS_DONE, Chapter.STATUS_FAILED, Chapter.STATUS_IN_PROGRESS
+                    ),
                 onPrev = { jumpChapterBy(-1) },
                 onNext = { jumpChapterBy(1) },
                 onChapterJump = { id -> jumpToChapter(id) },
                 onToggleCatalog = { vm.toggleCatalog() },
                 onToggleNight = { vm.toggleNightMode() },
+                onRetry = { state.activeChapterId?.let { vm.retryTranslation(it) } },
                 onOpenSettings = { vm.toggleSettings() }
             )
         }
@@ -724,7 +748,7 @@ fun ReaderScreen(
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (state.toolbarVisible) 120.dp else 16.dp)
+                    .padding(bottom = if (state.toolbarVisible) 120.dp else 16.dp + with(density) { navBarPx.toDp() })
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .heightIn(max = 160.dp),
@@ -846,7 +870,6 @@ private fun ScrollReader(
     paddingH: Int,
     paddingV: Int,
     isDark: Boolean,
-    onRetry: (Long) -> Unit,
     onJumpChapter: (Long) -> Unit
 ) {
     val density = LocalDensity.current
@@ -873,8 +896,7 @@ private fun ScrollReader(
                 // 章节标题头
                 ChapterHeader(
                     chunk = chunk,
-                    isDark = isDark,
-                    onRetry = { onRetry(chapter.id) }
+                    isDark = isDark
                 )
 
                 // 正文（与分页模式共享同一 PageStyle：行高/字号/缩进/字距/对齐统一）
@@ -954,11 +976,7 @@ private fun ScrollReader(
                             modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("翻译中断", color = VibeColors.RedMuted)
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedButton(onClick = { onRetry(chapter.id) }) {
-                                Text("重新翻译", fontSize = 13.sp)
-                            }
+                            Text("翻译中断", color = VibeColors.BlueMuted)
                         }
                     }
 
@@ -986,8 +1004,7 @@ private fun ScrollReader(
 @Composable
 private fun ChapterHeader(
     chunk: ScrollChunk,
-    isDark: Boolean,
-    onRetry: () -> Unit
+    isDark: Boolean
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         if (chunk.section != null) {
@@ -1003,29 +1020,12 @@ private fun ChapterHeader(
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Ink,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 20.dp)
-        ) {
-            StatusBadge(status = chunk.status, isDark = isDark)
-            if (chunk.status == Chapter.STATUS_DONE || chunk.status == Chapter.STATUS_FAILED || chunk.status == Chapter.STATUS_IN_PROGRESS) {
-                Spacer(Modifier.width(8.dp))
-                IconButton(onClick = onRetry, modifier = Modifier.size(24.dp)) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = "重新翻译",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-        }
+        )
     }
 }
 
-// ── Bottom control bar: 上一章 | slider | 下一章 / 目录 | 夜间 | 设置 ──
+// ── Bottom control bar: 上一章 | slider | 下一章 / 目录 | 夜间 | 重翻 | 设置 ──
 @Composable
 private fun BottomControlBar(
     chapters: List<Chapter>,
@@ -1033,11 +1033,13 @@ private fun BottomControlBar(
     nightMode: Boolean,
     accentColor: Color,
     barColor: Color,
+    isRetryEnabled: Boolean,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onChapterJump: (Long) -> Unit,
     onToggleCatalog: () -> Unit,
     onToggleNight: () -> Unit,
+    onRetry: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val chapterIndex = chapters.indexOfFirst { it.id == activeChapterId }.coerceAtLeast(0)
@@ -1113,7 +1115,7 @@ private fun BottomControlBar(
 
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
 
-            // Row 2: catalog | night | settings
+            // Row 2: catalog | night | retry | settings
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1128,6 +1130,13 @@ private fun BottomControlBar(
                     if (nightMode) accentColor else labelColor,
                     onToggleNight
                 )
+                BottomAction(
+                    "重翻",
+                    Icons.Filled.Refresh,
+                    if (isRetryEnabled) accentColor else labelColor,
+                    onRetry,
+                    enabled = isRetryEnabled
+                )
                 BottomAction("设置", Icons.Filled.Settings, labelColor, onOpenSettings)
             }
         }
@@ -1139,18 +1148,20 @@ private fun BottomAction(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     tint: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val alpha = if (enabled) 1f else 0.35f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 4.dp)
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = label, tint = tint.copy(alpha = alpha), modifier = Modifier.size(22.dp))
         Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, color = tint)
+        Text(label, fontSize = 11.sp, color = tint.copy(alpha = alpha))
     }
 }
 
@@ -1177,28 +1188,4 @@ private fun ModeButton(
     }
 }
 
-@Composable
-private fun StatusBadge(status: Int, isDark: Boolean) {
-    val (text, color) = when (status) {
-        Chapter.STATUS_PENDING -> "待翻译" to VibeColors.Sand
-        Chapter.STATUS_IN_PROGRESS -> "翻译中" to VibeColors.BlueMuted
-        Chapter.STATUS_DONE -> "已翻译" to VibeColors.Sage
-        Chapter.STATUS_FAILED -> "翻译失败" to VibeColors.RedMuted
-        Chapter.STATUS_TOO_LONG -> "过长" to VibeColors.Amber
-        else -> "未知" to VibeColors.Stone
-    }
-
-    Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = color.copy(alpha = 0.15f)
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            fontSize = 11.sp,
-            color = color,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
 

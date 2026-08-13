@@ -60,7 +60,9 @@ sealed class PageUnit {
         override val chapterId: Long,
         val section: String?,
         val title: String,
-        val status: Int
+        val status: Int,
+        val sectionLayout: TextLayoutResult? = null, // 卷名布局（仿真位图用）
+        val titleLayout: TextLayoutResult? = null     // 章节名布局（仿真位图用）
     ) : PageUnit()
 
     data class Para(
@@ -154,9 +156,11 @@ class ChapterPaginator(
                         pos++
                         continue
                     }
-                    val h = measureTitle(item)
+                    val sectionLayout = item.section?.let { measureLayout(it, style.cn) }
+                    val titleLayout = measureLayout(item.title, style.title)
+                    val h = measureTitleHeight(sectionLayout, titleLayout)
                     if (units.isNotEmpty() && used + h > contentHeightPx) pageDone()
-                    units += PageUnit.Title(item.chapterId, item.section, item.title, item.status)
+                    units += PageUnit.Title(item.chapterId, item.section, item.title, item.status, sectionLayout, titleLayout)
                     used += h + style.paragraphSpacingPx * 0.5f
                     pos++
                 }
@@ -315,11 +319,11 @@ class ChapterPaginator(
             constraints = Constraints(maxWidth = contentWidthPx.toInt().coerceAtLeast(1))
         )
 
-    private fun measureTitle(item: FlowItem.Title): Float {
-        val sectionH = item.section?.let { measureLayout(it, style.cn).size.height.toFloat() + CN_GAP_PX } ?: 0f
-        val titleH = measureLayout(item.title, style.title).size.height.toFloat()
+    /** 标题块高度：顶部留白 + 卷名 + 章节名 + 徽章（与仿真位图渲染一致）。 */
+    private fun measureTitleHeight(sectionLayout: TextLayoutResult?, titleLayout: TextLayoutResult?): Float {
+        val sectionH = sectionLayout?.size?.height?.toFloat()?.plus(CN_GAP_PX) ?: 0f
+        val titleH = titleLayout?.size?.height?.toFloat() ?: 0f
         val badgeH = style.body.fontSize.value * 2.2f
-        // 对齐 PageTitleBlock 渲染：顶部留白 24 + 标题与徽章间 12
         return 24f + sectionH + titleH + 12f + badgeH + style.paragraphSpacingPx
     }
 

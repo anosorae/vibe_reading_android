@@ -14,8 +14,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -237,9 +239,13 @@ fun PageRenderer(
 
 /**
  * 将一页内容离屏渲染为位图（仿真卷页的快照源）。
- * 用 StaticLayout + 正确 px 字号重排绘制（Compose TextLayoutResult 无公开的 android
- * Canvas 绘制 API；字距/两端对齐与真实页一致，行高近似），与真实页视觉一致。
- * 在动画协程中调用；返回的 Bitmap 由调用方负责 recycle。
+ *
+ * 关键：**不用 StaticLayout 重排**，而是直接绘制分页器 `ChapterPaginator` 排版出的
+ * `TextLayoutResult`（`MultiParagraph.paint`）。这样位图与底层 `HorizontalPager` 里
+ * Compose `Text` 渲染的是**同一个排版结果**，像素级一致——彻底消除卷页结束
+ * 「覆盖层清掉后露出另一套排版」造成的跳变（对齐 Legado 单渲染路径思路）。
+ *
+ * 位图 = 内容区（不含页边距），先铺不透明背景再绘制文本。
  */
 fun renderPageBitmap(
     window: BookWindow,
@@ -249,127 +255,108 @@ fun renderPageBitmap(
     pageStyle: PageStyle,
     density: androidx.compose.ui.unit.Density,
     pageWidthPx: Int,
-    pageHeightPx: Int
+    pageHeightPx: Int,
+    bgColorArgb: Int,
+    sectionColorArgb: Int
 ): Bitmap? {
     val units = window.pageUnits(page)
     if (units.isEmpty()) return null
-    val bitmap = Bitmap.createBitmap(pageWidthPx, pageHeightPx, Bitmap.Config.ARGB_8888)
-    try {
-        val canvas = android.graphics.Canvas(bitmap)
-        val textColor = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal
-        val textColorArgb = textColor.toArgb()
-        // 真实 px 字号（修复旧实现把 sp 数值当 px 导致位图内小字）
-        val bodyFontPx = with(density) { pageStyle.body.fontSize.toPx() }
-        val cnFontPx = with(density) { pageStyle.cn.fontSize.toPx() }
-        val titleFontPx = with(density) { pageStyle.title.fontSize.toPx() }
-        val bodyLetterSpacing = pageStyle.body.letterSpacing.value // em（Paint.letterSpacing 同单位）
-        // Layout.JUSTIFICATION_MODE_NORMAL=1 / NONE=0（API 26+，数值常量规避解析问题）
-        val justifyMode = if (pageStyle.body.textAlign == androidx.compose.ui.text.style.TextAlign.Justify) 1 else 0
+    val bitmap = try {
+        // 软件位图 + Compose Canvas：直接画 TextLayoutResult（与真实页同源，逐像素一致）
+        val image = androidx.compose.ui.graphics.ImageBitmap(
+            width = pageWidthPx.coerceAtLeast(1),
+            height = pageHeightPx.coerceAtLeast(1),
+            hasAlpha = true
+        )
+        val canvas = androidx.compose.ui.graphics.Canvas(image)
 
-        // 位图即内容区（调用方已排除页边距），原点 (0,0)
+        // 先铺不透明背景（卷页位图不能透明，否则透出底下真实页叠字）
+        val bgPaint = Paint().apply { color = Color(bgColorArgb) }
+        canvas.drawRect(Rect(0f, 0f, pageWidthPx.toFloat(), pageHeightPx.toFloat()), bgPaint)
+
+        // 文本 Paint（按真实页配色）
+        val bodyPaint = textPaint(if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal)
+        val cnPaint = textPaint(if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal)
+        val titlePaint = textPaint(if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Ink)
+        val sectionPaint = textPaint(Color(sectionColorArgb))
+
         var cursorY = 0f
 
         units.forEach { unit ->
             when (unit) {
                 is PageUnit.Title -> {
-                    val titlePaint = android.graphics.Paint().apply {
+                    cursorY += with(density) { 24.dp.toPx() }
+                    unit.sectionLayout?.let { layout ->
+                        drawLayout(canvas, layout, sectionPaint, cursorY)
+                        cursorY += layout.size.height.toFloat()
+                    }
+                    cursorY += with(density) { 8.dp.toPx() }
+                    unit.titleLayout?.let { layout ->
+                        drawLayout(canvas, layout, titlePaint, cursorY)
+                        cursorY += layout.size.height.toFloat()
+                    }
+                    cursorY += with(density) { 12.dp.toPx() }
+                    // 章节状态徽章（与 PageTitleBlock 的 ReaderStatusBadge 近似）
+                    val badgePaint = Paint().apply {
                         isAntiAlias = true
-                        color = if (isDark) VibeColors.Cream.copy(alpha = 0.9f).toArgb() else VibeColors.Ink.toArgb()
-                        textSize = titleFontPx
-                        typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        color = VibeColors.Sage.copy(alpha = 0.15f)
                     }
-                    val bodyPaint = android.graphics.Paint().apply {
-                        isAntiAlias = true
-                        color = textColorArgb
-                        textSize = bodyFontPx
-                    }
-                    cursorY += 24f
-                    if (unit.section != null) {
-                        canvas.drawText(unit.section, 0f, cursorY, bodyPaint)
-                        cursorY += bodyPaint.textSize + 8f
-                    }
-                    // 标题逐字绘制（不折行，超长截断）——近似，正文以 StaticLayout 为准
-                    var lineY = cursorY
-                    unit.title.forEach { ch ->
-                        canvas.drawText(ch.toString(), 0f, lineY, titlePaint)
-                        lineY += titlePaint.textSize + 2f
-                    }
-                    cursorY = lineY + 12f
-                    val badgePaint = android.graphics.Paint().apply {
-                        isAntiAlias = true
-                        color = VibeColors.Sage.copy(alpha = 0.15f).toArgb()
-                        style = android.graphics.Paint.Style.FILL
-                    }
-                    canvas.drawRect(0f, cursorY, 90f, cursorY + 26f, badgePaint)
+                    canvas.drawRect(Rect(0f, cursorY, 90f, cursorY + 26f), badgePaint)
                     cursorY += 26f + 24f
                 }
+
                 is PageUnit.Para -> {
-                    val text = unit.enText ?: unit.cnText
-                    val paint = android.text.TextPaint().apply {
-                        isAntiAlias = true
-                        color = textColorArgb
-                        textSize = bodyFontPx
-                        letterSpacing = bodyLetterSpacing
-                    }
-                    val bodyLayout = android.text.StaticLayout.Builder
-                        .obtain(text, 0, text.length, paint, pageWidthPx)
-                        .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
-                        .setTextDirection(android.text.TextDirectionHeuristics.FIRSTSTRONG_LTR)
-                        .setIncludePad(false)
-                        .setJustificationMode(justifyMode)
-                        .build()
-                    canvas.save()
-                    canvas.translate(0f, cursorY)
-                    bodyLayout.draw(canvas)
-                    canvas.restore()
-                    cursorY += bodyLayout.height.toFloat()
-                    cursorY += unit.lineHeightExtraPx * unit.lineCount.coerceAtLeast(1)
-                    if (unit.cnLayout != null) {
-                        cursorY += 6f
-                        val cnPaint = android.text.TextPaint().apply {
-                            isAntiAlias = true
-                            color = textColorArgb
-                            textSize = cnFontPx
-                            letterSpacing = bodyLetterSpacing
+                    if (mode == "zh") {
+                        unit.mainLayout?.let { layout ->
+                            drawLayout(canvas, layout, bodyPaint, cursorY)
+                            cursorY += layout.size.height.toFloat()
                         }
-                        val cnLayout = android.text.StaticLayout.Builder
-                            .obtain(unit.cnText, 0, unit.cnText.length, cnPaint, pageWidthPx)
-                            .setAlignment(android.text.Layout.Alignment.ALIGN_NORMAL)
-                            .setTextDirection(android.text.TextDirectionHeuristics.FIRSTSTRONG_LTR)
-                            .setIncludePad(false)
-                            .setJustificationMode(justifyMode)
-                            .build()
-                        canvas.save()
-                        canvas.translate(0f, cursorY)
-                        cnLayout.draw(canvas)
-                        canvas.restore()
-                        cursorY += cnLayout.height.toFloat()
+                        cursorY += if (unit.splitFirst) 0f else pageStyle.paragraphSpacingPx
+                    } else {
+                        unit.mainLayout?.let { layout ->
+                            drawLayout(canvas, layout, bodyPaint, cursorY)
+                            cursorY += layout.size.height.toFloat()
+                        }
+                        if (unit.cnLayout != null) {
+                            cursorY += with(density) { 6.dp.toPx() }
+                            unit.cnLayout?.let { layout ->
+                                drawLayout(canvas, layout, cnPaint, cursorY)
+                                cursorY += layout.size.height.toFloat()
+                            }
+                        }
+                        cursorY += if (unit.splitFirst) 0f else pageStyle.paragraphSpacingPx
                     }
-                    cursorY += if (unit.splitFirst) 0f else pageStyle.paragraphSpacingPx
                 }
             }
         }
-    } catch (e: Exception) {
-        // 位图绘制异常（如字体/布局越界）：返回 null，调用方退化为瞬时翻页
-        bitmap.recycle()
-        return null
+
+        image.asAndroidBitmap()
+    } catch (_: Exception) {
+        null
     }
     return bitmap
 }
 
-/** 简单文本软换行（仅无布局时的防御回退）。 */
-private fun wrapText(text: String, paint: android.graphics.Paint, maxWidth: Float): List<String> {
-    val lines = mutableListOf<String>()
-    val sb = StringBuilder()
-    for (ch in text) {
-        if (paint.measureText(sb.toString() + ch) > maxWidth && sb.isNotEmpty()) {
-            lines.add(sb.toString())
-            sb.setLength(0)
-        }
-        sb.append(ch)
-    }
-    if (sb.isNotEmpty()) lines.add(sb.toString())
-    return lines
+/** 文本 Paint：抗锯齿 + 颜色。 */
+private fun textPaint(color: Color): Paint = Paint().apply {
+    isAntiAlias = true
+    this.color = color
+}
+
+/**
+ * 绘制一段 [androidx.compose.ui.text.TextLayoutResult]（底部对齐的 lineHeightExtra
+ * 已在 layout 的行高里体现）。直接 `MultiParagraph.paint`，与 Compose Text 完全同源。
+ */
+private fun drawLayout(
+    canvas: androidx.compose.ui.graphics.Canvas,
+    layout: androidx.compose.ui.text.TextLayoutResult,
+    paint: Paint,
+    top: Float
+) {
+    canvas.save()
+    canvas.translate(0f, top)
+    layout.multiParagraph.paint(canvas = canvas, color = paint.color)
+    canvas.restore()
 }
 
 @Composable

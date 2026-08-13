@@ -208,7 +208,8 @@ class ReaderViewModel(
 
     fun retryTranslation(chapterId: Long) {
         viewModelScope.launch {
-            chapterRepo.resetChapter(chapterId)
+            // 重新翻译时保留旧译文（translatedContent），
+            // 避免页面回退为纯中文；translateChapter 内部会将状态置为 IN_PROGRESS
             translateChapter(chapterId)
         }
     }

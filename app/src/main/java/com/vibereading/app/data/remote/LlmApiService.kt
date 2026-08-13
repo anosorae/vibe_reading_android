@@ -2,6 +2,7 @@ package com.vibereading.app.data.remote
 
 import com.google.gson.Gson
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.ui.reader.components.splitParagraphs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -77,7 +78,7 @@ class LlmApiService {
         chapterContent: String,
         prevChapterEnglish: String? = null
     ): String {
-        val paragraphs = chapterContent.split("\n\n")
+        val paragraphs = splitParagraphs(chapterContent)
             .mapIndexed { i, p -> "[${i + 1}] ${p.trim()}" }
             .joinToString("\n")
 

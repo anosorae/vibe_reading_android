@@ -14,7 +14,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.List
@@ -49,9 +51,11 @@ import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
 import com.vibereading.app.ui.reader.components.parseBilingualParagraphs
+import com.vibereading.app.ui.reader.components.splitParagraphs
 import com.vibereading.app.ui.reader.pagination.*
 import com.vibereading.app.ui.theme.ReaderBgPresets
 import com.vibereading.app.ui.theme.VibeColors
+import com.vibereading.app.ui.theme.VibeDarkColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -174,14 +178,6 @@ fun ReaderScreen(
     val pagerState = rememberPagerState(initialPage = 0) { window.pageCount }
     val scope = rememberCoroutineScope()
     val simFlip = remember { SimFlipState() }
-
-    // 双语对展开状态（en 分页模式：整章排版需要全局持有）
-    val expandedPairs = remember { mutableStateOf(setOf<Pair<Long, Int>>()) }
-    fun toggleCn(key: Pair<Long, Int>) {
-        val expanded = key !in expandedPairs.value
-        expandedPairs.value = if (expanded) expandedPairs.value + key else expandedPairs.value - key
-        window.setExpanded(key, expanded)
-    }
 
     // 分页模式「程序化跳章」目标（目录/上下章/窗口边界续翻）；「当前章重定位」也走这里
     var pagerJumpTarget by remember { mutableStateOf<Long?>(null) }
@@ -535,11 +531,10 @@ fun ReaderScreen(
                         isDark = isDark,
                         mode = state.mode,
                         pageStyle = pageStyle,
-                        expandedPairs = expandedPairs.value,
                         paddingH = readingSettings.paddingH,
                         paddingV = readingSettings.paddingV,
-                        onToggleCn = ::toggleCn,
-                        simFlip = simFlip
+                        simFlip = simFlip,
+                        onRetry = { id -> vm.retryTranslation(id) }
                     )
                 }
             }
@@ -631,6 +626,53 @@ fun ReaderScreen(
                 onToggleNight = { vm.toggleNightMode() },
                 onOpenSettings = { vm.toggleSettings() }
             )
+        }
+
+        // ── 流式翻译进度面板 ──
+        if (state.isStreaming) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (state.toolbarVisible) 120.dp else 16.dp)
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 160.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = if (isDark) VibeDarkColors.Surface.copy(alpha = 0.92f) else VibeColors.Parchment.copy(alpha = 0.92f),
+                shadowElevation = 8.dp
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            strokeWidth = 1.5.dp,
+                            color = VibeColors.Sage
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (state.streamingText.isBlank()) "正在连接…" else "翻译中…",
+                            fontSize = 12.sp,
+                            color = VibeColors.Sage
+                        )
+                    }
+                    if (state.streamingText.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            state.streamingText,
+                            style = pageStyle.body.copy(fontSize = 13.sp),
+                            color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal.copy(alpha = 0.7f),
+                            maxLines = 6,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -739,7 +781,7 @@ private fun ScrollReader(
                 )
 
                 // 正文（与分页模式共享同一 PageStyle：行高/字号/缩进/字距/对齐统一）
-                val paragraphs = chapter.content.split("\n\n").filter { it.isNotBlank() }
+                val paragraphs = splitParagraphs(chapter.content)
                 if (state.mode == "zh") {
                     paragraphs.forEach { para ->
                         Text(
@@ -809,6 +851,18 @@ private fun ScrollReader(
                             Spacer(Modifier.height(8.dp))
                             Text("等待翻译...", fontSize = 13.sp, color = VibeColors.WarmGray)
                         }
+                    } else if (chapter.status == Chapter.STATUS_IN_PROGRESS) {
+                        // 翻译中断（status 卡在 IN_PROGRESS 但无流式输出）
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("翻译中断", color = VibeColors.RedMuted)
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(onClick = { onRetry(chapter.id) }) {
+                                Text("重新翻译", fontSize = 13.sp)
+                            }
+                        }
                     }
 
                     // Error message（只显示当前章的错误）
@@ -859,7 +913,7 @@ private fun ChapterHeader(
             modifier = Modifier.padding(bottom = 20.dp)
         ) {
             StatusBadge(status = chunk.status, isDark = isDark)
-            if (chunk.status == Chapter.STATUS_DONE || chunk.status == Chapter.STATUS_FAILED) {
+            if (chunk.status == Chapter.STATUS_DONE || chunk.status == Chapter.STATUS_FAILED || chunk.status == Chapter.STATUS_IN_PROGRESS) {
                 Spacer(Modifier.width(8.dp))
                 IconButton(onClick = onRetry, modifier = Modifier.size(24.dp)) {
                     Icon(

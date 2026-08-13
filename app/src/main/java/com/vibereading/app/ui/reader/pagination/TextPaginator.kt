@@ -68,14 +68,13 @@ sealed class PageUnit {
     data class Para(
         override val chapterId: Long,
         val paraIndex: Int,
-        val cnText: String,            // zh：正文；en：中文原文
+        val cnText: String,            // zh：正文；en：中文原文（弹窗数据源）
         val enText: String?,           // en 模式下译文（拆分的续段为 null）
         val splitFirst: Boolean = false,   // 拆分子段的第一段（不加段距，视觉上与续段相连）
-        val pairHead: Boolean = true,      // en 拆分时首片段可展开中文；续段不可展开
-        val lineCount: Int = 0,            // 本单元本页实际行数（含展开中文，底部对齐用）
+        val pairHead: Boolean = true,      // en 首片段可显示原文气泡；续段无气泡
+        val lineCount: Int = 0,            // 本单元本页实际行数（底部对齐用）
         val lineHeightExtraPx: Float = 0f, // 底部对齐分配给每行的额外高度
-        val mainLayout: TextLayoutResult? = null, // zh=正文布局 / en=英文布局
-        val cnLayout: TextLayoutResult? = null    // en 展开的中文布局（zh 模式恒 null）
+        val mainLayout: TextLayoutResult? = null  // zh=正文布局 / en=英文布局
     ) : PageUnit()
 }
 
@@ -111,22 +110,11 @@ class ChapterPaginator(
     var pages: List<TextPage> = emptyList()
         private set
 
-    // 已展开中文的双语对（影响测量，切换后需重排）
-    private var expandedCns = emptySet<Pair<Long, Int>>()
-
     init {
         pages = layoutAll()
     }
 
     fun pageUnits(page: Int): List<PageUnit> = pages.getOrNull(page)?.units ?: emptyList()
-
-    /** 切换某双语对中文展开状态：整章重排（测量命中 TextMeasurer 缓存，很快）。 */
-    fun setExpanded(pair: Pair<Long, Int>, expanded: Boolean) {
-        val next = if (expanded) expandedCns + pair else expandedCns - pair
-        if (next == expandedCns) return
-        expandedCns = next
-        pages = layoutAll()
-    }
 
     // ── 排版核心 ──
 
@@ -208,34 +196,28 @@ class ChapterPaginator(
                             pos++
                         }
                     } else {
-                        // en：双语对原子化——英 + 展开中文整体不可拆
+                        // en：英文排版（中文原文通过弹窗显示，不参与排版测量）
                         val en = if (isChunk) chunk!!.text
                         else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
                         val head = if (isChunk) chunk!!.isHead else true
-                        val expanded = item.chapterId to item.paraIndex in expandedCns
                         val enLayout = measureLayout(en, style.body)
-                        // 仅首片段携带展开中文（续段无中文可展）
-                        val cnLayout = if (expanded && head && item.cnText.isNotBlank())
-                            measureLayout(item.cnText, style.cn) else null
-                        val cnH = cnLayout?.size?.height?.toFloat() ?: 0f
-                        val cnGap = if (cnLayout != null) CN_GAP_PX else 0f
-                        val h = enLayout.size.height.toFloat() + cnH + cnGap
+                        val h = enLayout.size.height.toFloat()
                         val remaining = contentHeightPx - used
                         if (h > contentHeightPx) {
-                            // 单对超高：按行切分英文（首片段可展开），不丢内容；
+                            // 单段超高：按行切分英文，不丢内容；
                             // 本页剩不下首行时先翻页，用整页高切段
                             if (units.isNotEmpty() && remaining < enLayout.getLineBottom(0)) pageDone()
-                            val bound = (contentHeightPx - used - cnH - cnGap)
+                            val bound = (contentHeightPx - used)
                                 .coerceAtLeast(enLayout.getLineBottom(0))
                             val (c1, c2) = splitLayout(en, enLayout, bound)
                             val l1 = if (c1 != en) measureLayout(c1, style.body) else enLayout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, item.cnText, c1,
                                 splitFirst = true, pairHead = head,
-                                lineCount = l1.lineCount + (cnLayout?.lineCount ?: 0),
-                                mainLayout = l1, cnLayout = cnLayout
+                                lineCount = l1.lineCount,
+                                mainLayout = l1
                             )
-                            used += l1.size.height.toFloat() + cnH + cnGap
+                            used += l1.size.height.toFloat()
                             if (c2.isNotBlank()) {
                                 pending = PendingChunk(item, c2, isHead = false)
                                 pageDone()
@@ -244,14 +226,14 @@ class ChapterPaginator(
                             }
                         } else {
                             if (units.isNotEmpty() && h > remaining) {
-                                pageDone() // 整对移到下一页
+                                pageDone() // 整段移到下一页
                                 continue
                             }
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, item.cnText, en,
                                 pairHead = head,
-                                lineCount = enLayout.lineCount + (cnLayout?.lineCount ?: 0),
-                                mainLayout = enLayout, cnLayout = cnLayout
+                                lineCount = enLayout.lineCount,
+                                mainLayout = enLayout
                             )
                             used += h + style.paragraphSpacingPx
                             pos++
@@ -329,6 +311,7 @@ class ChapterPaginator(
 
     companion object {
         // 中文原文与英文间的间距估算（px，近似渲染的 6.dp，±几像素无碍）
+        // 仅用于标题块卷名与章名间距
         private const val CN_GAP_PX = 6f
     }
 }

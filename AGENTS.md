@@ -36,12 +36,12 @@
 ## 领域规则（关键 gotchas）
 
 - **章节状态**：`0=待翻译 1=翻译中 2=已翻译 -1=失败 3=过长`。一律用 `Chapter` companion 常量（`STATUS_*`），不要写魔法数字。
-- **双语段落**：翻译时每个段落必须以 `[1] [2] ...` 标记开头，英文译文必须保留完全相同的标记与原文一一对应（`SYSTEM_PROMPT` 和 `buildUserPrompt` 在 LlmApiService.kt）。改动翻译 prompt / 段落匹配逻辑时，保证标记对齐不变。
-- **阅读模式**：`zh`（仅原文）/ `en`（英译为主，点英文段展开中文）。翻页类型五枚举：`scroll` 上下（连续跨章滚动）/ `pager` 平移 / `cover` 覆盖 / `no_anim` 无动画 / `simulation` 仿真（卷页动画，拖拽跟手 + 点按自动卷页）。
-- **整页排版（章窗口 + 行级模型）**：`pagination/TextPaginator.kt` 的 `ChapterPaginator` 用 `TextMeasurer` 按**真实页宽**（`Constraints(maxWidth=contentWidth)`）逐章全量排版；zh 段落可跨页（`splitLayout` 按行切段，**续段只 trim 换行符不 trim 空格，否则丢字**）；en 双语对原子化不可拆（单对超高按行切分、首片段 `pairHead` 可展开）；**底部对齐** `buildPage` 按页分配 slack，**末页豁免**（`layoutAll` 末尾清零末页 `lineHeightExtraPx`）；`PageUnit` 挂载 `TextLayoutResult`（渲染层 `Text` 与卷页位图共用同一样式）。改排版/双语展开逻辑时保证双语对对齐与点按展开不破坏。
+- **双语段落**：翻译时每个段落必须以 `[1] [2] ...` 标记开头，英文译文必须保留完全相同的标记与原文一一对应（`SYSTEM_PROMPT` 和 `buildUserPrompt` 在 LlmApiService.kt）。改动翻译 prompt / 段落匹配逻辑时，保证标记对齐不变。`parseBilingualParagraphs()` 是 cnText/enText 的**唯一数据源**（`BookWindow.buildChapterItems()` 用它构造 `FlowItem.Para`），不要再用 `chapter.content.split("\n\n")` 独立拆分中文——两套索引不对齐会导致 cnText 显示整章文本。
+- **阅读模式**：`zh`（仅原文）/ `en`（英译为主，点击段落尾部原文气泡弹窗查看中文原文）。翻页类型五枚举：`scroll` 上下（连续跨章滚动）/ `pager` 平移 / `cover` 覆盖 / `no_anim` 无动画 / `simulation` 仿真（卷页动画，拖拽跟手 + 点按自动卷页）。
+- **整页排版（章窗口 + 行级模型）**：`pagination/TextPaginator.kt` 的 `ChapterPaginator` 用 `TextMeasurer` 按**真实页宽**（`Constraints(maxWidth=contentWidth)`）逐章全量排版；zh 段落可跨页（`splitLayout` 按行切段，**续段只 trim 换行符不 trim 空格，否则丢字**）；en 双语对原子化不可拆（单对超高按行切分、首片段 `pairHead` 可显示原文气泡，续段无气泡）；**底部对齐** `buildPage` 按页分配 slack，**末页豁免**（`layoutAll` 末尾清零末页 `lineHeightExtraPx`）；`PageUnit` 挂载 `TextLayoutResult`（渲染层 `Text` 与卷页位图共用同一样式）。**原文气泡与弹窗是视觉叠加层（`Popup` composable），不参与排版测量，不触发重排**。改排版/弹窗逻辑时保证双语对对齐与 `pairHead` 标记不破坏。
 - **仿真翻页（simulation）**：手势在 `ReaderScreen` 的 `pointerInput` 中实现——拖拽跟手（`SimFlipState.touchX/Y` 实时更新、抬手越阈值翻页否则回弹）+ 点按自动卷页（`startSimFlip` 360ms 插值）；卷页位图 `renderPageBitmap` 用 `android.text.StaticLayout` + **真实 px 字号**（`fontSize.toPx()`，勿把 sp 数值当 px——否则位图小字与真实页重叠）绘制，与真实页视觉一致。
 - **设置入口边界**（CONTEXT.md 决策）：字体/字号/间距/翻页类型/背景的唯一入口是阅读器内设置面板；面板按 Legado 信息密度组织，**页边距/字间距/首行缩进/两端对齐在「高级选项」折叠组**；字体 = 「系统字体」+「导入字体…」（SAF，content:// URI 持久化 + takePersistableUriPermission），`fontFamily` 三系统字体选择已从 UI 移除。设置页为单页分组列表（主题设置 / 阅读设置 / 翻译设置 / 关于），主题选择（跟随系统/浅色/深色 × 原木/青简）在「主题设置」分组。
-- **点按交互耦合**：分页类模式（pager/cover/no_anim/simulation）左右 1/3 点按翻**页**（跨章自动续翻），中间 1/3 开关菜单；`scroll` 模式三段点按翻**章**（点击段落展开中文优先）；仿真模式另有拖拽卷页手势（见上）。
+- **点按交互耦合**：分页类模式（pager/cover/no_anim/simulation）左右 1/3 点按翻**页**（跨章自动续翻），中间 1/3 开关菜单；`scroll` 模式三段点按翻**章**（点击段落尾部原文气泡弹窗查看中文优先）；仿真模式另有拖拽卷页手势（见上）。
 - **进度持久化**：分页模式「章 + 章内页」（`books.lastReadPage`，Room v3 `MIGRATION_2_3`）；滚动模式 page 恒 0。
 - 目录唯一入口在阅读器底部栏中央；顶栏不再有目录按钮。
 - 夜间模式独立于背景色预设，翻转时不改背景设置本身。

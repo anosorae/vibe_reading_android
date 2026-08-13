@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.createFontFamilyResolver
 
 /**
  * ChapterPaginator 排版引擎单测（Robolectric NATIVE：真实 StaticLayout 换行）。
- * 断言结构化（切段拼接不丢字 / 双语对整体迁移 / 每页不溢出 / 展开重排），不 pin 像素值。
+ * 断言结构化（切段拼接不丢字 / 双语对整体迁移 / 每页不溢出），不 pin 像素值。
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -120,29 +120,6 @@ class ChapterPaginatorTest {
             }
         }
         assertEquals("所有段落都应排入", 10, seen.size)
-    }
-
-    @Test
-    fun en_expandedCn_reflowPageAndKeepPairAtomic() {
-        val cnTexts = (0 until 6).map { "中文原文段落 $it：这是一段足够长的中文，确保展开后占用额外高度。" }
-        val enTexts = (0 until 6).map { i ->
-            "English paragraph $i with enough words to wrap across a few lines inside the area."
-        }
-        val p = ChapterPaginator(
-            1L, items(cnTexts, enTexts), style(),
-            "en", contentWidthPx = 400f, contentHeightPx = 300f, measurer = measurer
-        )
-        val before = p.pages.size
-        p.setExpanded(1L to 1, true)
-        assertTrue("展开中文后应重排", p.pages.size != before || p.pageUnits(0).isNotEmpty())
-        val seen = HashSet<Int>()
-        p.pages.forEach { page ->
-            page.units.filterIsInstance<PageUnit.Para>().forEach { u ->
-                assertTrue("展开后双语对仍不应拆分", u.pairHead)
-                assertTrue("展开后 paraIndex 不应重复", seen.add(u.paraIndex))
-            }
-        }
-        assertEquals("展开后所有段落仍应完整排入", 6, seen.size)
     }
 
     // ── bottomJustify ──

@@ -1,28 +1,28 @@
 package com.vibereading.app.ui.reader.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.vibereading.app.ui.reader.pagination.PageStyle
 import com.vibereading.app.ui.theme.VibeColors
+import com.vibereading.app.ui.theme.VibeDarkColors
 
 /**
- * A single bilingual paragraph pair: English text (tap to reveal Chinese).
- * 滚动模式（FLIP_SCROLL）使用；与分页模式共享同一 [PageStyle]
- * （行高/字号/首行缩进/字间距/两端对齐一致，ADR-001 D6）。
+ * 滚动模式双语段落：英文 + 尾部气泡（点击弹窗查看中文原文）。
+ * 气泡与弹窗均为视觉叠加层，不影响排版测量，无需重排。
  */
 @Composable
 fun BilingualParagraph(
@@ -31,56 +31,101 @@ fun BilingualParagraph(
     pageStyle: PageStyle,
     isDark: Boolean = false
 ) {
-    var showOriginal by remember { mutableStateOf(false) }
+    var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
     val textColor = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal
-    val originalColor = if (isDark) VibeColors.Stone else VibeColors.WarmGray
+    val bubbleColor = if (isDark) VibeColors.SiennaLight.copy(alpha = 0.25f)
+    else VibeColors.Sienna.copy(alpha = 0.3f)
+    val popupBgColor = if (isDark) VibeDarkColors.Surface else VibeColors.Parchment
+    val cnTextColor = if (isDark) VibeColors.Stone else VibeColors.WarmGray
     val borderColor = if (isDark) VibeColors.Sand.copy(alpha = 0.3f) else VibeColors.Sand
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // English paragraph
-        Text(
-            text = englishText,
-            style = pageStyle.body,
-            color = textColor,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showOriginal = !showOriginal }
-                .padding(top = 4.dp, bottom = 4.dp)
-        )
-
-        // Chinese original (hidden by default, tap to reveal)
-        AnimatedVisibility(
-            visible = showOriginal,
-            enter = fadeIn(),
-            exit = fadeOut()
-        ) {
+        // 英文段落 + 尾部气泡
+        Box(modifier = Modifier.fillMaxWidth()) {
             Text(
-                text = chineseText,
-                style = pageStyle.cn,
-                color = originalColor,
-                fontStyle = FontStyle.Italic,
+                text = englishText,
+                style = pageStyle.body,
+                color = textColor,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .drawBehind {
-                        drawLine(
-                            color = borderColor,
-                            start = Offset(0f, 0f),
-                            end = Offset(0f, size.height),
-                            strokeWidth = 2.dp.toPx()
-                        )
-                    }
-                    // 排版已带首行缩进时不再叠加缩进 padding，否则中文会双重缩进
-                    .then(
-                        if (pageStyle.cn.textIndent != null) Modifier.padding(top = 2.dp, bottom = 8.dp)
-                        else Modifier.padding(start = 16.dp, top = 2.dp, bottom = 8.dp)
-                    )
+                    .padding(top = 4.dp, bottom = 4.dp)
             )
+            // 气泡：仅当有中文原文时显示
+            if (chineseText.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 4.dp, bottom = 2.dp)
+                        .size(width = 18.dp, height = 6.dp)
+                        .clickable { showPopup = !showPopup }
+                ) {
+                    // 半透明色块
+                    Surface(
+                        shape = RoundedCornerShape(3.dp),
+                        color = bubbleColor,
+                        modifier = Modifier.fillMaxSize()
+                    ) {}
+                }
+                // 弹窗：显示中文原文
+                if (showPopup) {
+                    Popup(
+                        alignment = Alignment.TopEnd,
+                        offset = IntOffset(0, with(density) { (-4).dp.roundToPx() }),
+                        onDismissRequest = { showPopup = false },
+                        properties = PopupProperties(focusable = true)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = popupBgColor,
+                            shadowElevation = 4.dp,
+                            modifier = Modifier
+                                .widthIn(max = 300.dp)
+                                .padding(4.dp)
+                        ) {
+                            Text(
+                                text = chineseText,
+                                style = pageStyle.cn,
+                                color = cnTextColor,
+                                fontStyle = FontStyle.Italic,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .drawBehind {
+                                        drawLine(
+                                            color = borderColor,
+                                            start = Offset(0f, 0f),
+                                            end = Offset(0f, size.height),
+                                            strokeWidth = 2.dp.toPx()
+                                        )
+                                    }
+                                    .then(
+                                        if (pageStyle.cn.textIndent != null)
+                                            Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
+                                        else
+                                            Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
+                                    )
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         Spacer(Modifier.height(with(density) { pageStyle.paragraphSpacingPx.toDp() }))
     }
+}
+
+/**
+ * 统一段落拆分：优先按空行（\n\n）分段，若无空行则按单换行（\n）分段。
+ * TXT 小说常见格式：每行一段（仅 \n），部分文件用空行分段（\n\n）。
+ * 此函数需与 LlmApiService.buildUserPrompt 使用相同逻辑，保证 [N] 标记与段落索引对齐。
+ */
+fun splitParagraphs(content: String): List<String> {
+    val byBlank = content.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
+    if (byBlank.size > 1) return byBlank
+    // 无空行分段 → 每行一段（中文小说常见）
+    return content.lines().map { it.trim() }.filter { it.isNotEmpty() }
 }
 
 /**
@@ -91,23 +136,21 @@ fun parseBilingualParagraphs(
     translatedContent: String,
     originalContent: String
 ): List<Pair<String, String>> {
-    val originalParagraphs = originalContent
-        .split("\n\n")
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
+    val originalParagraphs = splitParagraphs(originalContent)
 
     // Split translation by [N] markers
     val markerRegex = Regex("""\[(\d+)]\s*""")
     val englishParts = translatedContent.split(markerRegex).filter { it.isNotBlank() }
 
-    // After split by [N], we get alternating: empty/marker, text, empty/marker, text...
-    // The split produces: ["", "1", "english text", "2", "english text", ...]
+    // After split by [N], we get alternating: marker-number, text, marker-number, text...
     val pairs = mutableListOf<Pair<String, String>>()
     var i = 0
+    // 独立计数器：跟踪非标记文本块对应原文的索引（避免 pairs.size 因标记块偏移而漂移）
+    var nonMarkerIdx = 0
     while (i < englishParts.size) {
         val part = englishParts[i].trim()
         if (part.all { it.isDigit() } && part.isNotEmpty()) {
-            // This is a marker number
+            // This is a marker number [N]
             val num = part.toIntOrNull() ?: 0
             i++
             if (i < englishParts.size) {
@@ -117,19 +160,34 @@ fun parseBilingualParagraphs(
                 } else ""
                 pairs.add(enText to cnText)
             }
+            // 标记块不推进 nonMarkerIdx
         } else if (part.isNotEmpty()) {
-            // No marker — treat as single block
-            pairs.add(part to originalParagraphs.getOrElse(pairs.size) { "" })
+            // No marker — treat as single block, 用独立计数器对齐原文
+            val cnText = originalParagraphs.getOrElse(nonMarkerIdx) { "" }
+            pairs.add(part to cnText)
+            nonMarkerIdx++
         }
         i++
     }
 
-    // Fallback: if no [N] markers found, split by double newlines
+    // Fallback: if no [N] markers found, split by paragraphs
     if (pairs.isEmpty()) {
-        val enParagraphs = translatedContent.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
+        val enParagraphs = splitParagraphs(translatedContent)
         enParagraphs.forEachIndexed { idx, en ->
             val cn = originalParagraphs.getOrElse(idx) { "" }
             pairs.add(en to cn)
+        }
+    }
+
+    // 兜底：若标记对齐只产生 1 对但原文有多个段落，
+    // 说明翻译用的是旧 prompt（split("\n\n") 把整章当一段），
+    // 改用 splitParagraphs 双端按行对齐
+    if (pairs.size == 1 && originalParagraphs.size > 1) {
+        pairs.clear()
+        val enParagraphs = splitParagraphs(translatedContent)
+        val count = minOf(enParagraphs.size, originalParagraphs.size)
+        for (idx in 0 until count) {
+            pairs.add(enParagraphs[idx] to originalParagraphs[idx])
         }
     }
 

@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextMeasurer
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.ui.reader.components.parseBilingualParagraphs
+import com.vibereading.app.ui.reader.components.splitParagraphs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -85,16 +86,6 @@ class BookWindow(
         }
     }
 
-    /** 切换某双语对展开状态：重排所在章并重建索引空间。 */
-    fun setExpanded(pair: Pair<Long, Int>, expanded: Boolean) {
-        synchronized(lock) {
-            paginators[pair.first]?.setExpanded(pair, expanded) ?: return
-        }
-        val idx = chapters.indexOfFirst { it.id == centerChapterId }
-        if (idx < 0) return
-        rebuildWindow((idx - 1).coerceAtLeast(0), (idx + 1).coerceAtMost(chapters.size - 1))
-    }
-
     // ── 索引空间查询 ──
 
     fun chapterOfPage(index: Int): Long? = windowPages.getOrNull(index)?.chapterId
@@ -145,17 +136,26 @@ class BookWindow(
     }
 
     companion object {
-        /** 章节 → 章节内排版条目（标题 + 段落；en 模式配对英译）。 */
+        /** 章节 → 章节内排版条目（标题 + 段落；en 模式配对英译）。
+         *  以 parseBilingualParagraphs 为唯一数据源——cnText 和 enText 均来自配对结果，
+         *  避免独立拆分中文段落导致索引不对齐（如整章无 \n\n 分隔时 cnText 为全章文本）。 */
         fun buildChapterItems(chapter: Chapter): List<FlowItem> {
             val list = mutableListOf<FlowItem>()
             list += FlowItem.Title(chapter.id, chapter.section, chapter.title, chapter.status)
-            val paragraphs = chapter.content.split("\n\n").map { it.trim() }.filter { it.isNotBlank() }
             val pairs = chapter.translatedContent?.let { parseBilingualParagraphs(it, chapter.content) }
-            paragraphs.forEachIndexed { idx, para ->
-                list += FlowItem.Para(
-                    chapter.id, idx, para,
-                    pairs?.getOrNull(idx)?.first?.takeIf { it.isNotBlank() }
-                )
+            if (pairs != null) {
+                pairs.forEachIndexed { idx, (en, cn) ->
+                    list += FlowItem.Para(
+                        chapter.id, idx, cn,
+                        en.takeIf { it.isNotBlank() }
+                    )
+                }
+            } else {
+                // 未翻译：纯中文模式，按原文段落拆分
+                val paragraphs = splitParagraphs(chapter.content)
+                paragraphs.forEachIndexed { idx, para ->
+                    list += FlowItem.Para(chapter.id, idx, para, null)
+                }
             }
             return list
         }

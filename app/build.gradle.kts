@@ -1,9 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+
+// ── 从 local.properties 读取调试用 LLM 默认配置（已 gitignore，不入库） ──
+val localProps = Properties()
+val localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) localProps.load(localPropsFile.inputStream())
+val debugLlmApiBase = localProps.getProperty("llm.api.base", "")
+val debugLlmApiKey = localProps.getProperty("llm.api.key", "")
+val debugLlmModel = localProps.getProperty("llm.model", "")
 
 android {
     namespace = "com.vibereading.app"
@@ -15,6 +25,11 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        // 调试用 LLM 默认配置（从 local.properties 注入，DataStore 无值时回退）
+        buildConfigField("String", "DEBUG_LLM_API_BASE", "\"$debugLlmApiBase\"")
+        buildConfigField("String", "DEBUG_LLM_API_KEY", "\"$debugLlmApiKey\"")
+        buildConfigField("String", "DEBUG_LLM_MODEL", "\"$debugLlmModel\"")
 
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
@@ -42,6 +57,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {

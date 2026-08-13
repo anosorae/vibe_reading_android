@@ -209,11 +209,15 @@ fun ReaderPager(
         }
 
         // 仿真卷页覆盖层（对齐 Legado：画布与页面内容区严格对齐，位图尺寸一致）
+        // 边到边模式：先扣除系统栏再留用户边距，与 PageRenderer 保持一致
         if (simFlip.animating && simFlip.isRunning && flipMode == ReadingSettings.FLIP_SIMULATION) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = paddingH.dp, vertical = paddingV.dp),
+                    .padding(horizontal = paddingH.dp)
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(vertical = paddingV.dp),
                 contentAlignment = Alignment.TopStart
             ) {
                 CurlOverlay(simFlip = simFlip)
@@ -290,55 +294,38 @@ fun PageRenderer(
     val showEnStatusHint = mode == "en" && titleStatus != null && !chapterTranslated
 
     // 页内留白（与排版内容区尺寸一致；原 contentPadding 移入页面内部，避免分页间露边）
+    // 边到边模式：先扣除系统栏再留用户边距，保证内容不被状态栏/导航栏遮挡
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = paddingH.dp, vertical = paddingV.dp),
+            .padding(horizontal = paddingH.dp)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(vertical = paddingV.dp),
         contentAlignment = Alignment.TopStart
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            units.forEach { unit ->
-                when (unit) {
-                    is PageUnit.Title -> PageTitleBlock(
-                        section = unit.section,
-                        title = unit.title,
-                        status = unit.status,
-                        isDark = isDark,
-                        pageStyle = pageStyle,
-                        onRetry = if (chapterId != null) ({ onRetry(chapterId) }) else null
-                    )
-                    is PageUnit.Para -> {
-                        if (mode == "zh") {
-                            val enStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
-                                lineHeight = (pageStyle.body.lineHeight.value +
-                                    with(density) { unit.lineHeightExtraPx.toSp().value }).sp
-                            ) else pageStyle.body
-                            Text(
-                                text = unit.cnText,
-                                style = enStyle,
-                                color = textColor,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        bottom = if (unit.splitFirst) 0.dp
-                                        else with(density) { pageStyle.paragraphSpacingPx.toDp() }
-                                    )
-                            )
-                        } else {
-                            // en 模式：未翻译章节(enText==null)只显示原文，不显示气泡
-                            val hasTranslation = unit.enText != null && unit.enText.isNotBlank()
-                            if (hasTranslation) {
-                                PageBilingualParagraph(
-                                    englishText = unit.enText!!,
-                                    chineseText = unit.cnText,
-                                    pairHead = unit.pairHead,
-                                    pageStyle = pageStyle,
-                                    isDark = isDark,
-                                    lineHeightExtraPx = unit.lineHeightExtraPx,
-                                    paragraphSpacingPx = pageStyle.paragraphSpacingPx
-                                )
-                            } else {
-                                // 未翻译：原文直接显示（无气泡，避免原文=气泡内容重复）
+        // 末段段距不渲染（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx），
+        // 否则渲染高度溢出内容区，底行被盒子裁剪
+        val lastParaIdx = units.indexOfLast { it is PageUnit.Para }
+        // 自定义 Layout：以无界高度测量子元素，再从上到下放置；
+        // 排版高度因 lineHeight 修改 / dp→px 舍入可能微溢 contentHeightPx 几像素，
+        // 普通 Column 会以剩余高度=0 戋断末子元素；此 Layout 允许内容微溢至 Box
+        // padding 区域（Box 默认不 clip），底行完整可见
+        androidx.compose.ui.layout.Layout(
+            content = {
+                units.forEachIndexed { idx, unit ->
+                    when (unit) {
+                        is PageUnit.Title -> PageTitleBlock(
+                            section = unit.section,
+                            title = unit.title,
+                            status = unit.status,
+                            isDark = isDark,
+                            pageStyle = pageStyle,
+                            onRetry = if (chapterId != null) ({ onRetry(chapterId) }) else null
+                        )
+                        is PageUnit.Para -> {
+                            val isLastPara = idx == lastParaIdx
+                            if (mode == "zh") {
                                 val enStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
                                     lineHeight = (pageStyle.body.lineHeight.value +
                                         with(density) { unit.lineHeightExtraPx.toSp().value }).sp
@@ -350,49 +337,97 @@ fun PageRenderer(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(
-                                            bottom = if (unit.splitFirst) 0.dp
+                                            bottom = if (unit.splitFirst || isLastPara) 0.dp
                                             else with(density) { pageStyle.paragraphSpacingPx.toDp() }
                                         )
                                 )
+                            } else {
+                                // en 模式：未翻译章节(enText==null)只显示原文，不显示气泡
+                                val hasTranslation = unit.enText != null && unit.enText.isNotBlank()
+                                if (hasTranslation) {
+                                    PageBilingualParagraph(
+                                        englishText = unit.enText!!,
+                                        chineseText = unit.cnText,
+                                        pairHead = unit.pairHead,
+                                        pageStyle = pageStyle,
+                                        isDark = isDark,
+                                        lineHeightExtraPx = unit.lineHeightExtraPx,
+                                        paragraphSpacingPx = pageStyle.paragraphSpacingPx,
+                                        isLastPara = isLastPara
+                                    )
+                                } else {
+                                    // 未翻译：原文直接显示（无气泡，避免原文=气泡内容重复）
+                                    val enStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
+                                        lineHeight = (pageStyle.body.lineHeight.value +
+                                            with(density) { unit.lineHeightExtraPx.toSp().value }).sp
+                                    ) else pageStyle.body
+                                    Text(
+                                        text = unit.cnText,
+                                        style = enStyle,
+                                        color = textColor,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+                                                bottom = if (unit.splitFirst || isLastPara) 0.dp
+                                                else with(density) { pageStyle.paragraphSpacingPx.toDp() }
+                                            )
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
-            // en 模式下未翻译章节：标题下方显示状态提示 + 重试按钮
-            if (showEnStatusHint && chapterId != null) {
-                Spacer(Modifier.height(16.dp))
-                val hintText = when (titleStatus) {
-                    Chapter.STATUS_IN_PROGRESS -> "翻译中断"
-                    Chapter.STATUS_FAILED -> "翻译失败"
-                    Chapter.STATUS_PENDING -> "等待翻译"
-                    Chapter.STATUS_TOO_LONG -> "章节过长"
-                    else -> "未翻译"
-                }
-                val hintColor = when (titleStatus) {
-                    Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
-                    Chapter.STATUS_FAILED -> VibeColors.RedMuted
-                    Chapter.STATUS_TOO_LONG -> VibeColors.Amber
-                    else -> VibeColors.WarmGray
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(hintText, color = hintColor, fontSize = 13.sp)
-                    if (titleStatus == Chapter.STATUS_IN_PROGRESS ||
-                        titleStatus == Chapter.STATUS_FAILED ||
-                        titleStatus == Chapter.STATUS_PENDING
+                // en 模式下未翻译章节：标题下方显示状态提示 + 重试按钮
+                if (showEnStatusHint && chapterId != null) {
+                    Spacer(Modifier.height(16.dp))
+                    val hintText = when (titleStatus) {
+                        Chapter.STATUS_IN_PROGRESS -> "翻译中断"
+                        Chapter.STATUS_FAILED -> "翻译失败"
+                        Chapter.STATUS_PENDING -> "等待翻译"
+                        Chapter.STATUS_TOO_LONG -> "章节过长"
+                        else -> "未翻译"
+                    }
+                    val hintColor = when (titleStatus) {
+                        Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
+                        Chapter.STATUS_FAILED -> VibeColors.RedMuted
+                        Chapter.STATUS_TOO_LONG -> VibeColors.Amber
+                        else -> VibeColors.WarmGray
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center
                     ) {
-                        Spacer(Modifier.width(12.dp))
-                        OutlinedButton(onClick = { onRetry(chapterId) }) {
-                            Text("重新翻译", fontSize = 13.sp)
+                        Text(hintText, color = hintColor, fontSize = 13.sp)
+                        if (titleStatus == Chapter.STATUS_IN_PROGRESS ||
+                            titleStatus == Chapter.STATUS_FAILED ||
+                            titleStatus == Chapter.STATUS_PENDING
+                        ) {
+                            Spacer(Modifier.width(12.dp))
+                            OutlinedButton(onClick = { onRetry(chapterId) }) {
+                                Text("重新翻译", fontSize = 13.sp)
+                            }
                         }
                     }
                 }
+            },
+            measurePolicy = { measurables, constraints ->
+                // 以无界高度测量每个子元素，防止 Column 式截断
+                val unboundedConstraints = constraints.copy(maxHeight = Int.MAX_VALUE)
+                val placeables = measurables.map { it.measure(unboundedConstraints) }
+                val width = constraints.maxWidth
+                val contentHeight = placeables.sumOf { it.height }
+                // 布局高度取 min(内容高度, 父约束最大高度)，溢出部分仍会被绘制
+                val layoutHeight = contentHeight.coerceAtMost(constraints.maxHeight)
+                layout(width, layoutHeight) {
+                    var y = 0
+                    placeables.forEach { placeable ->
+                        placeable.place(0, y)
+                        y += placeable.height
+                    }
+                }
             }
-        }
+        )
     }
 }
 
@@ -440,7 +475,10 @@ fun renderPageBitmap(
 
         var cursorY = 0f
 
-        units.forEach { unit ->
+        // 末段段距不渲染（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx）
+        val lastParaIdx = units.indexOfLast { it is PageUnit.Para }
+
+        units.forEachIndexed { idx, unit ->
             when (unit) {
                 is PageUnit.Title -> {
                     cursorY += with(density) { 24.dp.toPx() }
@@ -464,12 +502,13 @@ fun renderPageBitmap(
                 }
 
                 is PageUnit.Para -> {
+                    val isLastPara = idx == lastParaIdx
                     // en 模式只画英文正文（中文原文通过弹窗显示，不画入位图）
                     unit.mainLayout?.let { layout ->
                         drawLayout(canvas, layout, bodyPaint, cursorY)
                         cursorY += layout.size.height.toFloat()
                     }
-                    cursorY += if (unit.splitFirst) 0f else pageStyle.paragraphSpacingPx
+                    cursorY += if (unit.splitFirst || isLastPara) 0f else pageStyle.paragraphSpacingPx
                 }
             }
         }
@@ -586,7 +625,8 @@ fun PageBilingualParagraph(
     pageStyle: PageStyle,
     isDark: Boolean,
     lineHeightExtraPx: Float,
-    paragraphSpacingPx: Float
+    paragraphSpacingPx: Float,
+    isLastPara: Boolean = false
 ) {
     var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -671,6 +711,9 @@ fun PageBilingualParagraph(
                 }
             }
         }
-        Spacer(Modifier.height(with(density) { paragraphSpacingPx.toDp() }))
+        // 末段不加段距（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx）
+        if (!isLastPara) {
+            Spacer(Modifier.height(with(density) { paragraphSpacingPx.toDp() }))
+        }
     }
 }

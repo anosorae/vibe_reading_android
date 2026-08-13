@@ -151,10 +151,17 @@ fun ReaderScreen(
     // 页几何：内容区 = 屏尺寸 − 页边距（与 BookPager 渲染内边距严格一致，排版所见即所排）
     val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
     val screenHeightPx = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    // 边到边模式下系统栏占据像素高度，排版与渲染均需扣除（否则末行被导航栏遮挡）
+    val statusBarPx = WindowInsets.systemBars.getTop(density)
+    val navBarPx = WindowInsets.systemBars.getBottom(density)
     val padHPx = with(density) { readingSettings.paddingH.dp.toPx() }
     val padVPx = with(density) { readingSettings.paddingV.dp.toPx() }
-    val contentWidthPx = screenWidthPx - padHPx * 2
-    val contentHeightPx = screenHeightPx - padVPx * 2
+    // 向下取整对齐 Compose 整像素布局：screenHeightDp 为 Int 经 dp→px 转换可能带小数，
+    // 而 Compose Layout 系统以整像素为边界；排版区若比渲染区多零点几像素，
+    // Column(fillMaxSize) 会截断末行
+    val contentWidthPx = kotlin.math.floor(screenWidthPx - padHPx * 2).coerceAtLeast(0f)
+    val contentHeightPx = kotlin.math.floor(screenHeightPx - statusBarPx.toFloat() - navBarPx.toFloat() - padVPx * 2)
+        .coerceAtLeast(0f)
 
     // 窗口 key 含 isPagerMode/页边距：滚动↔分页切换、边距调整时重建窗口并重新排版
     // （否则旧窗口状态残留，导致切换不生效/边距不生效）
@@ -475,7 +482,7 @@ fun ReaderScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
-            .pointerInput(isPagerMode, flipMode, readingSettings.paddingH, readingSettings.paddingV) {
+            .pointerInput(isPagerMode, flipMode, readingSettings.paddingH, readingSettings.paddingV, statusBarPx, navBarPx) {
                 val inSim = isPagerMode && flipMode == ReadingSettings.FLIP_SIMULATION
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -484,12 +491,12 @@ fun ReaderScreen(
                         val padX = with(density) { readingSettings.paddingH.dp.toPx() }
                         val padY = with(density) { readingSettings.paddingV.dp.toPx() }
                         val contentW = size.width - padX * 2
-                        val contentH = size.height - padY * 2
+                        val contentH = size.height - statusBarPx.toFloat() - navBarPx.toFloat() - padY * 2
                         val slopSquare = 30f * 30f // 对齐 Legado pageSlopSquare2
 
                         // DOWN: 记录起点，reset 状态，计算角落
                         val downX = down.position.x - padX
-                        val downY = down.position.y - padY
+                        val downY = down.position.y - statusBarPx.toFloat() - padY
                         simFlip.onDown(downX, downY)
                         simFlip.calcCornerXY(downX, contentW, contentH)
                         simFlip.curl.setViewSize(contentW, contentH)
@@ -524,7 +531,7 @@ fun ReaderScreen(
                             }
                             // ── MOVE ──
                             val focusX = change.position.x - padX
-                            val focusY = change.position.y - padY
+                            val focusY = change.position.y - statusBarPx.toFloat() - padY
                             if (!simFlip.isMoved) {
                                 val deltaX = focusX - simFlip.startX
                                 val deltaY = focusY - simFlip.startY
@@ -844,12 +851,18 @@ private fun ScrollReader(
 ) {
     val density = LocalDensity.current
     val paragraphSpacingDp = with(density) { pageStyle.paragraphSpacingPx.toDp() }
+    // 边到边模式：内容区顶部/底部需扣除系统栏高度，避免首/末项被遮挡
+    val insetTopDp = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    val insetBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
     LazyColumn(
         state = scrollState,
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = paddingH.dp),
-        contentPadding = PaddingValues(vertical = paddingV.dp)
+        contentPadding = PaddingValues(
+            top = insetTopDp + paddingV.dp,
+            bottom = insetBottomDp + paddingV.dp
+        )
     ) {
         // 每个章节一个 item（key="h-$id"），使「章节块序号 == LazyColumn item 序号」，
         // 跨章跳转 scrollToItem(chunkIndex) 才能精确定位。

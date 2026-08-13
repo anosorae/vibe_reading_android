@@ -1,0 +1,337 @@
+package com.vibereading.app.ui.reader.pagination
+
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Constraints
+import com.vibereading.app.domain.model.ReadingSettings
+
+/**
+ * 行级排版模型（对齐 Legado TextPageFactory / TextLine 思路，ADR-001）：
+ *
+ * - **每章一个 [ChapterPaginator]**：该章全部内容同步排成 [TextPage] 列表常驻，
+ *   由 `BookWindow`（章窗口模型）持有 ±1 窗口；
+ * - **真实页宽测量**：`measureLayout` 传 `Constraints(maxWidth = contentWidth)`，
+ *   行高/切段基于真实换行（修复旧实现无约束测量导致「所见≠所排」）；
+ * - zh 段落可跨页（按 [TextLayoutResult] 行信息切段）；en 双语对原子化不可拆，
+ *   放不下整对移下一页；单对超高退化为按行切分英文（首片段可展开，不丢内容）；
+ * - 每页排版后按 `bottomJustify` 把剩余高度均匀分到各行（末行沉底，对齐 Legado
+ *   `TextPage.upLinesPosition`）；
+ * - [TextLayoutResult] 挂在 [PageUnit] 上：渲染层 `Text` 以同文本同样式渲染
+ *   （同一测量引擎天然一致），仿真卷页位图直接 `layout.draw()` 绘制（逐像素一致）。
+ */
+
+/** 排版样式（TextStyle 由调用方在 remember 中持有，保证引用稳定）。 */
+data class PageStyle(
+    val body: TextStyle,        // 正文（en 英文 / zh 中文）
+    val cn: TextStyle,          // 双语对中的中文原文（小一号）
+    val title: TextStyle,       // 章节标题（大号粗体）
+    val paragraphSpacingPx: Float,
+    val bottomJustify: Boolean = true, // 底部对齐：页内行距重分布使末行沉底
+    val titleMode: Int = ReadingSettings.TITLE_MODE_LEFT // 0 左 / 1 居中 / 2 隐藏
+)
+
+/** 章节内排版条目：章节标题 或 段落（en 模式为双语对）。 */
+sealed class FlowItem {
+    abstract val chapterId: Long
+
+    data class Title(
+        override val chapterId: Long,
+        val section: String?,
+        val title: String,
+        val status: Int
+    ) : FlowItem()
+
+    data class Para(
+        override val chapterId: Long,
+        val paraIndex: Int,
+        val cnText: String,
+        val enText: String?     // en 模式下英文译文；未翻译为 null（渲染回退原文）
+    ) : FlowItem()
+}
+
+/** 单页显示单元（排版完成后的结果）。 */
+sealed class PageUnit {
+    abstract val chapterId: Long
+
+    data class Title(
+        override val chapterId: Long,
+        val section: String?,
+        val title: String,
+        val status: Int
+    ) : PageUnit()
+
+    data class Para(
+        override val chapterId: Long,
+        val paraIndex: Int,
+        val cnText: String,            // zh：正文；en：中文原文
+        val enText: String?,           // en 模式下译文（拆分的续段为 null）
+        val splitFirst: Boolean = false,   // 拆分子段的第一段（不加段距，视觉上与续段相连）
+        val pairHead: Boolean = true,      // en 拆分时首片段可展开中文；续段不可展开
+        val lineCount: Int = 0,            // 本单元本页实际行数（含展开中文，底部对齐用）
+        val lineHeightExtraPx: Float = 0f, // 底部对齐分配给每行的额外高度
+        val mainLayout: TextLayoutResult? = null, // zh=正文布局 / en=英文布局
+        val cnLayout: TextLayoutResult? = null    // en 展开的中文布局（zh 模式恒 null）
+    ) : PageUnit()
+}
+
+/** 单页排版结果。 */
+data class TextPage(
+    val chapterId: Long,
+    val indexInChapter: Int,
+    val units: List<PageUnit>,
+    val usedHeightPx: Float
+)
+
+/** 切段续排状态：超长段的第一段已排完，剩余文本随 [para] 进入下一页。 */
+private data class PendingChunk(
+    val para: FlowItem.Para,
+    val text: String,
+    val isHead: Boolean = true
+)
+
+/**
+ * 单章排版器：把「章节标题 + 段落」按内容区尺寸（真实页宽）全量排成 [TextPage]。
+ * 构造即全量排版（章节受 STATUS_TOO_LONG 上限约束，排版有界）。
+ */
+class ChapterPaginator(
+    val chapterId: Long,
+    val items: List<FlowItem>,
+    private val style: PageStyle,
+    private val mode: String,            // "zh" | "en"
+    private val contentWidthPx: Float,
+    private val contentHeightPx: Float,
+    private val measurer: TextMeasurer
+) {
+
+    var pages: List<TextPage> = emptyList()
+        private set
+
+    // 已展开中文的双语对（影响测量，切换后需重排）
+    private var expandedCns = emptySet<Pair<Long, Int>>()
+
+    init {
+        pages = layoutAll()
+    }
+
+    fun pageUnits(page: Int): List<PageUnit> = pages.getOrNull(page)?.units ?: emptyList()
+
+    /** 切换某双语对中文展开状态：整章重排（测量命中 TextMeasurer 缓存，很快）。 */
+    fun setExpanded(pair: Pair<Long, Int>, expanded: Boolean) {
+        val next = if (expanded) expandedCns + pair else expandedCns - pair
+        if (next == expandedCns) return
+        expandedCns = next
+        pages = layoutAll()
+    }
+
+    // ── 排版核心 ──
+
+    private fun layoutAll(): List<TextPage> {
+        val result = ArrayList<TextPage>()
+        var units = ArrayList<PageUnit>()
+        var used = 0f
+        var pending: PendingChunk? = null
+        var pos = 0
+
+        fun pageDone() {
+            if (units.isEmpty()) return
+            result.add(buildPage(units, used, result.size))
+            units = ArrayList()
+            used = 0f
+        }
+
+        while (true) {
+            val chunk = pending
+            pending = null
+            val isChunk = chunk != null
+            val item = if (isChunk) chunk!!.para else items.getOrNull(pos) ?: break
+
+            when (item) {
+                is FlowItem.Title -> {
+                    if (style.titleMode == ReadingSettings.TITLE_MODE_HIDDEN) {
+                        pos++
+                        continue
+                    }
+                    val h = measureTitle(item)
+                    if (units.isNotEmpty() && used + h > contentHeightPx) pageDone()
+                    units += PageUnit.Title(item.chapterId, item.section, item.title, item.status)
+                    used += h + style.paragraphSpacingPx * 0.5f
+                    pos++
+                }
+
+                is FlowItem.Para -> {
+                    if (mode == "zh") {
+                        val text = if (isChunk) chunk!!.text else item.cnText
+                        val layout = measureLayout(text, style.body)
+                        val h = layout.size.height.toFloat()
+                        if (h > contentHeightPx && layout.lineCount > 1) {
+                            // 长段落：本页剩余放得下首行就在剩余高度内切段，否则先翻页用整页高
+                            if (units.isNotEmpty() && contentHeightPx - used < layout.getLineBottom(0)) pageDone()
+                            val bound = (contentHeightPx - used).coerceAtLeast(layout.getLineBottom(0))
+                            val (c1, c2) = splitLayout(text, layout, bound)
+                            val l1 = if (c1 != text) measureLayout(c1, style.body) else layout
+                            units += PageUnit.Para(
+                                item.chapterId, item.paraIndex, c1, null,
+                                splitFirst = true, lineCount = l1.lineCount, mainLayout = l1
+                            )
+                            used += l1.size.height.toFloat()
+                            if (c2.isNotBlank()) {
+                                pending = PendingChunk(item, c2)
+                                pageDone() // 续段放下一页（本页以切段收尾）
+                            } else {
+                                pos++
+                            }
+                        } else if (h > contentHeightPx) {
+                            // 极端：单行超高（几乎不可能，仅防御）——截断避免死循环
+                            val trunc = text.take(200)
+                            val tl = measureLayout(trunc, style.body)
+                            if (units.isNotEmpty()) pageDone()
+                            units += PageUnit.Para(
+                                item.chapterId, item.paraIndex, trunc, null,
+                                lineCount = tl.lineCount, mainLayout = tl
+                            )
+                            used += tl.size.height.toFloat()
+                            pos++
+                        } else {
+                            if (units.isNotEmpty() && h > contentHeightPx - used) pageDone() // 换页放下
+                            units += PageUnit.Para(
+                                item.chapterId, item.paraIndex, text, null,
+                                lineCount = layout.lineCount, mainLayout = layout
+                            )
+                            used += h + style.paragraphSpacingPx
+                            pos++
+                        }
+                    } else {
+                        // en：双语对原子化——英 + 展开中文整体不可拆
+                        val en = if (isChunk) chunk!!.text
+                        else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
+                        val head = if (isChunk) chunk!!.isHead else true
+                        val expanded = item.chapterId to item.paraIndex in expandedCns
+                        val enLayout = measureLayout(en, style.body)
+                        // 仅首片段携带展开中文（续段无中文可展）
+                        val cnLayout = if (expanded && head && item.cnText.isNotBlank())
+                            measureLayout(item.cnText, style.cn) else null
+                        val cnH = cnLayout?.size?.height?.toFloat() ?: 0f
+                        val cnGap = if (cnLayout != null) CN_GAP_PX else 0f
+                        val h = enLayout.size.height.toFloat() + cnH + cnGap
+                        val remaining = contentHeightPx - used
+                        if (h > contentHeightPx) {
+                            // 单对超高：按行切分英文（首片段可展开），不丢内容；
+                            // 本页剩不下首行时先翻页，用整页高切段
+                            if (units.isNotEmpty() && remaining < enLayout.getLineBottom(0)) pageDone()
+                            val bound = (contentHeightPx - used - cnH - cnGap)
+                                .coerceAtLeast(enLayout.getLineBottom(0))
+                            val (c1, c2) = splitLayout(en, enLayout, bound)
+                            val l1 = if (c1 != en) measureLayout(c1, style.body) else enLayout
+                            units += PageUnit.Para(
+                                item.chapterId, item.paraIndex, item.cnText, c1,
+                                splitFirst = true, pairHead = head,
+                                lineCount = l1.lineCount + (cnLayout?.lineCount ?: 0),
+                                mainLayout = l1, cnLayout = cnLayout
+                            )
+                            used += l1.size.height.toFloat() + cnH + cnGap
+                            if (c2.isNotBlank()) {
+                                pending = PendingChunk(item, c2, isHead = false)
+                                pageDone()
+                            } else {
+                                pos++
+                            }
+                        } else {
+                            if (units.isNotEmpty() && h > remaining) {
+                                pageDone() // 整对移到下一页
+                                continue
+                            }
+                            units += PageUnit.Para(
+                                item.chapterId, item.paraIndex, item.cnText, en,
+                                pairHead = head,
+                                lineCount = enLayout.lineCount + (cnLayout?.lineCount ?: 0),
+                                mainLayout = enLayout, cnLayout = cnLayout
+                            )
+                            used += h + style.paragraphSpacingPx
+                            pos++
+                        }
+                    }
+                }
+            }
+        }
+
+        pageDone()
+        // 末页不做底部对齐：文字按自然密度排，多余留白留在页底
+        // （底部对齐只对「满页」沉底有意义；末页文字少时均匀拉伸会拉出超大行距）
+        if (style.bottomJustify && result.isNotEmpty() && result.last().units.any { it is PageUnit.Para }) {
+            val last = result.last()
+            val fixed = last.units.map { u ->
+                if (u is PageUnit.Para && u.lineHeightExtraPx > 0f) u.copy(lineHeightExtraPx = 0f) else u
+            }
+            result[result.size - 1] = last.copy(units = fixed)
+        }
+        return result
+    }
+
+    /**
+     * 页完成：按 bottomJustify 把剩余高度均匀分到各行（末行沉底）。
+     * 含章节标题的页不底部对齐（标题块本身留有留白，拉伸正文会突兀）。
+     */
+    private fun buildPage(units: List<PageUnit>, used: Float, indexInChapter: Int): TextPage {
+        // 末段段距不占页高（渲染时页尾无段距），否则短页会假性溢出/无 slack
+        val realUsed = if (units.lastOrNull() is PageUnit.Para) used - style.paragraphSpacingPx else used
+        val page = TextPage(chapterId, indexInChapter, units, realUsed)
+        if (!style.bottomJustify) return page
+        if (units.any { it is PageUnit.Title }) return page
+        val totalLines = units.sumOf { (it as? PageUnit.Para)?.lineCount ?: 0 }
+        val slack = contentHeightPx - realUsed
+        if (totalLines <= 1 || slack <= 0f) return page
+        val extra = slack / totalLines
+        val adjusted = units.map { u ->
+            if (u is PageUnit.Para && u.lineCount > 0) u.copy(lineHeightExtraPx = extra) else u
+        }
+        return page.copy(units = adjusted)
+    }
+
+    /** zh 长段落/en 超高超长段按行切分：返回 (本页子段, 续段)。 */
+    private fun splitLayout(text: String, layout: TextLayoutResult, maxHeightPx: Float): Pair<String, String> {
+        if (maxHeightPx <= 0f || layout.lineCount <= 1) return text to ""
+        var lastFit = -1
+        for (line in 0 until layout.lineCount) {
+            if (layout.getLineBottom(line) <= maxHeightPx) lastFit = line else break
+        }
+        if (lastFit < 0) lastFit = 0
+        if (lastFit >= layout.lineCount - 1) return text to ""
+        val splitIndex = layout.getLineEnd(lastFit, visibleEnd = true)
+        val c1 = text.substring(0, splitIndex)
+        // 续段不做 trimStart：行尾空白可能被 getLineEnd 裁在断点前后，trim 会吞掉原文字符
+        val c2 = text.substring(splitIndex).trimStart('\n', '\r')
+        return if (c1.isBlank()) text to "" else c1 to c2
+    }
+
+    // ── 测量（真实页宽约束，修复旧实现无约束测量） ──
+
+    private fun measureLayout(text: String, textStyle: TextStyle): TextLayoutResult =
+        measurer.measure(
+            text = AnnotatedString(text),
+            style = textStyle,
+            constraints = Constraints(maxWidth = contentWidthPx.toInt().coerceAtLeast(1))
+        )
+
+    private fun measureTitle(item: FlowItem.Title): Float {
+        val sectionH = item.section?.let { measureLayout(it, style.cn).size.height.toFloat() + CN_GAP_PX } ?: 0f
+        val titleH = measureLayout(item.title, style.title).size.height.toFloat()
+        val badgeH = style.body.fontSize.value * 2.2f
+        // 对齐 PageTitleBlock 渲染：顶部留白 24 + 标题与徽章间 12
+        return 24f + sectionH + titleH + 12f + badgeH + style.paragraphSpacingPx
+    }
+
+    companion object {
+        // 中文原文与英文间的间距估算（px，近似渲染的 6.dp，±几像素无碍）
+        private const val CN_GAP_PX = 6f
+    }
+}
+
+/** 根据 ReadingSettings 的字体名字符串解析 FontFamily。 */
+fun fontFamilyOf(name: String): FontFamily = when (name) {
+    "sans-serif" -> FontFamily.SansSerif
+    "monospace" -> FontFamily.Monospace
+    else -> FontFamily.Serif
+}

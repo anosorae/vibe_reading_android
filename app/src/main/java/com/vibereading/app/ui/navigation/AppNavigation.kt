@@ -1,0 +1,75 @@
+package com.vibereading.app.ui.navigation
+
+import androidx.compose.runtime.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.vibereading.app.data.repository.BookRepository
+import com.vibereading.app.data.repository.ChapterRepository
+import com.vibereading.app.data.repository.SettingsRepository
+import com.vibereading.app.ui.bookshelf.BookshelfScreen
+import com.vibereading.app.ui.bookshelf.BookshelfViewModel
+import com.vibereading.app.ui.reader.ReaderScreen
+import com.vibereading.app.ui.reader.ReaderViewModel
+import com.vibereading.app.ui.settings.SettingsScreen
+import com.vibereading.app.ui.settings.SettingsViewModel
+import com.vibereading.app.VibeReadingApp
+
+object Routes {
+    const val BOOKSHELF = "bookshelf"
+    const val READER = "reader/{bookId}"
+    const val SETTINGS = "settings"
+    fun reader(bookId: Long) = "reader/$bookId"
+}
+
+@Composable
+fun AppNavigation() {
+    val navController = rememberNavController()
+    val application = navController.context.applicationContext as VibeReadingApp
+    val db = application.database
+
+    val bookRepo = remember { BookRepository(db.bookDao()) }
+    val chapterRepo = remember { ChapterRepository(db.chapterDao()) }
+    val settingsRepo = remember { SettingsRepository(application) }
+
+    NavHost(navController = navController, startDestination = Routes.BOOKSHELF) {
+
+        composable(Routes.BOOKSHELF) {
+            val vm: BookshelfViewModel = viewModel(
+                factory = BookshelfViewModel.Factory(bookRepo, chapterRepo, settingsRepo)
+            )
+            BookshelfScreen(
+                vm = vm,
+                onOpenBook = { bookId -> navController.navigate(Routes.reader(bookId)) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
+            )
+        }
+
+        composable(
+            route = Routes.READER,
+            arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+        ) { entry ->
+            val bookId = entry.arguments?.getLong("bookId") ?: return@composable
+            val vm: ReaderViewModel = viewModel(
+                factory = ReaderViewModel.Factory(bookId, bookRepo, chapterRepo, settingsRepo)
+            )
+            ReaderScreen(
+                vm = vm,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(Routes.SETTINGS) {
+            val vm: SettingsViewModel = viewModel(
+                factory = SettingsViewModel.Factory(settingsRepo)
+            )
+            SettingsScreen(
+                vm = vm,
+                onBack = { navController.popBackStack() }
+            )
+        }
+    }
+}

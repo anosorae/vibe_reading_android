@@ -1,0 +1,17 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/build
+
+# 外部参考源码（Legado 只读参考，不入库）
+/reference_code/
+
+# ZCode 工具会话数据
+.zcode/

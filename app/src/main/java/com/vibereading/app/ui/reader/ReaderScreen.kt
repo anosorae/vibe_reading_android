@@ -259,14 +259,15 @@ fun ReaderScreen(
 
         // 对齐 Legado nextPageByAnim / prevPageByAnim：起点 + 角落
         if (goingNext) {
+            // NEXT：右半屏点击 → calcCornerXY 已设 cornerX=wf, cornerY=hf；不覆盖
             val startY = if (simFlip.startY > hf / 2) hf * 0.9f else 1f
             simFlip.startX = wf * 0.9f
             simFlip.startY = startY
-            simFlip.cornerX = 0f
-            simFlip.cornerY = hf
-            simFlip.touchX = wf
+            // cornerX/cornerY 保留 calcCornerXY 的值（右半屏点击时 cornerX=wf）
+            simFlip.touchX = wf * 0.9f
             simFlip.touchY = startY
         } else {
+            // PREV：对齐 Legado setDirection(PREV) → 角落始终在右下（cornerX=wf）
             simFlip.startX = 0f
             simFlip.startY = hf
             simFlip.cornerX = wf
@@ -283,8 +284,12 @@ fun ReaderScreen(
         scope.launch {
             val startTouchX = simFlip.touchX
             val startTouchY = simFlip.touchY
-            // complete: 滚过屏幕边缘
-            val dx = if (goingNext) -(wf + startTouchX) else (wf - startTouchX)
+            // complete: 滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
+            val dx = if (goingNext) {
+                if (simFlip.cornerX > 0f) -(wf + startTouchX) else wf - startTouchX
+            } else {
+                wf - startTouchX
+            }
             val dy = if (simFlip.cornerY > 0f) (hf - startTouchY) else (1f - startTouchY)
             val animationSpeed = 600 // ms，对齐 Legado defaultAnimationSpeed 量级
             val duration = if (dx != 0f) (animationSpeed * kotlin.math.abs(dx) / wf).toLong()

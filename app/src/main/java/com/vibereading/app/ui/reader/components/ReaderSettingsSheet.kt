@@ -228,7 +228,7 @@ fun ReaderSettingsSheet(
                         title = "左右边距",
                         value = settings.paddingH.toFloat(),
                         display = "${settings.paddingH}dp",
-                        range = 8f..40f,
+                        range = 4f..100f,
                         accentColor = accentColor
                     ) { onUpdate(settings.copy(paddingH = it.toInt())) }
 
@@ -236,7 +236,7 @@ fun ReaderSettingsSheet(
                         title = "上下边距",
                         value = settings.paddingV.toFloat(),
                         display = "${settings.paddingV}dp",
-                        range = 8f..48f,
+                        range = 4f..100f,
                         accentColor = accentColor
                     ) { onUpdate(settings.copy(paddingV = it.toInt())) }
 

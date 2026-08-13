@@ -45,23 +45,110 @@ import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.VibeDarkColors
 
 /**
- * 仿真卷页覆盖层状态：
- * - animating=true 时 CurlOverlay 显示；touchX/touchY 为当前触摸点（内容区坐标），
- *   拖拽手势实时更新（跟手），自动动画由插值协程逐帧写入；
- * - base/sheet 位图为动画期间的页面快照。
+ * 仿真卷页状态机（对齐 Legado PageDelegate + HorizontalPageDelegate + SimulationPageDelegate）。
+ *
+ * 手势阶段：
+ * - DOWN → 记录起点，reset 状态
+ * - MOVE → slop 判定 → 确定方向 → setDirection(角落) → isCancel(回拖) → touchX/Y 跟手
+ * - UP   → 启动自动动画（Scroller 式：cancel 回弹 / complete 完成）
+ *
+ * 动画阶段：animatable 驱动 touchX/Y 逐帧更新 → CurlOverlay recompose。
+ * 动画结束：complete → scrollToPage + 清位图；cancel → 清位图。
  */
 @Stable
 class SimFlipState {
     val curl = PageCurl()
+
+    // ── 覆盖层可见性 ──
     var animating by mutableStateOf(false)
-    var touchX by mutableFloatStateOf(0f)
-    var touchY by mutableFloatStateOf(0f)
+
+    // ── 卷页几何 ──
+    var direction by mutableStateOf(PageCurl.Direction.NEXT)
+    var touchX by mutableFloatStateOf(0.1f)
+    var touchY by mutableFloatStateOf(0.1f)
     var cornerX by mutableFloatStateOf(0f)
     var cornerY by mutableFloatStateOf(0f)
-    var direction by mutableStateOf(PageCurl.Direction.NEXT)
-    var base: Bitmap? by mutableStateOf(null)
-    var sheet: Bitmap? by mutableStateOf(null)
+
+    // ── 位图（NEXT: cur=当前页, target=下一页; PREV: cur=当前页, target=上一页）──
+    var curBitmap: Bitmap? by mutableStateOf(null)
+    var targetBitmap: Bitmap? by mutableStateOf(null)
     var bgColor by mutableIntStateOf(0xFFFFFFFF.toInt())
+
+    // ── 手势状态（对齐 Legado PageDelegate）──
+    var isMoved by mutableStateOf(false)
+    var isCancel by mutableStateOf(false)
+    var isRunning by mutableStateOf(false)
+    var startX by mutableFloatStateOf(0f)
+    var startY by mutableFloatStateOf(0f)
+    var lastX by mutableFloatStateOf(0f)
+    var lastY by mutableFloatStateOf(0f)
+
+    /** DOWN 时重置状态（对齐 Legado PageDelegate.onDown） */
+    fun onDown(x: Float, y: Float) {
+        isMoved = false
+        isCancel = false
+        isRunning = false
+        direction = PageCurl.Direction.NEXT
+        startX = x
+        startY = y
+        lastX = x
+        lastY = y
+    }
+
+    /** 计算角落（对齐 Legado SimulationPageDelegate.calcCornerXY） */
+    fun calcCornerXY(x: Float, viewWidth: Float, viewHeight: Float) {
+        cornerX = if (x <= viewWidth / 2) 0f else viewWidth
+        cornerY = if (startY <= viewHeight / 2) 0f else viewHeight
+    }
+
+    /** 设置方向 + 角落调整（对齐 Legado SimulationPageDelegate.setDirection） */
+    fun setDirection(dir: PageCurl.Direction, viewWidth: Float, viewHeight: Float) {
+        direction = dir
+        when (dir) {
+            PageCurl.Direction.PREV -> {
+                // 上一页：不出现对角
+                if (startX > viewWidth / 2) {
+                    cornerX = startX
+                    cornerY = viewHeight
+                } else {
+                    cornerX = viewWidth - startX
+                    cornerY = viewHeight
+                }
+            }
+            PageCurl.Direction.NEXT -> {
+                if (viewWidth / 2 > startX) {
+                    cornerX = viewWidth - startX
+                    cornerY = startY
+                }
+                // else: 已在 DOWN 时由 calcCornerXY 设置，不额外调整
+            }
+        }
+    }
+
+    /** 垂直位置调整（对齐 Legado SimulationPageDelegate.onTouch MOVE） */
+    fun adjustTouchY(viewHeight: Float) {
+        if ((startY > viewHeight / 3 && startY < viewHeight * 2 / 3)
+            || direction == PageCurl.Direction.PREV
+        ) {
+            touchY = viewHeight
+        }
+        if (startY > viewHeight / 3 && startY < viewHeight / 2
+            && direction == PageCurl.Direction.NEXT
+        ) {
+            touchY = 1f
+        }
+    }
+
+    /** 清除位图并停止动画 */
+    fun cleanup() {
+        animating = false
+        curBitmap?.recycle()
+        targetBitmap?.recycle()
+        curBitmap = null
+        targetBitmap = null
+        isRunning = false
+        isMoved = false
+    }
 }
 
 /**
@@ -121,9 +208,8 @@ fun ReaderPager(
             }
         }
 
-        // 仿真卷页覆盖层：快照 base/sheet 页，按触摸点插值逐帧绘制真卷页。
-        // 画布与页面内容区严格对齐（边距一致），位图尺寸一致。
-        if (simFlip.animating && flipMode == ReadingSettings.FLIP_SIMULATION) {
+        // 仿真卷页覆盖层（对齐 Legado：画布与页面内容区严格对齐，位图尺寸一致）
+        if (simFlip.animating && simFlip.isRunning && flipMode == ReadingSettings.FLIP_SIMULATION) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -153,18 +239,25 @@ private fun Modifier.coverPageEffect(offset: Float): Modifier = graphicsLayer {
     }
 }
 
-// ── 仿真卷页覆盖层：快照 base/sheet 页，按触摸点逐帧绘制真卷页（跟手：触摸点实时更新） ──
+// ── 仿真卷页覆盖层（对齐 Legado SimulationPageDelegate.onDraw） ──
+// NEXT: base=当前页(curBitmap), sheet=下一页(targetBitmap)
+// PREV: base=上一页(targetBitmap), sheet=当前页(curBitmap)
 @Composable
 private fun CurlOverlay(simFlip: SimFlipState) {
-    val base = simFlip.base
-    val sheet = simFlip.sheet
+    val cur = simFlip.curBitmap
+    val target = simFlip.targetBitmap
+    if (cur == null || target == null) return
     val curl = simFlip.curl
-    val touchX = simFlip.touchX
-    val touchY = simFlip.touchY
+
+    val base: Bitmap?
+    val sheet: Bitmap?
+    when (simFlip.direction) {
+        PageCurl.Direction.NEXT -> { base = cur; sheet = target }
+        PageCurl.Direction.PREV -> { base = target; sheet = cur }
+    }
 
     Canvas(modifier = Modifier.fillMaxSize()) {
-        // 更新卷页触摸点（拖拽每帧 / 动画插值每帧）
-        curl.start(touchX, touchY, simFlip.cornerX, simFlip.cornerY)
+        curl.start(simFlip.touchX, simFlip.touchY, simFlip.cornerX, simFlip.cornerY)
         drawIntoCanvas { c ->
             curl.draw(
                 canvas = c.nativeCanvas,

@@ -223,69 +223,142 @@ fun ReaderScreen(
         }
     }
 
-    /** 卷页快照对（base=当前页, sheet=目标页）：直接用分页器 layout 绘制，与真实页同源。 */
-    fun curlBitmaps(cur: Int, next: Int): Pair<Bitmap, Bitmap>? {
+    /** 卷页快照对（对齐 Legado setBitmap）：curBitmap=当前页, targetBitmap=目标页。 */
+    fun curlBitmaps(cur: Int, target: Int): Pair<Bitmap, Bitmap>? {
         val w = curlContentWidth.toInt()
         val h = curlContentHeight.toInt()
-        val base = renderPageBitmap(
+        val curBmp = renderPageBitmap(
             window, cur, state.mode, isDark, pageStyle, density, w, h,
             bgColor.toArgb(), accentColor.toArgb()
         ) ?: return null
-        val sheet = renderPageBitmap(
-            window, next, state.mode, isDark, pageStyle, density, w, h,
+        val targetBmp = renderPageBitmap(
+            window, target, state.mode, isDark, pageStyle, density, w, h,
             bgColor.toArgb(), accentColor.toArgb()
         )
-        if (sheet == null) { base.recycle(); return null }
-        return base to sheet
+        if (targetBmp == null) { curBmp.recycle(); return null }
+        return curBmp to targetBmp
     }
 
-    /** 启动仿真卷页动画（点按翻页用）：从右下角触摸点自动卷出，360ms 落定。 */
+    /** 启动仿真卷页自动动画（对齐 Legado Scroller 式：cancel 回弹 / complete 完成）。 */
     fun startSimFlip(cur: Int, next: Int, goingNext: Boolean) {
-        if (simFlip.animating) return
+        if (simFlip.isRunning) return
         val w = curlContentWidth.toInt()
         val h = curlContentHeight.toInt()
         val pair = curlBitmaps(cur, next)
         if (pair == null) {
-            scope.launch {
-                if (pagerState.currentPage != next) pagerState.scrollToPage(next)
-            }
+            scope.launch { if (pagerState.currentPage != next) pagerState.scrollToPage(next) }
             return
         }
-        val base = pair.first
-        val sheet = pair.second
         val wf = w.toFloat()
         val hf = h.toFloat()
         simFlip.curl.setViewSize(wf, hf)
-        simFlip.base = base
-        simFlip.sheet = sheet
+        simFlip.curBitmap = pair.first
+        simFlip.targetBitmap = pair.second
         simFlip.direction = if (goingNext) PageCurl.Direction.NEXT else PageCurl.Direction.PREV
         simFlip.bgColor = bgColor.toArgb()
-        simFlip.cornerX = if (goingNext) 0f else wf
-        simFlip.cornerY = hf
-        // 起点：拖拽页脚（NEXT=左下，PREV=右下）
-        simFlip.touchX = if (goingNext) wf else 0f
-        simFlip.touchY = hf
-        simFlip.animating = true
 
-        // 线性插值 360ms 完成卷页
+        // 对齐 Legado nextPageByAnim / prevPageByAnim：起点 + 角落
+        if (goingNext) {
+            val startY = if (simFlip.startY > hf / 2) hf * 0.9f else 1f
+            simFlip.startX = wf * 0.9f
+            simFlip.startY = startY
+            simFlip.cornerX = 0f
+            simFlip.cornerY = hf
+            simFlip.touchX = wf
+            simFlip.touchY = startY
+        } else {
+            simFlip.startX = 0f
+            simFlip.startY = hf
+            simFlip.cornerX = wf
+            simFlip.cornerY = hf
+            simFlip.touchX = 0f
+            simFlip.touchY = hf
+        }
+        simFlip.animating = true
+        simFlip.isRunning = true
+        simFlip.isMoved = true
+        simFlip.isCancel = false
+
+        // Scroller 式动画（对齐 Legado onAnimStart）
         scope.launch {
-            val fromX = simFlip.touchX
-            val fromY = simFlip.touchY
-            val toX = if (goingNext) -wf else wf * 2f
-            val toY = hf
-            val steps = 40
-            repeat(steps) { i ->
-                kotlinx.coroutines.delay(360L / steps)
-                val t = (i + 1).toFloat() / steps
-                simFlip.touchX = fromX + (toX - fromX) * t
-                simFlip.touchY = fromY + (toY - fromY) * t
+            val startTouchX = simFlip.touchX
+            val startTouchY = simFlip.touchY
+            // complete: 滚过屏幕边缘
+            val dx = if (goingNext) -(wf + startTouchX) else (wf - startTouchX)
+            val dy = if (simFlip.cornerY > 0f) (hf - startTouchY) else (1f - startTouchY)
+            val animationSpeed = 600 // ms，对齐 Legado defaultAnimationSpeed 量级
+            val duration = if (dx != 0f) (animationSpeed * kotlin.math.abs(dx) / wf).toLong()
+            else (animationSpeed * kotlin.math.abs(dy) / hf).toLong()
+            val endX = startTouchX + dx
+            val endY = startTouchY + dy
+            val animatable = androidx.compose.animation.core.Animatable(0f)
+            animatable.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = duration.coerceIn(150, 800).toInt(),
+                    easing = androidx.compose.animation.core.LinearEasing
+                )
+            ) {
+                simFlip.touchX = startTouchX + (endX - startTouchX) * value
+                simFlip.touchY = startTouchY + (endY - startTouchY) * value
             }
+            // 动画完成 → 翻页
             if (pagerState.currentPage != next) {
                 pagerState.scrollToPage(next)
             }
-            simFlip.animating = false
-            simFlip.base = null
-            simFlip.sheet = null
+            simFlip.cleanup()
+        }
+    }
+
+    /** 仿真卷页抬手动画（对齐 Legado SimulationPageDelegate.onAnimStart：cancel 回弹 / complete 完成）。 */
+    fun simFlipAnimStart(cur: Int, target: Int) {
+        simFlip.isRunning = true
+        val wf = curlContentWidth
+        val hf = curlContentHeight
+        scope.launch {
+            val startTouchX = simFlip.touchX
+            val startTouchY = simFlip.touchY
+            val dx: Float
+            val dy: Float
+            if (simFlip.isCancel) {
+                // 回弹：滚回屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart isCancel）
+                dx = if (startTouchX > wf / 2) {
+                    wf - startTouchX   // touch 在右半 → 滚回右边
+                } else {
+                    -startTouchX       // touch 在左半 → 滚回左边
+                }
+                dy = if (simFlip.cornerY > 0f) hf - startTouchY else -startTouchY
+            } else {
+                // 完成：滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
+                if (simFlip.direction == PageCurl.Direction.NEXT) {
+                    dx = -(wf + startTouchX)     // NEXT: 往左滚过屏幕
+                } else {
+                    dx = wf - startTouchX         // PREV: 往右滚过屏幕
+                }
+                dy = if (simFlip.cornerY > 0f) hf - startTouchY else 1f - startTouchY
+            }
+            val animationSpeed = 600
+            val duration = if (dx != 0f) (animationSpeed * kotlin.math.abs(dx) / wf).toLong()
+            else (animationSpeed * kotlin.math.abs(dy) / hf).toLong()
+            val endX = startTouchX + dx
+            val endY = startTouchY + dy
+            val animatable = androidx.compose.animation.core.Animatable(0f)
+            animatable.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = duration.coerceIn(100, 600).toInt(),
+                    easing = androidx.compose.animation.core.LinearEasing
+                )
+            ) {
+                simFlip.touchX = startTouchX + (endX - startTouchX) * value
+                simFlip.touchY = startTouchY + (endY - startTouchY) * value
+            }
+            if (!simFlip.isCancel && target in 0 until window.pageCount) {
+                if (pagerState.currentPage != target) {
+                    pagerState.scrollToPage(target)
+                }
+            }
+            simFlip.cleanup()
         }
     }
 
@@ -401,48 +474,35 @@ fun ReaderScreen(
                 val inSim = isPagerMode && flipMode == ReadingSettings.FLIP_SIMULATION
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    if (inSim && !simFlip.animating) {
-                        // ── 仿真模式：拖拽卷页跟手（对齐 Legado SimulationPageDelegate 手势） ──
+                    if (inSim) {
+                        // ── 仿真模式手势（对齐 Legado HorizontalPageDelegate + SimulationPageDelegate）──
                         val padX = with(density) { readingSettings.paddingH.dp.toPx() }
                         val padY = with(density) { readingSettings.paddingV.dp.toPx() }
-                        var dragged = false
+                        val contentW = size.width - padX * 2
+                        val contentH = size.height - padY * 2
+                        val slopSquare = 30f * 30f // 对齐 Legado pageSlopSquare2
+
+                        // DOWN: 记录起点，reset 状态，计算角落
+                        val downX = down.position.x - padX
+                        val downY = down.position.y - padY
+                        simFlip.onDown(downX, downY)
+                        simFlip.calcCornerXY(downX, contentW, contentH)
+                        simFlip.curl.setViewSize(contentW, contentH)
+
                         var curlActive = false
-                        var dir = PageCurl.Direction.NEXT
-                        var target = pagerState.currentPage + 1
-                        val slop = 30f
+
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
+                                // ── UP ──
                                 if (curlActive) {
-                                    // 抬手：卷动越过阈值则完成翻页，否则回弹（停在当前页）
-                                    val contentW = size.width - padX * 2
-                                    val done = if (dir == PageCurl.Direction.NEXT) {
-                                        simFlip.touchX < contentW * 0.4f
-                                    } else {
-                                        simFlip.touchX > contentW * 0.6f
-                                    }
-                                    if (done && target in 0 until window.pageCount) {
-                                        // 完成翻页：同一协程内先 snap 到目标页、再清覆盖层，
-                                        // 避免「先清覆盖层露出旧页、再 snap 到新页」的两段跳变（3 次内容切换）
-                                        scope.launch {
-                                            if (pagerState.currentPage != target) {
-                                                pagerState.scrollToPage(target)
-                                            }
-                                            simFlip.animating = false
-                                            simFlip.base = null
-                                            simFlip.sheet = null
-                                        }
-                                    } else {
-                                        // 未越过阈值：回弹（停在当前页），直接清覆盖层
-                                        simFlip.animating = false
-                                        simFlip.base = null
-                                        simFlip.sheet = null
-                                    }
-                                } else if (!dragged && !change.isConsumed) {
-                                    // 单击（未拖拽）：三段点按——左右 1/3 卷页翻页，中间 1/3 开关菜单。
-                                    // 注意排除 isConsumed：点到底栏/顶栏按钮（如「设置」）时不再翻页。
-                                    // 菜单/目录/设置浮层可见时，左右区域不翻页，中间区域关闭浮层。
+                                    // 抬手：启动 Scroller 式动画（cancel 回弹 / complete 完成）
+                                    val cur = pagerState.currentPage
+                                    val target = if (simFlip.direction == PageCurl.Direction.NEXT) cur + 1 else cur - 1
+                                    simFlipAnimStart(cur, target)
+                                } else if (!simFlip.isMoved && !change.isConsumed) {
+                                    // 单击：三段点按
                                     val x = down.position.x
                                     val third = size.width / 3f
                                     if (overlayVisible) {
@@ -457,38 +517,57 @@ fun ReaderScreen(
                                 }
                                 break
                             }
-                            if (!dragged) {
-                                val dx = change.position.x - down.position.x
-                                val dy = change.position.y - down.position.y
-                                if (kotlin.math.abs(dx) > slop || kotlin.math.abs(dy) > slop) {
-                                    dragged = true
-                                    dir = if (dx < 0f) PageCurl.Direction.NEXT else PageCurl.Direction.PREV
-                                    target = if (dir == PageCurl.Direction.NEXT) pagerState.currentPage + 1
-                                    else pagerState.currentPage - 1
-                                    if (target !in 0 until window.pageCount) break // 边界无页可翻
-                                    val w = curlContentWidth.toInt()
-                                    val h = curlContentHeight.toInt()
-                                    val pair = curlBitmaps(pagerState.currentPage, target)
-                                    if (pair == null) break
-                                    val base = pair.first
-                                    val sheet = pair.second
-                                    val wf = w.toFloat()
-                                    val hf = h.toFloat()
-                                    simFlip.curl.setViewSize(wf, hf)
-                                    simFlip.base = base
-                                    simFlip.sheet = sheet
-                                    simFlip.direction = dir
-                                    simFlip.bgColor = bgColor.toArgb()
-                                    simFlip.cornerX = if (dir == PageCurl.Direction.NEXT) 0f else wf
-                                    simFlip.cornerY = hf
-                                    simFlip.animating = true
-                                    curlActive = true
+                            // ── MOVE ──
+                            val focusX = change.position.x - padX
+                            val focusY = change.position.y - padY
+                            if (!simFlip.isMoved) {
+                                val deltaX = focusX - simFlip.startX
+                                val deltaY = focusY - simFlip.startY
+                                val distance = deltaX * deltaX + deltaY * deltaY
+                                if (distance > slopSquare) {
+                                    simFlip.isMoved = true
+                                    if (focusX - simFlip.startX > 0) {
+                                        // 右滑 → PREV
+                                        val target = pagerState.currentPage - 1
+                                        if (target < 0) break
+                                        simFlip.setDirection(PageCurl.Direction.PREV, contentW, contentH)
+                                        val pair = curlBitmaps(pagerState.currentPage, target)
+                                        if (pair == null) break
+                                        simFlip.curBitmap = pair.first
+                                        simFlip.targetBitmap = pair.second
+                                        simFlip.bgColor = bgColor.toArgb()
+                                        simFlip.animating = true
+                                        curlActive = true
+                                    } else {
+                                        // 左滑 → NEXT
+                                        val target = pagerState.currentPage + 1
+                                        if (target >= window.pageCount) break
+                                        simFlip.setDirection(PageCurl.Direction.NEXT, contentW, contentH)
+                                        val pair = curlBitmaps(pagerState.currentPage, target)
+                                        if (pair == null) break
+                                        simFlip.curBitmap = pair.first
+                                        simFlip.targetBitmap = pair.second
+                                        simFlip.bgColor = bgColor.toArgb()
+                                        simFlip.animating = true
+                                        curlActive = true
+                                    }
                                 }
                             }
                             if (curlActive) {
-                                // 跟手：触摸点（内容区坐标，卷出时可为负/超宽）
-                                simFlip.touchX = change.position.x - padX
-                                simFlip.touchY = change.position.y - padY
+                                // isCancel 判定（对齐 Legado HorizontalPageDelegate.onScroll）
+                                simFlip.isCancel = if (simFlip.direction == PageCurl.Direction.NEXT) {
+                                    focusX > simFlip.lastX
+                                } else {
+                                    focusX < simFlip.lastX
+                                }
+                                simFlip.lastX = focusX
+                                simFlip.lastY = focusY
+                                // 更新触摸点（跟手）
+                                simFlip.touchX = focusX
+                                simFlip.touchY = focusY
+                                // 垂直位置调整（对齐 Legado SimulationPageDelegate.onTouch MOVE）
+                                simFlip.adjustTouchY(contentH)
+                                simFlip.isRunning = true
                             }
                             if (change.isConsumed) break
                         }

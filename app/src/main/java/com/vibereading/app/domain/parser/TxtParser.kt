@@ -7,35 +7,47 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
 /**
- * Ported from services/parser.py — 1:1 logic port.
- * Parses Chinese TXT novels into chapters by regex pattern matching.
+ * TXT 小说解析：解码 + 按章切分（对齐 Legado TextFile / txtTocRule 的成熟思路）。
+ *
+ * - 解码：BOM（UTF-8 / UTF-16LE / UTF-16BE）→ UTF-8 严格 → GB18030，避免乱码；
+ * - 分章：多组按优先级排列的标题规则（第N章/回/节、序章/楔子/番外等、Chapter/序号标题），
+ *   卷/部/篇/集/册识别为 section（卷），挂到后续章节；
+ * - 段落：空行分段，段内换行拼接（保留原 Python 移植逻辑）。
  */
 object TxtParser {
 
-    // ── Regex patterns (ported from Python) ──
+    // ── 标题规则（对齐 Legado txtTocRule 主规则，按优先级排列） ──
 
-    // Standalone marker only: "第一章", "Chapter 5", "1:"
+    // 章节序号：阿拉伯数字或中文数字（含大写壹贰…）
+    private const val NUM = "[0-9〇零一二两三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟]{1,8}"
+
+    // 特殊章节名（无序号）
+    private const val SPECIAL =
+        "(?:序章|序言|楔子|前言|文案|简介|内容简介|文章简介|终章|后记|尾声|番外|正文(?!完|结))"
+
+    // 章节标题模式（组1 = 完整标题）
+    private val CHAPTER_PATTERNS = listOf(
+        // 1. 第N章/回/节/话/场/幕 + 可选副标题
+        Regex("""^\s{0,4}(第\s{0,4}$NUM\s{0,4}[章回节话场幕][^\n]{0,30})$"""),
+        // 2. 特殊章名 + 可选副标题
+        Regex("""^\s{0,4}($SPECIAL[^\n]{0,30})$"""),
+        // 3. Chapter/Section/Part/Episode/No. + 序号
+        Regex("""^\s{0,4}((?:[Cc]hapter|[Ss]ection|[Pp]art|[Ee]pisode|[Nn][Oo]\.?)\s{0,4}\d{1,4}[^\n]{0,30})$"""),
+        // 4. 数字 + 分隔符 + 标题（1、标题 / 1. 标题 / 1: 标题）
+        Regex("""^\s{0,4}(\d{1,5}\s{0,4}[：:、.,，\-—][^\n]{0,30})$""")
+    )
+
+    // 卷/部/篇/集/册（作为 section，不拆章）
+    private val SECTION_PATTERNS = listOf(
+        Regex("""^\s{0,4}(第\s{0,4}$NUM\s{0,4}[卷部篇集册][^\n]{0,30})$"""),
+        Regex("""^\s{0,4}(卷\s{0,4}$NUM[^\n]{0,30})$""")
+    )
+
+    // 纯标记标题（如「第一章」无副标题）：需要 peek 下一行取副标题
     private val MARKER_ONLY = Regex(
-        """^第(?:[\u4e00-\u9fa5零一二三四五六七八九十百千万]+|\d+)[章回节卷]$""" +
-        """|^Chapter\s+\d+$""" +
-        """|^CHAPTER\s+\d+$""" +
-        """|^\d+(?:\.\d+)?[：:]$""",
-        RegexOption.IGNORE_CASE
-    )
-
-    // Chapter boundary: "第一章 风起云涌", "Chapter 5 The Beginning", "1.2：标题"
-    private val CHAPTER_PATTERN = Regex(
-        """^\s*(第(?:[\u4e00-\u9fa5零一二三四五六七八九十百千万]+|\d+)[章回节卷](?:\s+.+?)?)\s*$""" +
-        """|^\s*(Chapter\s+\d+.*)$""" +
-        """|^\s*(CHAPTER\s+\d+.*)$""" +
-        """|^\s*(\d+(?:\.\d+)?[：:].+)$""",
-        RegexOption.IGNORE_CASE
-    )
-
-    // Section/volume: "第一篇 红楼梦", "第二卷 风云", "卷三"
-    private val SECTION_PATTERN = Regex(
-        """^\s*(第(?:[\u4e00-\u9fa5零一二三四五六七八九十百千万]+|\d+)[篇卷](?:[：:].+|[\s\u4e00-\u9fa5].+)?)\s*$""" +
-        """|^\s*(卷(?:[\u4e00-\u9fa5零一二三四五六七八九十百千万]+|\d+)(?:[：:].+|[\s\u4e00-\u9fa5].+)?)\s*$""",
+        """^(?:第\s*$NUM\s*[章回节话场幕])$""" +
+            """|^(?:Chapter\s+\d+)$""" +
+            """|^(?:$SPECIAL)$""",
         RegexOption.IGNORE_CASE
     )
 
@@ -45,10 +57,7 @@ object TxtParser {
         val content: String
     )
 
-    /**
-     * Parse raw text into a list of ChapterDict.
-     * Mirrors the Python parse_text() state machine exactly.
-     */
+    /** 逐行解析：状态机分章。 */
     fun parseText(text: String): List<ChapterDict> {
         val lines = text.lines()
         val chapters = mutableListOf<ChapterDict>()
@@ -72,21 +81,15 @@ object TxtParser {
             val trimmed = line.trim()
 
             if (trimmed.isEmpty()) {
-                // Blank line
-                if (currentTitle != null) {
-                    currentLines.add(line)
-                } else {
-                    preambleLines.add(line)
-                }
+                if (currentTitle != null) currentLines.add(line) else preambleLines.add(line)
                 i++
                 continue
             }
 
-            val chapterMatch = CHAPTER_PATTERN.find(trimmed)
-            val sectionMatch = SECTION_PATTERN.find(trimmed)
+            val chapterTitle = matchFirst(CHAPTER_PATTERNS, trimmed)
+            val sectionTitle = matchFirst(SECTION_PATTERNS, trimmed)
 
-            if (chapterMatch != null) {
-                // Save previous chapter
+            if (chapterTitle != null) {
                 if (currentTitle != null) {
                     saveChapter(currentTitle, currentSection, currentLines)
                 } else if (preambleLines.any { it.isNotBlank() }) {
@@ -94,19 +97,16 @@ object TxtParser {
                 }
                 preambleLines.clear()
 
-                // Extract title — take the first non-null group
-                var title = chapterMatch.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: trimmed
-
-                // If title is marker-only (e.g., "第一章"), peek ahead for subtitle
+                var title = chapterTitle.trim()
+                // 纯标记标题（如「第一章」）：peek 下一行作副标题
                 if (MARKER_ONLY.containsMatchIn(title)) {
                     val nextI = i + 1
                     if (nextI < lines.size) {
                         val nextLine = lines[nextI].trim()
                         if (nextLine.isNotEmpty()
                             && nextLine.length <= 20
-                            && !nextLine.startsWith(" ") && !nextLine.startsWith("\t")
-                            && !CHAPTER_PATTERN.containsMatchIn(nextLine)
-                            && !SECTION_PATTERN.containsMatchIn(nextLine)
+                            && matchFirst(CHAPTER_PATTERNS, nextLine) == null
+                            && matchFirst(SECTION_PATTERNS, nextLine) == null
                         ) {
                             title = "$title $nextLine"
                             i = nextI + 1
@@ -127,36 +127,35 @@ object TxtParser {
                 continue
             }
 
-            if (sectionMatch != null) {
-                // Section marker — record but don't split
-                pendingSection = sectionMatch.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: trimmed
+            if (sectionTitle != null) {
+                pendingSection = sectionTitle.trim()
                 i++
                 continue
             }
 
-            // Normal text
-            if (currentTitle != null) {
-                currentLines.add(line)
-            } else {
-                preambleLines.add(line)
-            }
+            if (currentTitle != null) currentLines.add(line) else preambleLines.add(line)
             i++
         }
 
-        // Save last chapter
         if (currentTitle != null) {
             saveChapter(currentTitle, currentSection, currentLines)
         } else if (preambleLines.any { it.isNotBlank() }) {
-            // No chapter markers found — save everything as single chapter
             saveChapter("全文", null, preambleLines)
         }
 
         return chapters
     }
 
-    /**
-     * Join non-empty lines with double newlines, mirroring Python _join_paragraphs.
-     */
+    private fun matchFirst(patterns: List<Regex>, line: String): String? {
+        for (p in patterns) {
+            val m = p.find(line) ?: continue
+            val g = m.groupValues.getOrNull(1)?.trim()
+            if (!g.isNullOrEmpty()) return g
+        }
+        return null
+    }
+
+    /** 空行分段，段内换行拼接（原 Python 移植逻辑保留）。 */
     private fun joinParagraphs(lines: List<String>): String {
         val paragraphs = mutableListOf<String>()
         var current = StringBuilder()
@@ -173,22 +172,32 @@ object TxtParser {
                 current.append(trimmed)
             }
         }
-        if (current.isNotEmpty()) {
-            paragraphs.add(current.toString())
-        }
+        if (current.isNotEmpty()) paragraphs.add(current.toString())
 
         return paragraphs.joinToString("\n\n")
     }
 
     /**
-     * Decode bytes to string, trying UTF-8 first, then GBK, then UTF-8 with errors.
-     * Mirrors the Python upload flow encoding detection.
-     *
-     * 注意：`String(bytes, UTF_8)` 对非法 UTF-8 序列不会抛异常（而是替换为 U+FFFD），
-     * 会导致 GBK 文件被静默解码成乱码。这里用严格解码器（REPORT）让非法序列抛异常，
-     * 从而正确回退到 GB18030（兼容 GBK）。
+     * 解码字节：BOM（UTF-8 / UTF-16LE / UTF-16BE）→ UTF-8 严格 → GB18030。
+     * 注意：`String(bytes, UTF_8)` 对非法 UTF-8 不抛异常（替换为 U+FFFD），
+     * 会导致 GBK 文件静默乱码；这里用严格解码器（REPORT）让非法序列抛异常，
+     * 从而正确回退到 GB18030（兼容 GBK）。UTF-16 无 BOM 会被 UTF-8 严格解码拒掉
+     * 后落入 GB18030，中文小说几乎不带无 BOM 的 UTF-16，可接受。
      */
     fun decodeBytes(bytes: ByteArray): String {
+        // UTF-8 BOM
+        if (bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()) {
+            return String(bytes, 3, bytes.size - 3, StandardCharsets.UTF_8)
+        }
+        // UTF-16 BOM
+        if (bytes.size >= 2) {
+            if (bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
+                return String(bytes, 2, bytes.size - 2, StandardCharsets.UTF_16LE)
+            }
+            if (bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
+                return String(bytes, 2, bytes.size - 2, StandardCharsets.UTF_16BE)
+            }
+        }
         return try {
             StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
@@ -204,9 +213,7 @@ object TxtParser {
         }
     }
 
-    /**
-     * Convert parsed ChapterDict list to Chapter domain objects for a given bookId.
-     */
+    /** 解析结果转 Chapter 领域对象。 */
     fun toChapters(bookId: Long, chapterDicts: List<ChapterDict>): List<Chapter> {
         return chapterDicts.mapIndexed { index, dict ->
             Chapter(

@@ -26,7 +26,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.ReaderPageGeometry
@@ -163,9 +162,7 @@ fun ReaderPager(
     paddingV: Int,
     statusBarPx: Int,
     navBarPx: Int,
-    simFlip: SimFlipState,
-    isStreaming: Boolean = false,
-    activeChapterId: Long? = null
+    simFlip: SimFlipState
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -191,9 +188,7 @@ fun ReaderPager(
                     paddingH = paddingH,
                     paddingV = paddingV,
                     statusBarPx = statusBarPx,
-                    navBarPx = navBarPx,
-                    isStreaming = isStreaming,
-                    activeChapterId = activeChapterId
+                    navBarPx = navBarPx
                 )
             }
         }
@@ -263,18 +258,9 @@ fun PageRenderer(
     paddingH: Int,
     paddingV: Int,
     statusBarPx: Int,
-    navBarPx: Int,
-    isStreaming: Boolean = false,
-    activeChapterId: Long? = null
+    navBarPx: Int
 ) {
     val density = LocalDensity.current
-    // 检测本页所属章节是否已翻译（en 模式下未翻译章节不显示气泡）
-    val titleUnit = units.filterIsInstance<PageUnit.Title>().firstOrNull()
-    val titleStatus = titleUnit?.status
-    val chapterId = titleUnit?.chapterId
-    val chapterErrorMessage = titleUnit?.errorMessage
-    val chapterTranslated = titleStatus == Chapter.STATUS_DONE
-    val showEnStatusHint = mode == "en" && titleStatus != null && !chapterTranslated
 
     // 页内留白（与排版内容区尺寸一致；原 contentPadding 移入页面内部，避免分页间露边）
     // 系统栏用缓存 px 值（不随沉浸式切换变化），与排版几何保持一致，防止切换菜单时重排
@@ -355,54 +341,6 @@ fun PageRenderer(
                                     )
                                 }
                             }
-                        }
-                    }
-                }
-                // en 模式下未翻译章节：标题下方显示状态提示
-                if (showEnStatusHint) {
-                    Spacer(Modifier.height(16.dp))
-                    // 区分「翻译中」（正在流式翻译）和「翻译中断」（上次中断）
-                    val isActiveStreaming = isStreaming && chapterId == activeChapterId
-                    val hintText = when {
-                        isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS -> "翻译中…"
-                        titleStatus == Chapter.STATUS_IN_PROGRESS -> "翻译中断"
-                        titleStatus == Chapter.STATUS_FAILED -> "翻译失败"
-                        titleStatus == Chapter.STATUS_PENDING -> "等待翻译"
-                        titleStatus == Chapter.STATUS_TOO_LONG -> "章节过长"
-                        else -> "未翻译"
-                    }
-                    val hintColor = when {
-                        isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS -> VibeColors.Sage
-                        titleStatus == Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
-                        titleStatus == Chapter.STATUS_FAILED -> VibeColors.RedMuted
-                        titleStatus == Chapter.STATUS_TOO_LONG -> VibeColors.Amber
-                        else -> VibeColors.WarmGray
-                    }
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(hintText, color = hintColor, fontSize = 13.sp)
-                            // 正在流式翻译时显示进度指示器
-                            if (isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS) {
-                                Spacer(Modifier.width(8.dp))
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(14.dp),
-                                    strokeWidth = 1.5.dp,
-                                    color = VibeColors.Sage
-                                )
-                            }
-                        }
-                        // 显示失败/过长原因
-                        val reason = chapterErrorMessage
-                        if (reason != null && (titleStatus == Chapter.STATUS_FAILED || titleStatus == Chapter.STATUS_TOO_LONG)) {
-                            Text(
-                                reason,
-                                color = hintColor.copy(alpha = 0.7f),
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
                         }
                     }
                 }

@@ -19,7 +19,6 @@ import kotlin.coroutines.resume
 // ── SSE event types (mirrors Python translator.py) ──
 
 sealed class TranslationEvent {
-    data class Status(val status: String, val charCount: Int = 0) : TranslationEvent()
     data class Chunk(val text: String) : TranslationEvent()
     data class Progress(val chars: Int) : TranslationEvent()
     data class Done(val text: String) : TranslationEvent()

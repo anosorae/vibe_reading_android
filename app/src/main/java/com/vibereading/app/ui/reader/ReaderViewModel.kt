@@ -22,6 +22,7 @@ data class ReaderUiState(
     val activeChapterId: Long? = null,
     val lastReadPage: Int = 0,          // 分页模式：上次阅读的「章内页」索引（滚动模式恒 0）
     val streamingText: String = "",
+    val streamingCharCount: Int = 0,
     val isStreaming: Boolean = false,
     val mode: String = "zh",          // "zh" or "en"
     val readingSettings: ReadingSettings = ReadingSettings(),
@@ -314,7 +315,7 @@ class ReaderViewModel(
 
             // Mark as in progress
             chapterRepo.updateStatus(chapterId, Chapter.STATUS_IN_PROGRESS)
-            _uiState.update { it.copy(isStreaming = true, streamingText = "", errorMessage = null) }
+            _uiState.update { it.copy(isStreaming = true, streamingText = "", streamingCharCount = 0, errorMessage = null) }
 
             // Load context
             val prevEnglish = if (settings.enableContextBoost) {
@@ -337,17 +338,14 @@ class ReaderViewModel(
                         chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_DONE, null)
                         val doneCount = chapterRepo.getDoneCount(bookId)
                         bookRepo.updateTranslatedCount(bookId, doneCount)
-                        _uiState.update { it.copy(isStreaming = false) }
+                        _uiState.update { it.copy(isStreaming = false, streamingCharCount = 0) }
                     }
                     is TranslationEvent.Error -> {
                         chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_FAILED, event.reason)
-                        _uiState.update { it.copy(isStreaming = false, errorMessage = event.reason) }
+                        _uiState.update { it.copy(isStreaming = false, streamingCharCount = 0, errorMessage = event.reason) }
                     }
                     is TranslationEvent.Progress -> {
-                        // Could update a progress indicator
-                    }
-                    is TranslationEvent.Status -> {
-                        // Status event — not used in streaming
+                        _uiState.update { it.copy(streamingCharCount = event.chars) }
                     }
                 }
             }

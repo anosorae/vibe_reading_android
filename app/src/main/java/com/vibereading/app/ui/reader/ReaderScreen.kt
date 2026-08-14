@@ -692,9 +692,7 @@ fun ReaderScreen(
                         paddingV = readingSettings.paddingV,
                         statusBarPx = statusBarPx,
                         navBarPx = navBarPx,
-                        simFlip = simFlip,
-                        isStreaming = state.isStreaming,
-                        activeChapterId = state.activeChapterId
+                        simFlip = simFlip
                     )
                 }
             }
@@ -827,48 +825,87 @@ fun ReaderScreen(
             )
         }
 
-        // ── 流式翻译进度面板 ──
-        if (state.isStreaming) {
+        // ── 翻译状态面板（流式进度 + 非流式章节状态） ──
+        val activeChapter = state.activeChapter
+        val showStatusPanel = state.isStreaming || (
+            state.mode == "en" && activeChapter != null
+            && activeChapter.status != Chapter.STATUS_DONE
+            && !state.catalogVisible && !state.settingsVisible && !state.llmSettingsVisible
+        )
+        if (showStatusPanel) {
+            val panelBottomPadding = if (state.toolbarVisible) bottomBarHeightDp.dp + 8.dp
+                else 16.dp + with(density) { navBarPx.toDp() }
+            val panelColor = if (isDark) VibeDarkColors.Surface.copy(alpha = 0.92f) else VibeColors.Parchment.copy(alpha = 0.92f)
+
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (state.toolbarVisible) bottomBarHeightDp.dp + 8.dp else 16.dp + with(density) { navBarPx.toDp() })
+                    .padding(bottom = panelBottomPadding)
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
-                    .heightIn(max = 160.dp),
+                    .heightIn(max = 320.dp),
                 shape = RoundedCornerShape(12.dp),
-                color = if (isDark) VibeDarkColors.Surface.copy(alpha = 0.92f) else VibeColors.Parchment.copy(alpha = 0.92f),
+                color = panelColor,
                 shadowElevation = 8.dp
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(12.dp),
-                            strokeWidth = 1.5.dp,
-                            color = VibeColors.Sage
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            if (state.streamingText.isBlank()) "正在连接…" else "翻译中…",
-                            fontSize = 12.sp,
-                            color = VibeColors.Sage
-                        )
+                if (state.isStreaming) {
+                    // ── 流式翻译进度 ──
+                    val scrollState = rememberScrollState()
+                    LaunchedEffect(scrollState.maxValue) {
+                        scrollState.scrollTo(scrollState.maxValue)
                     }
-                    if (state.streamingText.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            state.streamingText,
-                            style = pageStyle.body.copy(fontSize = 13.sp),
-                            color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal.copy(alpha = 0.7f),
-                            maxLines = 6,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
-                        )
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.5.dp,
+                                color = VibeColors.Sage
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (state.streamingCharCount > 0) "翻译中… (${state.streamingCharCount}字)"
+                                    else if (state.streamingText.isBlank()) "正在连接…" else "翻译中…",
+                                fontSize = 12.sp,
+                                color = VibeColors.Sage
+                            )
+                        }
+                        if (state.streamingText.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                state.streamingText,
+                                style = pageStyle.body.copy(fontSize = 13.sp),
+                                color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal.copy(alpha = 0.7f),
+                                maxLines = 12,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(scrollState)
+                            )
+                        }
+                    }
+                } else if (activeChapter != null) {
+                    // ── 非流式章节状态提示 ──
+                    val status = activeChapter.status
+                    val reason = state.errorMessage ?: activeChapter.errorMessage
+                    val (hintText, hintColor) = when (status) {
+                        Chapter.STATUS_FAILED -> ("翻译失败" to VibeColors.RedMuted)
+                        Chapter.STATUS_IN_PROGRESS -> ("翻译中断" to VibeColors.BlueMuted)
+                        Chapter.STATUS_TOO_LONG -> ("章节过长" to VibeColors.Amber)
+                        else -> ("等待翻译" to VibeColors.WarmGray)
+                    }
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(hintText, fontSize = 12.sp, color = hintColor)
+                        if (reason != null && status in setOf(Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG)) {
+                            Text(
+                                reason,
+                                fontSize = 11.sp,
+                                color = hintColor.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1047,33 +1084,8 @@ private fun ScrollReader(
                         }
                     }
                 } else {
-                    // 未翻译章节：流式翻译中 / 等待翻译 / 错误等
-                    if (state.isStreaming && state.activeChapterId == chapter.id) {
-                        Text(
-                            state.streamingText,
-                            style = pageStyle.body,
-                            color = palette.scrollBodyText,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(6.dp),
-                                shape = RoundedCornerShape(3.dp),
-                                color = VibeColors.Sage
-                            ) {}
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "翻译中...",
-                                fontSize = 12.sp,
-                                color = VibeColors.Sage
-                            )
-                        }
-                    } else if (state.llmSettings.apiKey.isBlank()) {
+                    // 未翻译章节：等待翻译 / 错误等
+                    if (state.llmSettings.apiKey.isBlank()) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
                             horizontalAlignment = Alignment.CenterHorizontally

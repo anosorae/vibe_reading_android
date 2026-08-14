@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -119,9 +120,30 @@ fun ReaderScreen(
     // 因 screenWidthDp 为截断整数，411dp*2.625=1078.875→round=1079≠1080 实际宽度，
     // 差 1px 导致排版区窄 1px → 仿真翻页位图与 Compose 页换行不一致 → 文字重排抖动）
     val displayMetrics = LocalContext.current.resources.displayMetrics
-    // 边到边模式下系统栏占据像素高度，排版与渲染均需扣除（否则末行被导航栏遮挡）
-    val statusBarPx = WindowInsets.systemBars.getTop(density)
-    val navBarPx = WindowInsets.systemBars.getBottom(density)
+    // 系统栏高度：缓存最大值后锁定，沉浸式切换时 insets 变化不触发重排
+    // （排版/渲染用缓存值保持稳定；浮层定位仍用实时值以跟随栏显隐）
+    val rawStatusBarPx = WindowInsets.systemBars.getTop(density)
+    val rawNavBarPx = WindowInsets.systemBars.getBottom(density)
+    val cachedStatusBarPx = remember { mutableIntStateOf(rawStatusBarPx) }
+    val cachedNavBarPx = remember { mutableIntStateOf(rawNavBarPx) }
+    if (rawStatusBarPx > cachedStatusBarPx.intValue) cachedStatusBarPx.intValue = rawStatusBarPx
+    if (rawNavBarPx > cachedNavBarPx.intValue) cachedNavBarPx.intValue = rawNavBarPx
+    // 显示挖孔（刘海/挖孔屏）：缓存后锁定，全面屏手机文字不被摄像头挖孔遮挡
+    val layoutDirection = LocalLayoutDirection.current
+    val rawCutoutTopPx = WindowInsets.displayCutout.getTop(density)
+    val rawCutoutLeftPx = WindowInsets.displayCutout.getLeft(density, layoutDirection)
+    val rawCutoutRightPx = WindowInsets.displayCutout.getRight(density, layoutDirection)
+    val cachedCutoutTopPx = remember { mutableIntStateOf(rawCutoutTopPx) }
+    val cachedCutoutLeftPx = remember { mutableIntStateOf(rawCutoutLeftPx) }
+    val cachedCutoutRightPx = remember { mutableIntStateOf(rawCutoutRightPx) }
+    if (rawCutoutTopPx > cachedCutoutTopPx.intValue) cachedCutoutTopPx.intValue = rawCutoutTopPx
+    if (rawCutoutLeftPx > cachedCutoutLeftPx.intValue) cachedCutoutLeftPx.intValue = rawCutoutLeftPx
+    if (rawCutoutRightPx > cachedCutoutRightPx.intValue) cachedCutoutRightPx.intValue = rawCutoutRightPx
+    // 顶部安全区 = max(状态栏, 挖孔)，全面屏挖孔手机文字不被遮挡
+    val statusBarPx = maxOf(cachedStatusBarPx.intValue, cachedCutoutTopPx.intValue)
+    val navBarPx = cachedNavBarPx.intValue           // 排版/渲染用（稳定）
+    val cutoutLeftPx = cachedCutoutLeftPx.intValue    // 页眉/工具栏左侧避让
+    val cutoutRightPx = cachedCutoutRightPx.intValue  // 页眉/工具栏右侧避让
     // padding 用 roundToPx 对齐 Compose 布局系统（dp→round(density*dp)→Int）
     val padHPx = with(density) { readingSettings.paddingH.dp.roundToPx() }
     val padVPx = with(density) { readingSettings.paddingV.dp.roundToPx() }
@@ -664,6 +686,8 @@ fun ReaderScreen(
                         pageStyle = pageStyle,
                         paddingH = readingSettings.paddingH,
                         paddingV = readingSettings.paddingV,
+                        statusBarPx = statusBarPx,
+                        navBarPx = navBarPx,
                         simFlip = simFlip,
                         isStreaming = state.isStreaming,
                         activeChapterId = state.activeChapterId
@@ -683,6 +707,8 @@ fun ReaderScreen(
                         palette = palette,
                         paddingH = readingSettings.paddingH,
                         paddingV = readingSettings.paddingV,
+                        statusBarPx = statusBarPx,
+                        navBarPx = navBarPx,
                         onJumpChapter = { id ->
                             pendingJumpChapter = id
                             vm.navigateTo(id, 0)
@@ -700,7 +726,11 @@ fun ReaderScreen(
                 activeChapterId = state.activeChapterId,
                 pagerState = pagerState,
                 palette = palette,
-                padH = readingSettings.paddingH
+                padH = readingSettings.paddingH,
+                statusBarPx = statusBarPx,
+                navBarPx = navBarPx,
+                cutoutLeftPx = cutoutLeftPx,
+                cutoutRightPx = cutoutRightPx
             )
         }
 
@@ -916,13 +946,15 @@ private fun ScrollReader(
     palette: ReaderPalette,
     paddingH: Int,
     paddingV: Int,
+    statusBarPx: Int,
+    navBarPx: Int,
     onJumpChapter: (Long) -> Unit
 ) {
     val density = LocalDensity.current
     val paragraphSpacingDp = with(density) { pageStyle.paragraphSpacingPx.toDp() }
-    // 边到边模式：内容区顶部/底部需扣除系统栏高度，避免首/末项被遮挡
-    val insetTopDp = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
-    val insetBottomDp = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    // 内容区顶部/底部扣除系统栏高度（用缓存值，沉浸式切换不触发滚动内容跳动）
+    val insetTopDp = with(density) { statusBarPx.toDp() }
+    val insetBottomDp = with(density) { navBarPx.toDp() }
     LazyColumn(
         state = scrollState,
         modifier = Modifier

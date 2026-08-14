@@ -161,6 +161,8 @@ fun ReaderPager(
     pageStyle: PageStyle,
     paddingH: Int,
     paddingV: Int,
+    statusBarPx: Int,
+    navBarPx: Int,
     simFlip: SimFlipState,
     isStreaming: Boolean = false,
     activeChapterId: Long? = null
@@ -188,6 +190,8 @@ fun ReaderPager(
                     pageStyle = pageStyle,
                     paddingH = paddingH,
                     paddingV = paddingV,
+                    statusBarPx = statusBarPx,
+                    navBarPx = navBarPx,
                     isStreaming = isStreaming,
                     activeChapterId = activeChapterId
                 )
@@ -258,6 +262,8 @@ fun PageRenderer(
     pageStyle: PageStyle,
     paddingH: Int,
     paddingV: Int,
+    statusBarPx: Int,
+    navBarPx: Int,
     isStreaming: Boolean = false,
     activeChapterId: Long? = null
 ) {
@@ -269,13 +275,13 @@ fun PageRenderer(
     val showEnStatusHint = mode == "en" && titleStatus != null && !chapterTranslated
 
     // 页内留白（与排版内容区尺寸一致；原 contentPadding 移入页面内部，避免分页间露边）
-    // 边到边模式：先扣除系统栏再留用户边距，保证内容不被状态栏/导航栏遮挡
+    // 系统栏用缓存 px 值（不随沉浸式切换变化），与排版几何保持一致，防止切换菜单时重排
     Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = paddingH.dp)
-            .statusBarsPadding()
-            .navigationBarsPadding()
+            .padding(top = with(density) { statusBarPx.toDp() })
+            .padding(bottom = with(density) { navBarPx.toDp() })
             .padding(vertical = paddingV.dp),
         contentAlignment = Alignment.TopStart
     ) {

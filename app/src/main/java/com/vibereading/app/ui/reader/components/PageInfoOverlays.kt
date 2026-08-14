@@ -7,9 +7,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.Chapter
@@ -50,9 +49,14 @@ fun PageInfoOverlays(
     activeChapterId: Long?,
     pagerState: PagerState,
     palette: ReaderPalette,
-    padH: Int
+    padH: Int,
+    statusBarPx: Int,
+    navBarPx: Int,
+    cutoutLeftPx: Int = 0,
+    cutoutRightPx: Int = 0
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
 
     // 时间 / 电量（对齐 Legado TimeBatteryReceiver）
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -85,6 +89,12 @@ fun PageInfoOverlays(
     val currentPage = window.pageInChapterOfPage(pagerState.currentPage)
     val tipColor = palette.bodyText.copy(alpha = 0.7f)
 
+    // 系统栏/挖孔用缓存值（不随沉浸式切换变化），与排版几何一致
+    val statusBarDp = with(density) { statusBarPx.toDp() }
+    val navBarDp = with(density) { navBarPx.toDp() }
+    val cutoutLeftDp = with(density) { cutoutLeftPx.toDp() }
+    val cutoutRightDp = with(density) { cutoutRightPx.toDp() }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // ── 页眉（左上）：章节号 · 章节名 ──
         // 标题本身已含章号前缀（如「第6章 终于死了」）时不重复拼章号；序章/楔子同理
@@ -99,8 +109,8 @@ fun PageInfoOverlays(
             maxLines = 1,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(start = padH.dp, top = 2.dp)
+                .padding(top = statusBarDp)
+                .padding(start = maxOf(padH.dp, cutoutLeftDp), top = 2.dp)
         )
 
         // ── 页脚（左下）：当前页 / 本章总页 ──
@@ -110,8 +120,8 @@ fun PageInfoOverlays(
             color = tipColor,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .navigationBarsPadding()
-                .padding(start = padH.dp, bottom = 2.dp)
+                .padding(bottom = navBarDp)
+                .padding(start = maxOf(padH.dp, cutoutLeftDp), bottom = 2.dp)
         )
 
         // ── 页脚（右下）：时间 + 电量 ──
@@ -121,8 +131,8 @@ fun PageInfoOverlays(
             color = tipColor,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(end = padH.dp, bottom = 2.dp)
+                .padding(bottom = navBarDp)
+                .padding(end = maxOf(padH.dp, cutoutRightDp), bottom = 2.dp)
         )
     }
 }

@@ -502,6 +502,7 @@ fun renderPageBitmap(
 
                 is PageUnit.Para -> {
                     val isLastPara = idx == lastParaIdx
+                    val hasTranslation = mode == "en" && unit.enText?.isNotBlank() == true
                     // lineHeightExtraPx > 0 时用调整后的 lineHeight 重新测量，
                     // 与 PageRenderer 的 Text(style=bodyStyle) 排版一致，避免卷页时行距跳变
                     // 约束含 minWidth（对齐 Compose Text 的 Modifier.fillMaxWidth()），
@@ -519,9 +520,34 @@ fun renderPageBitmap(
                             constraints = Constraints(minWidth = cw, maxWidth = cw)
                         )
                     } else unit.mainLayout
+                    // en 模式双语对：对齐 PageBilingualParagraph 的 4dp top/bottom padding
+                    if (hasTranslation) {
+                        cursorY += with(density) { 4.dp.toPx() }
+                    }
                     layout?.let {
                         drawLayout(canvas, it, bodyPaint, cursorY)
                         cursorY += it.size.height.toFloat()
+                    }
+                    if (hasTranslation) {
+                        cursorY += with(density) { 4.dp.toPx() }
+                        // 气泡指示器（对齐 PageBilingualParagraph 的 18×6dp 小矩形），
+                        // 仅首片段 pairHead 显示，续段不重复
+                        if (unit.pairHead) {
+                            val bubbleW = with(density) { 18.dp.toPx() }
+                            val bubbleH = with(density) { 6.dp.toPx() }
+                            val bubbleX = contentWidthPx.toFloat() - bubbleW - with(density) { 4.dp.toPx() }
+                            val bubbleY = cursorY - bubbleH - with(density) { 2.dp.toPx() }
+                            val bubbleColor = if (isDark) VibeColors.SiennaLight.copy(alpha = 0.25f)
+                                else VibeColors.Sienna.copy(alpha = 0.3f)
+                            val bubblePaint = Paint().apply {
+                                isAntiAlias = true
+                                color = bubbleColor
+                            }
+                            canvas.drawRect(
+                                Rect(bubbleX, bubbleY, bubbleX + bubbleW, bubbleY + bubbleH),
+                                bubblePaint
+                            )
+                        }
                     }
                     cursorY += if (unit.splitFirst || isLastPara) 0f else pageStyle.paragraphSpacingPx
                 }

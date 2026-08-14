@@ -112,6 +112,9 @@ class ChapterPaginator(
     var pages: List<TextPage> = emptyList()
         private set
 
+    /** en 模式双语对额外占位：PageBilingualParagraph 的 4.dp top + 4.dp bottom padding（px） */
+    private val bilingualPadPx = (2 * kotlin.math.round(4f * density)).toFloat()
+
     init {
         pages = layoutAll()
     }
@@ -202,14 +205,17 @@ class ChapterPaginator(
                         // en 模式：以英文译文排版分页（中文原文通过弹窗显示，不参与排版测量）
                         val en = if (isChunk) chunk!!.text
                             else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
+                        val hasTranslation = !isChunk && item.enText?.isNotBlank() == true
                         val head = if (isChunk) chunk!!.isHead else true
                         val enLayout = measureLayout(en, style.body)
                         val h = enLayout.size.height.toFloat()
+                        // 双语对额外占位：PageBilingualParagraph 的 4dp top + 4dp bottom padding
+                        val padPx = if (hasTranslation) bilingualPadPx else 0f
                         val remaining = contentHeightPx - used
-                        if (h > contentHeightPx) {
+                        if (h + padPx > contentHeightPx) {
                             // 单段超高：按行切分英文，不丢内容
-                            if (units.isNotEmpty() && remaining < enLayout.getLineBottom(0)) pageDone()
-                            val bound = (contentHeightPx - used)
+                            if (units.isNotEmpty() && remaining < enLayout.getLineBottom(0) + padPx) pageDone()
+                            val bound = (contentHeightPx - used - padPx)
                                 .coerceAtLeast(enLayout.getLineBottom(0))
                             val (c1, c2) = splitLayout(en, enLayout, bound)
                             val l1 = if (c1 != en) measureLayout(c1, style.body) else enLayout
@@ -219,7 +225,7 @@ class ChapterPaginator(
                                 lineCount = l1.lineCount,
                                 mainLayout = l1
                             )
-                            used += l1.size.height.toFloat()
+                            used += l1.size.height.toFloat() + padPx
                             if (c2.isNotBlank()) {
                                 pending = PendingChunk(item, c2, isHead = false)
                                 pageDone()
@@ -227,7 +233,7 @@ class ChapterPaginator(
                                 pos++
                             }
                         } else {
-                            if (units.isNotEmpty() && h > remaining) {
+                            if (units.isNotEmpty() && h + padPx > remaining) {
                                 pageDone() // 整段移到下一页
                                 continue
                             }
@@ -237,7 +243,7 @@ class ChapterPaginator(
                                 lineCount = enLayout.lineCount,
                                 mainLayout = enLayout
                             )
-                            used += h + style.paragraphSpacingPx
+                            used += h + padPx + style.paragraphSpacingPx
                             pos++
                         }
                     }

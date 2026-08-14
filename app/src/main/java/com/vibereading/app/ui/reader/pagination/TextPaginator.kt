@@ -47,7 +47,7 @@ data class PageStyle(
             // 首行缩进：以正文字号换算绝对 sp 值，卷标/标题字号不同时仍视觉对齐
             // （em 单位相对于当前字号，标题大字号 2em > 正文 2em > 卷标小字号 2em，不对齐）
             val indentSp = settings.indentEm * settings.fontSize
-            val bodyIndent = if (mode == "zh" && indentSp > 0f) TextIndent(
+            val bodyIndent = if (indentSp > 0f) TextIndent(
                 firstLine = indentSp.sp
             ) else null
             // 卷标/标题缩进与正文视觉对齐（用正文字号换算的绝对值，非各自字号的 em）

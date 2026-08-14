@@ -18,8 +18,8 @@ val debugLlmModel = localProps.getProperty("llm.model", "")
 // ── Release 签名配置：优先读环境变量（CI），否则读 local.properties（本地） ──
 val keystorePath = System.getenv("KEYSTORE_PATH") ?: localProps.getProperty("keystore.path", "")
 val keystorePassword = System.getenv("KEYSTORE_PASSWORD") ?: localProps.getProperty("keystore.password", "")
-val keyAlias = System.getenv("KEY_ALIAS") ?: localProps.getProperty("key.alias", "")
-val keyPassword = System.getenv("KEY_PASSWORD") ?: localProps.getProperty("key.password", "")
+val keyAliasEnv = System.getenv("KEY_ALIAS") ?: localProps.getProperty("key.alias", "")
+val keyPasswordEnv = System.getenv("KEY_PASSWORD") ?: localProps.getProperty("key.password", "")
 
 android {
     namespace = "com.vibereading.app"
@@ -44,11 +44,13 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePath.isNotEmpty()) {
-                storeFile = file(keystorePath)
+            if (keystorePath.isNotEmpty() && keystorePassword.isNotEmpty()
+                && keyAliasEnv.isNotEmpty() && keyPasswordEnv.isNotEmpty()
+            ) {
+                storeFile = rootProject.file(keystorePath)
                 storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+                keyAlias = keyAliasEnv
+                keyPassword = keyPasswordEnv
             }
         }
     }

@@ -44,13 +44,15 @@ data class PageStyle(
         /** 由 ReadingSettings 构造排版样式（分页与滚动共用同一口径，对齐 Legado 微信读书预设）。 */
         fun of(settings: ReadingSettings, density: Density, mode: String = "zh"): PageStyle {
             val family = fontFamilyOf(settings.fontFamily)
-            // zh 模式：首行缩进；en 模式：正文不缩进（英文用段间距区分段落）
-            val bodyIndent = if (mode == "zh" && settings.indentEm > 0f) TextIndent(
-                firstLine = settings.indentEm.em
+            // 首行缩进：以正文字号换算绝对 sp 值，卷标/标题字号不同时仍视觉对齐
+            // （em 单位相对于当前字号，标题大字号 2em > 正文 2em > 卷标小字号 2em，不对齐）
+            val indentSp = settings.indentEm * settings.fontSize
+            val bodyIndent = if (mode == "zh" && indentSp > 0f) TextIndent(
+                firstLine = indentSp.sp
             ) else null
-            // 中文原文弹窗始终保留缩进（不影响排版测量）
-            val cnIndent = if (settings.indentEm > 0f) TextIndent(
-                firstLine = settings.indentEm.em
+            // 卷标/标题缩进与正文视觉对齐（用正文字号换算的绝对值，非各自字号的 em）
+            val cnIndent = if (indentSp > 0f) TextIndent(
+                firstLine = indentSp.sp
             ) else null
             val align = if (settings.justify) TextAlign.Justify else TextAlign.Start
             return PageStyle(
@@ -63,11 +65,11 @@ data class PageStyle(
                 textAlign = align
             ),
             cn = TextStyle(
-                fontFamily = family,
-                fontSize = (settings.fontSize * 0.875).sp,
-                lineHeight = (settings.fontSize * 1.5 + settings.lineSpacing).sp,
-                letterSpacing = settings.letterSpacing.em,
-                textIndent = cnIndent,
+                    fontFamily = family,
+                    fontSize = (settings.fontSize * 0.875).sp,
+                    lineHeight = (settings.fontSize * 1.5 + settings.lineSpacing).sp,
+                    letterSpacing = settings.letterSpacing.em,
+                    textIndent = cnIndent,
                     textAlign = align
                 ),
                 title = TextStyle(
@@ -75,7 +77,7 @@ data class PageStyle(
                     fontSize = (settings.fontSize + 4).sp,
                     lineHeight = ((settings.fontSize + 4) * 1.3f).sp,
                     fontWeight = FontWeight.Bold,
-                    textIndent = cnIndent  // 章节标题与卷标/正文首行对齐
+                    textIndent = cnIndent  // 与卷标/正文首行对齐
                 ),
                 paragraphSpacingPx = with(density) { settings.paragraphSpacing.dp.toPx() },
                 bottomJustify = settings.bottomJustify,

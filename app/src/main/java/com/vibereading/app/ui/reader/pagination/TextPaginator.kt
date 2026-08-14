@@ -105,7 +105,8 @@ class ChapterPaginator(
     private val mode: String,            // "zh" | "en"
     private val contentWidthPx: Float,
     private val contentHeightPx: Float,
-    private val measurer: TextMeasurer
+    private val measurer: TextMeasurer,
+    private val density: Float           // display density，用于 dp→px 转换
 ) {
 
     var pages: List<TextPage> = emptyList()
@@ -293,27 +294,25 @@ class ChapterPaginator(
         return if (c1.isBlank()) text to "" else c1 to c2
     }
 
-    // ── 测量（真实页宽约束，修复旧实现无约束测量） ──
+    // ── 测量（真实页宽约束，minWidth=maxWidth 对齐 Compose Text 的 fillMaxWidth） ──
 
-    private fun measureLayout(text: String, textStyle: TextStyle): TextLayoutResult =
-        measurer.measure(
+    private fun measureLayout(text: String, textStyle: TextStyle): TextLayoutResult {
+        val cw = contentWidthPx.toInt().coerceAtLeast(1)
+        return measurer.measure(
             text = AnnotatedString(text),
             style = textStyle,
-            constraints = Constraints(maxWidth = contentWidthPx.toInt().coerceAtLeast(1))
+            constraints = Constraints(minWidth = cw, maxWidth = cw)
         )
+    }
 
-    /** 标题块高度：顶部留白 + 卷名 + 章节名 + 徽章（与仿真位图渲染一致）。 */
+    /** 标题块高度：顶部留白 + 卷名 + 章节名（与 PageTitleBlock 一致，无徽章）。 */
     private fun measureTitleHeight(sectionLayout: TextLayoutResult?, titleLayout: TextLayoutResult?): Float {
-        val sectionH = sectionLayout?.size?.height?.toFloat()?.plus(CN_GAP_PX) ?: 0f
+        val sectionH = sectionLayout?.size?.height?.toFloat()?.plus(8f * density) ?: 0f  // section→title 间距 = 8dp
         val titleH = titleLayout?.size?.height?.toFloat() ?: 0f
-        val badgeH = style.body.fontSize.value * 2.2f
-        return 24f + sectionH + titleH + 12f + badgeH + style.paragraphSpacingPx
+        return 24f * density + sectionH + titleH + style.paragraphSpacingPx * 0.5f  // 顶部留白 = 24dp
     }
 
     companion object {
-        // 中文原文与英文间的间距估算（px，近似渲染的 6.dp，±几像素无碍）
-        // 仅用于标题块卷名与章名间距
-        private const val CN_GAP_PX = 6f
     }
 }
 

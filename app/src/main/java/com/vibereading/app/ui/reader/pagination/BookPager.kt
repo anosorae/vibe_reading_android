@@ -22,6 +22,9 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -444,10 +447,12 @@ fun renderPageBitmap(
     viewHeightPx: Int,
     bgColorArgb: Int,
     sectionColorArgb: Int,
+    contentWidthPx: Int,     // 排版内容区宽度（与 ChapterPaginator 的 contentWidthPx 一致）
     padHPx: Int = 0,
     padVPx: Int = 0,
     statusBarPx: Int = 0,
-    navBarPx: Int = 0
+    navBarPx: Int = 0,
+    measurer: TextMeasurer? = null
 ): Bitmap? {
     val units = window.pageUnits(page)
     if (units.isEmpty()) return null
@@ -493,22 +498,30 @@ fun renderPageBitmap(
                         drawLayout(canvas, layout, titlePaint, cursorY)
                         cursorY += layout.size.height.toFloat()
                     }
-                    cursorY += with(density) { 12.dp.toPx() }
-                    // 章节状态徽章（与 PageTitleBlock 的 ReaderStatusBadge 近似）
-                    val badgePaint = Paint().apply {
-                        isAntiAlias = true
-                        color = VibeColors.Sage.copy(alpha = 0.15f)
-                    }
-                    canvas.drawRect(Rect(0f, cursorY, 90f, cursorY + 26f), badgePaint)
-                    cursorY += 26f + 24f
                 }
 
                 is PageUnit.Para -> {
                     val isLastPara = idx == lastParaIdx
-                    // mainLayout 已由排版器按 mode 测量（zh=中文 / en=英文），直接渲染
-                    unit.mainLayout?.let { layout ->
-                        drawLayout(canvas, layout, bodyPaint, cursorY)
-                        cursorY += layout.size.height.toFloat()
+                    // lineHeightExtraPx > 0 时用调整后的 lineHeight 重新测量，
+                    // 与 PageRenderer 的 Text(style=bodyStyle) 排版一致，避免卷页时行距跳变
+                    // 约束含 minWidth（对齐 Compose Text 的 Modifier.fillMaxWidth()），
+                    // 保证 TextAlign.Justify 等对齐方式结果一致
+                    val layout = if (unit.lineHeightExtraPx > 0f && measurer != null) {
+                        val adjustedStyle = pageStyle.body.copy(
+                            lineHeight = (pageStyle.body.lineHeight.value +
+                                with(density) { unit.lineHeightExtraPx.toSp().value }).sp
+                        )
+                        val text = if (mode == "zh") unit.cnText else (unit.enText ?: unit.cnText)
+                        val cw = contentWidthPx.coerceAtLeast(1)
+                        measurer.measure(
+                            text = AnnotatedString(text),
+                            style = adjustedStyle,
+                            constraints = Constraints(minWidth = cw, maxWidth = cw)
+                        )
+                    } else unit.mainLayout
+                    layout?.let {
+                        drawLayout(canvas, it, bodyPaint, cursorY)
+                        cursorY += it.size.height.toFloat()
                     }
                     cursorY += if (unit.splitFirst || isLastPara) 0f else pageStyle.paragraphSpacingPx
                 }

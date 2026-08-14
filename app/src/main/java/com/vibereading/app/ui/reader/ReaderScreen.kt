@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -150,19 +151,22 @@ fun ReaderScreen(
         )
     }
     // 页几何：内容区 = 屏尺寸 − 页边距（与 BookPager 渲染内边距严格一致，排版所见即所排）
-    val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
-    val screenHeightPx = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    // 屏幕像素取 displayMetrics 实际值（不通过 screenWidthDp*density 转换，
+    // 因 screenWidthDp 为截断整数，411dp*2.625=1078.875→round=1079≠1080 实际宽度，
+    // 差 1px 导致排版区窄 1px → 仿真翻页位图与 Compose 页换行不一致 → 文字重排抖动）
+    val displayMetrics = LocalContext.current.resources.displayMetrics
+    val screenWidthPx = displayMetrics.widthPixels
+    val screenHeightPx = displayMetrics.heightPixels
     // 边到边模式下系统栏占据像素高度，排版与渲染均需扣除（否则末行被导航栏遮挡）
     val statusBarPx = WindowInsets.systemBars.getTop(density)
     val navBarPx = WindowInsets.systemBars.getBottom(density)
-    val padHPx = with(density) { readingSettings.paddingH.dp.toPx() }
-    val padVPx = with(density) { readingSettings.paddingV.dp.toPx() }
-    // 向下取整对齐 Compose 整像素布局：screenHeightDp 为 Int 经 dp→px 转换可能带小数，
-    // 而 Compose Layout 系统以整像素为边界；排版区若比渲染区多零点几像素，
-    // Column(fillMaxSize) 会截断末行
-    val contentWidthPx = kotlin.math.floor(screenWidthPx - padHPx * 2).coerceAtLeast(0f)
-    val contentHeightPx = kotlin.math.floor(screenHeightPx - statusBarPx.toFloat() - navBarPx.toFloat() - padVPx * 2)
-        .coerceAtLeast(0f)
+    // padding 用 roundToPx 对齐 Compose 布局系统（dp→round(density*dp)→Int）
+    val padHPx = with(density) { readingSettings.paddingH.dp.roundToPx() }
+    val padVPx = with(density) { readingSettings.paddingV.dp.roundToPx() }
+    // 内容区 = 屏幕整像素 − 两侧边距整像素（Int 运算，与 Compose 约束一致）；
+    // Compose Layout 系统对每个 padding 值做 roundToPx 后相减，此计算复现相同逻辑
+    val contentWidthPx = (screenWidthPx - padHPx * 2).coerceAtLeast(0).toFloat()
+    val contentHeightPx = (screenHeightPx - statusBarPx - navBarPx - padVPx * 2).coerceAtLeast(0).toFloat()
 
     // 窗口 key 含 isPagerMode/页边距：滚动↔分页切换、边距调整时重建窗口并重新排版
     // （否则旧窗口状态残留，导致切换不生效/边距不生效）
@@ -176,7 +180,8 @@ fun ReaderScreen(
             contentWidthPx = contentWidthPx,
             contentHeightPx = contentHeightPx,
             measurer = measurer,
-            backgroundMeasurer = { bgMeasurer }
+            backgroundMeasurer = { bgMeasurer },
+            displayDensity = density.density
         )
     }
     // 仿真卷页尺寸 = 全屏（对齐 Legado：位图/覆盖层/手势均使用全屏坐标系）
@@ -236,19 +241,24 @@ fun ReaderScreen(
 
     /** 卷页快照对（对齐 Legado setBitmap）：curBitmap=当前页, targetBitmap=目标页。 */
     fun curlBitmaps(cur: Int, target: Int): Pair<Bitmap, Bitmap>? {
-        val w = screenWidthPx.toInt()
-        val h = screenHeightPx.toInt()
+        // screenWidthPx/padHPx 已是 roundToPx 的 Int，直接传入（不再 .toInt() 截断）
+        val w = screenWidthPx
+        val h = screenHeightPx
         val curBmp = renderPageBitmap(
             window, cur, state.mode, isDark, pageStyle, density, w, h,
             bgColor.toArgb(), accentColor.toArgb(),
-            padHPx = padHPx.toInt(), padVPx = padVPx.toInt(),
-            statusBarPx = statusBarPx, navBarPx = navBarPx
+            contentWidthPx = contentWidthPx.toInt(),
+            padHPx = padHPx, padVPx = padVPx,
+            statusBarPx = statusBarPx, navBarPx = navBarPx,
+            measurer = measurer
         ) ?: return null
         val targetBmp = renderPageBitmap(
             window, target, state.mode, isDark, pageStyle, density, w, h,
             bgColor.toArgb(), accentColor.toArgb(),
-            padHPx = padHPx.toInt(), padVPx = padVPx.toInt(),
-            statusBarPx = statusBarPx, navBarPx = navBarPx
+            contentWidthPx = contentWidthPx.toInt(),
+            padHPx = padHPx, padVPx = padVPx,
+            statusBarPx = statusBarPx, navBarPx = navBarPx,
+            measurer = measurer
         )
         if (targetBmp == null) { curBmp.recycle(); return null }
         return curBmp to targetBmp
@@ -262,8 +272,8 @@ fun ReaderScreen(
             scope.launch { if (pagerState.currentPage != next) pagerState.scrollToPage(next) }
             return
         }
-        val wf = screenWidthPx
-        val hf = screenHeightPx
+        val wf = screenWidthPx.toFloat()
+        val hf = screenHeightPx.toFloat()
         simFlip.curl.setViewSize(wf, hf)
         simFlip.curBitmap = pair.first
         simFlip.targetBitmap = pair.second
@@ -331,8 +341,8 @@ fun ReaderScreen(
     /** 仿真卷页抬手动画（对齐 Legado SimulationPageDelegate.onAnimStart：cancel 回弹 / complete 完成）。 */
     fun simFlipAnimStart(cur: Int, target: Int) {
         simFlip.isRunning = true
-        val wf = screenWidthPx
-        val hf = screenHeightPx
+        val wf = screenWidthPx.toFloat()
+        val hf = screenHeightPx.toFloat()
         scope.launch {
             val startTouchX = simFlip.touchX
             val startTouchY = simFlip.touchY

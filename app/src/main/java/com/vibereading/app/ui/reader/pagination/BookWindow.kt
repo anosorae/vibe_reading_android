@@ -28,7 +28,8 @@ class BookWindow(
     private val contentWidthPx: Float,
     private val contentHeightPx: Float,
     private val measurer: TextMeasurer,           // 主线程测量
-    private val backgroundMeasurer: () -> TextMeasurer // 后台预载测量（每章独立实例）
+    private val backgroundMeasurer: () -> TextMeasurer, // 后台预载测量（每章独立实例）
+    private val displayDensity: Float             // 用于 dp→px 转换
 ) {
 
     // 已排版章节：chapterId -> paginator（窗口章 + 预载外缘章）
@@ -118,7 +119,8 @@ class BookWindow(
             mode = mode,
             contentWidthPx = contentWidthPx,
             contentHeightPx = contentHeightPx,
-            measurer = m
+            measurer = m,
+            density = displayDensity
         )
     }
 

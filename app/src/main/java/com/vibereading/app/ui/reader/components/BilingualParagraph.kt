@@ -13,9 +13,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.pagination.PageStyle
@@ -100,8 +104,20 @@ private fun BoxScope.SourceBubble(
 
     if (showPopup) {
         Popup(
-            alignment = Alignment.TopEnd,
-            offset = IntOffset(0, with(density) { (-4).dp.roundToPx() }),
+            popupPositionProvider = object : PopupPositionProvider {
+                override fun calculatePosition(
+                    anchorBounds: IntRect,
+                    windowSize: IntSize,
+                    layoutDirection: LayoutDirection,
+                    popupSize: IntSize
+                ): IntOffset {
+                    // 弹窗右上角对齐段落右下角（气泡位置），向左下展开，不遮挡译文
+                    val gap = with(density) { 4.dp.roundToPx() }
+                    val x = anchorBounds.right - popupSize.width
+                    val y = anchorBounds.bottom + gap
+                    return IntOffset(x, y)
+                }
+            },
             onDismissRequest = { showPopup = false },
             properties = PopupProperties(focusable = true)
         ) {

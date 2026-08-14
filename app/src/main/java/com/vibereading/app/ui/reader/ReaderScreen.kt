@@ -1259,7 +1259,7 @@ private fun BottomControlBar(
                     onRetry,
                     enabled = isRetryEnabled
                 )
-                BottomAction("设置", Icons.Filled.Settings, labelColor, onOpenSettings)
+                BottomAction("设置", Icons.Filled.Settings, accentColor, onOpenSettings)
             }
         }
     }

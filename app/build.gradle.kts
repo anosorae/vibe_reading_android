@@ -15,6 +15,12 @@ val debugLlmApiBase = localProps.getProperty("llm.api.base", "")
 val debugLlmApiKey = localProps.getProperty("llm.api.key", "")
 val debugLlmModel = localProps.getProperty("llm.model", "")
 
+// ── Release 签名配置：优先读环境变量（CI），否则读 local.properties（本地） ──
+val keystorePath = System.getenv("KEYSTORE_PATH") ?: localProps.getProperty("keystore.path", "")
+val keystorePassword = System.getenv("KEYSTORE_PASSWORD") ?: localProps.getProperty("keystore.password", "")
+val keyAlias = System.getenv("KEY_ALIAS") ?: localProps.getProperty("key.alias", "")
+val keyPassword = System.getenv("KEY_PASSWORD") ?: localProps.getProperty("key.password", "")
+
 android {
     namespace = "com.vibereading.app"
     compileSdk = 35
@@ -36,6 +42,17 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            if (keystorePath.isNotEmpty()) {
+                storeFile = file(keystorePath)
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -43,6 +60,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystorePath.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

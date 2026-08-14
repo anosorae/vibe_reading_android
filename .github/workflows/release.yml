@@ -36,9 +36,6 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug
-
       - name: Run Unit Tests
         run: ./gradlew testDebugUnitTest
 
@@ -52,4 +49,3 @@ jobs:
             app/build/outputs/apk/release/app-x86_64-release.apk
             app/build/outputs/apk/release/app-x86-release.apk
             app/build/outputs/apk/release/app-universal-release.apk
-            app/build/outputs/apk/debug/app-debug.apk

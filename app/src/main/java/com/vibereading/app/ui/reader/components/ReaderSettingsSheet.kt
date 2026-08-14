@@ -3,7 +3,6 @@ package com.vibereading.app.ui.reader.components
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,8 +27,7 @@ import com.vibereading.app.ui.theme.VibeColors
 
 /**
  * 阅读设置面板（对齐 Legado ReadStyleDialog 的信息密度）：
- * 翻页类型一行 / 字体（系统字体 + 自定义导入）/ 三个常用滑块 / 背景色一行，
- * 边距、字距、缩进、两端对齐收进「高级选项」折叠组，默认收起。
+ * 背景色一行 / 翻页类型一行 / 字体（系统字体 + 自定义导入）/ 常用滑块 / 排版滑块与开关，
  * 所有改动立即生效并经 onUpdate 持久化。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,8 +52,6 @@ fun ReaderSettingsSheet(
         ReadingSettings.FLIP_NO_ANIM to "无动画",
         ReadingSettings.FLIP_SIMULATION to "仿真"
     )
-    var advancedVisible by remember { mutableStateOf(false) }
-
     // 自定义字体：SAF 选择 TTF/OTF，持久化 content:// URI（跨重启恢复）
     val context = LocalContext.current
     val fontLauncher = rememberLauncherForActivityResult(
@@ -88,17 +84,44 @@ fun ReaderSettingsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        scrimColor = Color.Transparent
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.5f)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("阅读设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            // ── 背景色（一行） ──
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("背景", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                bgPresets.forEachIndexed { index, color ->
+                    Box(
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .then(
+                                if (settings.bgColorIndex == index) {
+                                    Modifier.border(2.dp, accentColor, CircleShape)
+                                } else {
+                                    Modifier.border(1.dp, VibeColors.Sand, CircleShape)
+                                }
+                            )
+                            .clickable { onUpdate(settings.copy(bgColorIndex = index)) }
+                    )
+                }
+            }
 
             // ── 翻页类型（一行 5 项） ──
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -181,96 +204,73 @@ fun ReaderSettingsSheet(
                 accentColor = accentColor
             ) { onUpdate(settings.copy(paragraphSpacing = it.toInt())) }
 
-            // ── 背景色（一行） ──
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("背景", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.weight(1f))
-                bgPresets.forEachIndexed { index, color ->
-                    Box(
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(color)
-                            .then(
-                                if (settings.bgColorIndex == index) {
-                                    Modifier.border(2.dp, accentColor, CircleShape)
-                                } else {
-                                    Modifier.border(1.dp, VibeColors.Sand, CircleShape)
-                                }
-                            )
-                            .clickable { onUpdate(settings.copy(bgColorIndex = index)) }
-                    )
-                }
-            }
+            // ── 排版滑块（左右边距 / 上下边距 / 字间距 / 首行缩进） ──
+            SettingSliderRow(
+                title = "左右边距",
+                value = settings.paddingH.toFloat(),
+                display = "${settings.paddingH}dp",
+                range = 4f..100f,
+                accentColor = accentColor
+            ) { onUpdate(settings.copy(paddingH = it.toInt())) }
 
-            // ── 高级选项（折叠组） ──
+            SettingSliderRow(
+                title = "上下边距",
+                value = settings.paddingV.toFloat(),
+                display = "${settings.paddingV}dp",
+                range = 4f..100f,
+                accentColor = accentColor
+            ) { onUpdate(settings.copy(paddingV = it.toInt())) }
+
+            SettingSliderRow(
+                title = "字间距",
+                value = settings.letterSpacing,
+                display = String.format("%.2f", settings.letterSpacing),
+                range = -0.5f..0.5f,
+                accentColor = accentColor,
+                step = 0.01f
+            ) { onUpdate(settings.copy(letterSpacing = it)) }
+
+            SettingSliderRow(
+                title = "首行缩进",
+                value = settings.indentEm,
+                display = String.format("%.1f em", settings.indentEm),
+                range = 0f..4f,
+                accentColor = accentColor,
+                step = 0.5f
+            ) { onUpdate(settings.copy(indentEm = it)) }
+
+            // ── 两端对齐 ──
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { advancedVisible = !advancedVisible }
-                    .padding(vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    if (advancedVisible) "▾ 高级选项" else "▸ 高级选项",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = accentColor
+                Column {
+                    Text("两端对齐", style = MaterialTheme.typography.bodyMedium)
+                    Text("英文排版时调整词间距", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(
+                    checked = settings.justify,
+                    onCheckedChange = { onUpdate(settings.copy(justify = it)) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
                 )
             }
-            AnimatedVisibility(visible = advancedVisible) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    SettingSliderRow(
-                        title = "左右边距",
-                        value = settings.paddingH.toFloat(),
-                        display = "${settings.paddingH}dp",
-                        range = 4f..100f,
-                        accentColor = accentColor
-                    ) { onUpdate(settings.copy(paddingH = it.toInt())) }
 
-                    SettingSliderRow(
-                        title = "上下边距",
-                        value = settings.paddingV.toFloat(),
-                        display = "${settings.paddingV}dp",
-                        range = 4f..100f,
-                        accentColor = accentColor
-                    ) { onUpdate(settings.copy(paddingV = it.toInt())) }
-
-                    SettingSliderRow(
-                        title = "字间距",
-                        value = settings.letterSpacing,
-                        display = String.format("%.1f", settings.letterSpacing),
-                        range = 0f..0.5f,
-                        accentColor = accentColor,
-                        step = 0.05f
-                    ) { onUpdate(settings.copy(letterSpacing = it)) }
-
-                    SettingSliderRow(
-                        title = "首行缩进",
-                        value = settings.indentEm,
-                        display = String.format("%.1f em", settings.indentEm),
-                        range = 0f..4f,
-                        accentColor = accentColor,
-                        step = 0.5f
-                    ) { onUpdate(settings.copy(indentEm = it)) }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("两端对齐", style = MaterialTheme.typography.bodyMedium)
-                        Switch(
-                            checked = settings.justify,
-                            onCheckedChange = { onUpdate(settings.copy(justify = it)) },
-                            colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
-                        )
-                    }
+            // ── 单手模式（分页模式生效） ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("单手模式", style = MaterialTheme.typography.bodyMedium)
+                    Text("分页模式下点击左右两侧翻下一页", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                Switch(
+                    checked = settings.oneHandMode,
+                    onCheckedChange = { onUpdate(settings.copy(oneHandMode = it)) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                )
             }
         }
     }

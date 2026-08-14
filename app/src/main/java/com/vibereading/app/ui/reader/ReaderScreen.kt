@@ -46,6 +46,7 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.BilingualParagraph
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
+import com.vibereading.app.ui.reader.components.PageInfoOverlays
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
 import com.vibereading.app.ui.reader.components.parseBilingualParagraphs
 import com.vibereading.app.ui.reader.components.splitParagraphs
@@ -237,11 +238,14 @@ fun ReaderScreen(
 
         // 对齐 Legado nextPageByAnim / prevPageByAnim：起点 + 角落
         if (goingNext) {
-            // NEXT：右半屏点击 → calcCornerXY 已设 cornerX=wf, cornerY=hf；不覆盖
+            // NEXT：卷页角固定右边缘（cornerX=wf）。DOWN 时 calcCornerXY 按点击 x 算角：
+            // 点左侧（含单手模式翻下一页）会得到 cornerX=0（左边缘），导致「翻下一页」
+            // 却从左边缘卷起、姿态像翻上一页——强制右边缘与右侧点击动画完全一致；
+            // cornerY 保留点击高度（上半屏右上 / 下半屏右下，与右侧点击同规则）
+            simFlip.cornerX = wf
             val startY = if (simFlip.startY > hf / 2) hf * 0.9f else 1f
             simFlip.startX = wf * 0.9f
             simFlip.startY = startY
-            // cornerX/cornerY 保留 calcCornerXY 的值（右半屏点击时 cornerX=wf）
             simFlip.touchX = wf * 0.9f
             simFlip.touchY = startY
         } else {
@@ -448,6 +452,10 @@ fun ReaderScreen(
     val overlayVisible by rememberUpdatedState(
         state.toolbarVisible || state.catalogVisible || state.settingsVisible
     )
+    // 单手模式追踪：pointerInput 块内读取外部状态必须经 rememberUpdatedState 拿最新值
+    // （闭包是手势协程启动时快照的旧引用，直接读 readingSettings.oneHandMode 会读到
+    //  开启设置前的旧值导致开关无效；与 overlayVisible 同款模式，不加入 key）
+    val oneHandMode by rememberUpdatedState(readingSettings.oneHandMode)
 
     Box(
         modifier = Modifier
@@ -490,8 +498,10 @@ fun ReaderScreen(
                                     if (overlayVisible) {
                                         vm.dismissAllOverlays()
                                     } else {
+                                        // 单手模式：左 1/3 点击也翻下一页（左手拇指够不到右侧）
+                                        val leftGoNext = oneHandMode
                                         when {
-                                            x < third -> goPage(pagerState.currentPage - 1)
+                                            x < third -> goPage(pagerState.currentPage + if (leftGoNext) 1 else -1)
                                             x < third * 2 -> vm.toggleToolbar()
                                             else -> goPage(pagerState.currentPage + 1)
                                         }
@@ -563,8 +573,10 @@ fun ReaderScreen(
                                 // 浮层可见时：任意区域点击均关闭浮层，不翻页
                                 vm.dismissAllOverlays()
                             } else if (isPagerMode) {
+                                // 单手模式：左 1/3 点击也翻下一页（单手拇指够不到左侧）
+                                val leftGoNext = oneHandMode
                                 when {
-                                    x < third -> goPage(pagerState.currentPage - 1)
+                                    x < third -> goPage(pagerState.currentPage + if (leftGoNext) 1 else -1)
                                     x < third * 2 -> vm.toggleToolbar()
                                     else -> goPage(pagerState.currentPage + 1)
                                 }
@@ -620,6 +632,18 @@ fun ReaderScreen(
                     )
                 }
             }
+        }
+
+        // ── 页眉/页脚（视觉覆盖层，仅分页模式；浮层打开 / 翻译中隐藏，避免与顶栏/底部栏重叠）──
+        if (isPagerMode && window.pageCount > 0 && !overlayVisible && !state.isStreaming) {
+            PageInfoOverlays(
+                window = window,
+                chapters = state.chapters,
+                activeChapterId = state.activeChapterId,
+                pagerState = pagerState,
+                palette = palette,
+                padH = readingSettings.paddingH
+            )
         }
 
         // ── Top toolbar (no catalog button — directory lives in the bottom bar) ──
@@ -810,8 +834,9 @@ private fun List<ScrollChunk>.indexInChunks(chapterId: Long?): Int? {
 /** 章节号正则：提取「第N章/回/节/卷」中的数字。 */
 private val chapterNumRegex = Regex("""^第(\d+)[章回节卷]""")
 
-/** 底部栏章节标签：序章/楔子显示原名，其余取标题里的章号（避免把序章算成第1章导致整体偏移）。 */
-private fun chapterLabel(chapters: List<Chapter>, index: Int): String {
+/** 底部栏章节标签：序章/楔子显示原名，其余取标题里的章号（避免把序章算成第1章导致整体偏移）。
+ *  internal 供 PageInfoOverlays 页眉复用（同一口径，不另起炉灶）。 */
+internal fun chapterLabel(chapters: List<Chapter>, index: Int): String {
     if (index !in chapters.indices) return "—"
     val title = chapters[index].title
     return when {
@@ -1033,12 +1058,14 @@ private fun BottomControlBar(
                 .fillMaxWidth()
                 .navigationBarsPadding()
         ) {
-            // Row 1: prev | chapter slider | next（三列等宽对齐）
+            // Row 1: prev | chapter slider | next
+            // 底部对齐 + Slider 与按钮等高（40dp）：Slider 中心线与按钮中心线精确重合；
+            // 若 Slider 保持 28dp，底边对齐后其中心仍低于按钮中心（视觉错位）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Bottom
             ) {
                 TextButton(
                     onClick = onPrev,
@@ -1060,25 +1087,33 @@ private fun BottomControlBar(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Slider(
-                            value = sliderValue.toFloat(),
-                            onValueChange = {
-                                dragging = true
-                                dragChapter = it.roundToInt().coerceIn(0, chapters.size - 1)
-                            },
-                            onValueChangeFinished = {
-                                dragging = false
-                                if (dragChapter != chapterIndex) {
-                                    onChapterJump(chapters[dragChapter].id)
-                                }
-                            },
-                            valueRange = 0f..(chapters.size - 1).coerceAtLeast(0).toFloat(),
-                            colors = SliderDefaults.colors(
-                                thumbColor = accentColor,
-                                activeTrackColor = accentColor
-                            ),
-                            modifier = Modifier.fillMaxWidth().height(28.dp)
-                        )
+                        // Slider 外层 Box 撑高到与 TextButton 容器等高（48dp）：底部对齐后
+                        // Box 中心线 = 按钮容器中心线；Slider 保持 28dp 紧凑高度在 Box 内居中，
+                        // 触摸热区不大面积覆盖（Box 只是透明布局占位，不拦截触摸）
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Slider(
+                                value = sliderValue.toFloat(),
+                                onValueChange = {
+                                    dragging = true
+                                    dragChapter = it.roundToInt().coerceIn(0, chapters.size - 1)
+                                },
+                                onValueChangeFinished = {
+                                    dragging = false
+                                    if (dragChapter != chapterIndex) {
+                                        onChapterJump(chapters[dragChapter].id)
+                                    }
+                                },
+                                valueRange = 0f..(chapters.size - 1).coerceAtLeast(0).toFloat(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = accentColor,
+                                    activeTrackColor = accentColor
+                                ),
+                                modifier = Modifier.fillMaxWidth().height(28.dp)
+                            )
+                        }
                     }
                 }
                 TextButton(

@@ -75,6 +75,7 @@ class SettingsRepository(private val context: Context) {
         val INDENT_EM = floatPreferencesKey("indent_em")
         val TITLE_MODE = intPreferencesKey("title_mode")
         val BOTTOM_JUSTIFY = booleanPreferencesKey("bottom_justify")
+        val ONE_HAND_MODE = booleanPreferencesKey("one_hand_mode")
         val CUSTOM_FONT_URI = stringPreferencesKey("custom_font_uri")
         val NIGHT_MODE = booleanPreferencesKey("night_mode")
     }
@@ -96,6 +97,7 @@ class SettingsRepository(private val context: Context) {
                 indentEm = prefs[ReadingKeys.INDENT_EM] ?: 2f,
                 titleMode = prefs[ReadingKeys.TITLE_MODE] ?: 0,
                 bottomJustify = prefs[ReadingKeys.BOTTOM_JUSTIFY] ?: true,
+                oneHandMode = prefs[ReadingKeys.ONE_HAND_MODE] ?: false,
                 customFontUri = prefs[ReadingKeys.CUSTOM_FONT_URI]
             )
         }
@@ -115,6 +117,7 @@ class SettingsRepository(private val context: Context) {
             prefs[ReadingKeys.INDENT_EM] = settings.indentEm
             prefs[ReadingKeys.TITLE_MODE] = settings.titleMode
             prefs[ReadingKeys.BOTTOM_JUSTIFY] = settings.bottomJustify
+            prefs[ReadingKeys.ONE_HAND_MODE] = settings.oneHandMode
             if (settings.customFontUri != null) {
                 prefs[ReadingKeys.CUSTOM_FONT_URI] = settings.customFontUri
             } else {

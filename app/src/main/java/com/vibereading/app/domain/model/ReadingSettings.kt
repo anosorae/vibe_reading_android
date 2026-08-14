@@ -10,11 +10,12 @@ data class ReadingSettings(
     // ── B 类参数（对齐 Legado ReadBookConfig） ──
     val paddingH: Int = 22,            // 页内左右边距（dp，Legado 微信读书预设 22）
     val paddingV: Int = 20,            // 页内上下边距（dp，正文区上下留白）
-    val letterSpacing: Float = 0f,     // 字间距（em，与字号成比例；Legado 预设 0）
+    val letterSpacing: Float = 0f,     // 字间距（em，-0.5~0.5，与字号成比例；Legado 预设 0.1）
     val justify: Boolean = true,       // 两端对齐（对齐 Legado textFullJustify 全局默认开）
     val indentEm: Float = 2f,          // 首行缩进（em，两全角空格 ≈ 2em）
     val titleMode: Int = 0,            // 章节标题：0 左对齐 / 1 居中 / 2 隐藏（默认值，不进面板）
     val bottomJustify: Boolean = true, // 底部对齐：页内行距重分布使末行沉底（默认值，不进面板）
+    val oneHandMode: Boolean = false,  // 单手模式：分页模式下点击左右两侧均翻下一页（默认关）
     val customFontUri: String? = null  // SAF 导入的自定义字体 content:// URI（null=系统字体）
 ) {
     companion object {

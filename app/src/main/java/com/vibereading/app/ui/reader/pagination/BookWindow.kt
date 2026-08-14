@@ -143,7 +143,7 @@ class BookWindow(
          *  避免独立拆分中文段落导致索引不对齐（如整章无 \n\n 分隔时 cnText 为全章文本）。 */
         fun buildChapterItems(chapter: Chapter): List<FlowItem> {
             val list = mutableListOf<FlowItem>()
-            list += FlowItem.Title(chapter.id, chapter.section, chapter.title, chapter.status)
+            list += FlowItem.Title(chapter.id, chapter.section, chapter.title, chapter.status, chapter.errorMessage)
             val pairs = chapter.translatedContent?.takeIf { it.isNotBlank() }
                 ?.let { parseBilingualParagraphs(it, chapter.content) }
             if (pairs != null) {

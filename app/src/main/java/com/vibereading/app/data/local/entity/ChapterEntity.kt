@@ -20,5 +20,6 @@ data class ChapterEntity(
     val chapterIndex: Int,
     val content: String = "",
     val translatedContent: String? = null,
-    val status: Int = 0  // 0=pending, 1=in_progress, 2=done, -1=failed, 3=too_long
+    val status: Int = 0,  // 0=pending, 1=in_progress, 2=done, -1=failed, 3=too_long
+    val errorMessage: String? = null
 )

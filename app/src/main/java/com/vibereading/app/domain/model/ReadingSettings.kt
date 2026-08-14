@@ -6,7 +6,7 @@ data class ReadingSettings(
     val bgColorIndex: Int = 0,
     val lineSpacing: Int = 8,          // extra sp added on top of the base line height
     val paragraphSpacing: Int = 16,    // dp between paragraphs
-    val pageFlipMode: String = FLIP_SCROLL,
+    val pageFlipMode: String = FLIP_PAGER,
     // ── B 类参数（对齐 Legado ReadBookConfig） ──
     val paddingH: Int = 22,            // 页内左右边距（dp，Legado 微信读书预设 22）
     val paddingV: Int = 20,            // 页内上下边距（dp，正文区上下留白）

@@ -269,8 +269,10 @@ fun PageRenderer(
 ) {
     val density = LocalDensity.current
     // 检测本页所属章节是否已翻译（en 模式下未翻译章节不显示气泡）
-    val titleStatus = units.filterIsInstance<PageUnit.Title>().firstOrNull()?.status
-    val chapterId = units.filterIsInstance<PageUnit.Title>().firstOrNull()?.chapterId
+    val titleUnit = units.filterIsInstance<PageUnit.Title>().firstOrNull()
+    val titleStatus = titleUnit?.status
+    val chapterId = titleUnit?.chapterId
+    val chapterErrorMessage = titleUnit?.errorMessage
     val chapterTranslated = titleStatus == Chapter.STATUS_DONE
     val showEnStatusHint = mode == "en" && titleStatus != null && !chapterTranslated
 
@@ -376,19 +378,30 @@ fun PageRenderer(
                         titleStatus == Chapter.STATUS_TOO_LONG -> VibeColors.Amber
                         else -> VibeColors.WarmGray
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(hintText, color = hintColor, fontSize = 13.sp)
-                        // 正在流式翻译时显示进度指示器
-                        if (isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS) {
-                            Spacer(Modifier.width(8.dp))
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp),
-                                strokeWidth = 1.5.dp,
-                                color = VibeColors.Sage
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(hintText, color = hintColor, fontSize = 13.sp)
+                            // 正在流式翻译时显示进度指示器
+                            if (isActiveStreaming && titleStatus == Chapter.STATUS_IN_PROGRESS) {
+                                Spacer(Modifier.width(8.dp))
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 1.5.dp,
+                                    color = VibeColors.Sage
+                                )
+                            }
+                        }
+                        // 显示失败/过长原因
+                        val reason = chapterErrorMessage
+                        if (reason != null && (titleStatus == Chapter.STATUS_FAILED || titleStatus == Chapter.STATUS_TOO_LONG)) {
+                            Text(
+                                reason,
+                                color = hintColor.copy(alpha = 0.7f),
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 4.dp)
                             )
                         }
                     }

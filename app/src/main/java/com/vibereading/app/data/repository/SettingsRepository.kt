@@ -91,7 +91,7 @@ class SettingsRepository(private val context: Context) {
                 bgColorIndex = prefs[ReadingKeys.BG_COLOR_INDEX] ?: 0,
                 lineSpacing = prefs[ReadingKeys.LINE_SPACING] ?: 8,
                 paragraphSpacing = prefs[ReadingKeys.PARAGRAPH_SPACING] ?: 16,
-                pageFlipMode = prefs[ReadingKeys.PAGE_FLIP_MODE] ?: ReadingSettings.FLIP_SCROLL,
+                pageFlipMode = prefs[ReadingKeys.PAGE_FLIP_MODE] ?: ReadingSettings.FLIP_PAGER,
                 paddingH = prefs[ReadingKeys.PADDING_H] ?: 22,
                 paddingV = prefs[ReadingKeys.PADDING_V] ?: 20,
                 letterSpacing = prefs[ReadingKeys.LETTER_SPACING] ?: 0f,

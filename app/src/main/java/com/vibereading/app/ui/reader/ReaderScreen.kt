@@ -22,7 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Nightlight
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -53,6 +53,7 @@ import com.vibereading.app.ui.reader.components.BilingualParagraph
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.PageInfoOverlays
+import com.vibereading.app.ui.reader.components.LlmSettingsSheet
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
 import com.vibereading.app.ui.reader.components.parseBilingualParagraphs
 import com.vibereading.app.ui.reader.components.splitParagraphs
@@ -480,7 +481,7 @@ fun ReaderScreen(
     }
 
     // 浮层可见性追踪：供 pointerInput 内点按时判断是否拦截翻页（不加入 key 避免手势重启）
-    val anyOverlayVisible = state.toolbarVisible || state.catalogVisible || state.settingsVisible
+    val anyOverlayVisible = state.toolbarVisible || state.catalogVisible || state.settingsVisible || state.llmSettingsVisible
     val overlayVisible by rememberUpdatedState(anyOverlayVisible)
     // 单手模式追踪：pointerInput 块内读取外部状态必须经 rememberUpdatedState 拿最新值
     // （闭包是手势协程启动时快照的旧引用，直接读 readingSettings.oneHandMode 会读到
@@ -801,7 +802,6 @@ fun ReaderScreen(
             BottomControlBar(
                 chapters = state.chapters,
                 activeChapterId = state.activeChapterId,
-                nightMode = state.nightMode,
                 accentColor = accentColor,
                 barColor = bgColor,
                 isRetryEnabled = state.mode == "en" && !state.isStreaming
@@ -812,7 +812,7 @@ fun ReaderScreen(
                 onNext = { jumpChapterBy(1) },
                 onChapterJump = { id -> jumpToChapter(id) },
                 onToggleCatalog = { vm.toggleCatalog() },
-                onToggleNight = { vm.toggleNightMode() },
+                onOpenLlmSettings = { vm.initLlmEditFields(); vm.toggleLlmSettings() },
                 onRetry = { state.activeChapterId?.let { vm.retryTranslation(it) } },
                 onOpenSettings = { vm.toggleSettings() }
             )
@@ -883,6 +883,30 @@ fun ReaderScreen(
             accentColor = accentColor,
             onUpdate = { new -> vm.updateReadingSettings { new } },
             onDismiss = { vm.dismissSettings() }
+        )
+    }
+
+    // ── LLM 翻译设置面板 ──
+    if (state.llmSettingsVisible) {
+        LlmSettingsSheet(
+            llmSettings = state.llmSettings,
+            editApiKey = vm.editApiKey.collectAsState().value,
+            editApiBase = vm.editApiBase.collectAsState().value,
+            editModel = vm.editModel.collectAsState().value,
+            accentColor = accentColor,
+            testResult = state.llmTestResult,
+            testSuccess = state.llmTestSuccess,
+            onUpdateApiKey = vm::updateEditApiKey,
+            onUpdateApiBase = vm::updateEditApiBase,
+            onUpdateModel = vm::updateEditModel,
+            onUpdateChapterMaxChars = vm::updateLlmChapterMaxChars,
+            onToggleContextBoost = vm::updateLlmContextBoost,
+            onUpdateContextChapters = vm::updateLlmContextChapters,
+            onUpdateContextMaxChars = vm::updateLlmContextMaxChars,
+            onToggleThinking = vm::updateLlmThinking,
+            onSave = vm::saveLlmSettings,
+            onTest = vm::testLlmConnection,
+            onDismiss = { vm.dismissLlmSettings() }
         )
     }
 }
@@ -1072,15 +1096,17 @@ private fun ScrollReader(
                         }
                     }
 
-                    // Error message（只显示当前章的错误）
-                    if (state.errorMessage != null && state.activeChapterId == chapter.id) {
+                    // Error message（优先显示实时错误，回退到持久化的章节错误）
+                    val chapterError = if (state.errorMessage != null && state.activeChapterId == chapter.id)
+                        state.errorMessage else chapter.errorMessage
+                    if (chapterError != null) {
                         Surface(
                             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                             shape = RoundedCornerShape(8.dp),
                             color = VibeColors.RedMuted.copy(alpha = 0.1f)
                         ) {
                             Text(
-                                "翻译失败: ${state.errorMessage}",
+                                "翻译失败: $chapterError",
                                 modifier = Modifier.padding(12.dp),
                                 fontSize = 13.sp,
                                 color = VibeColors.RedMuted
@@ -1117,12 +1143,11 @@ private fun ChapterHeader(
     }
 }
 
-// ── Bottom control bar: 上一章 | slider | 下一章 / 目录 | 夜间 | 重翻 | 设置 ──
+// ── Bottom control bar: 上一章 | slider | 下一章 / 目录 | 翻译 | 重翻 | 设置 ──
 @Composable
 private fun BottomControlBar(
     chapters: List<Chapter>,
     activeChapterId: Long?,
-    nightMode: Boolean,
     accentColor: Color,
     barColor: Color,
     isRetryEnabled: Boolean,
@@ -1130,7 +1155,7 @@ private fun BottomControlBar(
     onNext: () -> Unit,
     onChapterJump: (Long) -> Unit,
     onToggleCatalog: () -> Unit,
-    onToggleNight: () -> Unit,
+    onOpenLlmSettings: () -> Unit,
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -1217,7 +1242,7 @@ private fun BottomControlBar(
 
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
 
-            // Row 2: catalog | night | retry | settings
+            // Row 2: catalog | 翻译 | retry | settings
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1226,12 +1251,7 @@ private fun BottomControlBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BottomAction("目录", Icons.Filled.List, accentColor, onToggleCatalog)
-                BottomAction(
-                    "夜间",
-                    Icons.Filled.Nightlight,
-                    if (nightMode) accentColor else labelColor,
-                    onToggleNight
-                )
+                BottomAction("翻译", Icons.Filled.Translate, accentColor, onOpenLlmSettings)
                 BottomAction(
                     "重翻",
                     Icons.Filled.Refresh,

@@ -32,6 +32,9 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     suspend fun updateStatus(id: Long, status: Int) =
         chapterDao.updateStatus(id, status)
 
+    suspend fun updateStatusWithError(id: Long, status: Int, errorMessage: String?) =
+        chapterDao.updateStatusWithError(id, status, errorMessage)
+
     suspend fun updateTranslation(id: Long, content: String, status: Int) =
         chapterDao.updateTranslation(id, content, status)
 
@@ -47,12 +50,14 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     private fun ChapterEntity.toDomain() = Chapter(
         id = id, bookId = bookId, title = title, section = section,
         chapterIndex = chapterIndex, content = content,
-        translatedContent = translatedContent, status = status
+        translatedContent = translatedContent, status = status,
+        errorMessage = errorMessage
     )
 
     private fun Chapter.toEntity() = ChapterEntity(
         id = id, bookId = bookId, title = title, section = section,
         chapterIndex = chapterIndex, content = content,
-        translatedContent = translatedContent, status = status
+        translatedContent = translatedContent, status = status,
+        errorMessage = errorMessage
     )
 }

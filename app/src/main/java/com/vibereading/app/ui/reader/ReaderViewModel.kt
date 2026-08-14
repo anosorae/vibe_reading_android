@@ -29,8 +29,11 @@ data class ReaderUiState(
     val catalogVisible: Boolean = false,
     val toolbarVisible: Boolean = false,
     val settingsVisible: Boolean = false,
+    val llmSettingsVisible: Boolean = false,
     val nightMode: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val llmTestResult: String? = null,
+    val llmTestSuccess: Boolean? = null
 )
 
 class ReaderViewModel(
@@ -177,8 +180,16 @@ class ReaderViewModel(
         _uiState.update { it.copy(settingsVisible = false) }
     }
 
+    fun toggleLlmSettings() {
+        _uiState.update { it.copy(llmSettingsVisible = !it.llmSettingsVisible) }
+    }
+
+    fun dismissLlmSettings() {
+        _uiState.update { it.copy(llmSettingsVisible = false) }
+    }
+
     fun dismissAllOverlays() {
-        _uiState.update { it.copy(toolbarVisible = false, catalogVisible = false, settingsVisible = false) }
+        _uiState.update { it.copy(toolbarVisible = false, catalogVisible = false, settingsVisible = false, llmSettingsVisible = false) }
     }
 
     // ── Reading style updates (persist immediately via DataStore) ──
@@ -193,6 +204,75 @@ class ReaderViewModel(
         val new = !_uiState.value.nightMode
         _uiState.update { it.copy(nightMode = new) }
         viewModelScope.launch { settingsRepo.saveNightMode(new) }
+    }
+
+    // ── LLM settings (翻译设置面板) ──
+
+    private val _editApiKey = MutableStateFlow("")
+    private val _editApiBase = MutableStateFlow("")
+    private val _editModel = MutableStateFlow("")
+    val editApiKey: StateFlow<String> = _editApiKey.asStateFlow()
+    val editApiBase: StateFlow<String> = _editApiBase.asStateFlow()
+    val editModel: StateFlow<String> = _editModel.asStateFlow()
+
+    /** 初始化编辑字段（首次打开面板时从持久化值填充）。 */
+    fun initLlmEditFields() {
+        val ls = _uiState.value.llmSettings
+        if (_editApiKey.value.isEmpty()) _editApiKey.value = ls.apiKey
+        if (_editApiBase.value.isEmpty()) _editApiBase.value = ls.apiBase
+        if (_editModel.value.isEmpty()) _editModel.value = ls.model
+    }
+
+    fun updateEditApiKey(key: String) { _editApiKey.value = key }
+    fun updateEditApiBase(base: String) { _editApiBase.value = base }
+    fun updateEditModel(model: String) { _editModel.value = model }
+
+    fun updateLlmChapterMaxChars(value: Int) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(chapterMaxChars = value)) }
+    }
+    fun updateLlmContextBoost(enabled: Boolean) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableContextBoost = enabled)) }
+    }
+    fun updateLlmContextChapters(value: Int) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextChapters = value.coerceIn(1, 3))) }
+    }
+    fun updateLlmContextMaxChars(value: Int) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextMaxChars = value)) }
+    }
+    fun updateLlmThinking(enabled: Boolean) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableThinking = enabled)) }
+    }
+
+    fun saveLlmSettings() {
+        viewModelScope.launch {
+            val current = _uiState.value.llmSettings
+            val newSettings = current.copy(
+                apiKey = _editApiKey.value,
+                apiBase = _editApiBase.value,
+                model = _editModel.value
+            )
+            settingsRepo.saveLlmSettings(newSettings)
+        }
+    }
+
+    fun testLlmConnection() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(llmTestResult = null) }
+            val current = _uiState.value.llmSettings
+            val newSettings = current.copy(
+                apiKey = _editApiKey.value,
+                apiBase = _editApiBase.value,
+                model = _editModel.value
+            )
+            settingsRepo.saveLlmSettings(newSettings)
+            val result = llmService.testConnection(newSettings)
+            _uiState.update {
+                it.copy(
+                    llmTestResult = result.getOrNull() ?: result.exceptionOrNull()?.message,
+                    llmTestSuccess = result.isSuccess
+                )
+            }
+        }
     }
 
     private fun maybeTranslateChapter(chapterId: Long) {
@@ -226,8 +306,9 @@ class ReaderViewModel(
             }
 
             if (chapter.content.length > settings.chapterMaxChars) {
-                chapterRepo.updateStatus(chapterId, Chapter.STATUS_TOO_LONG)
-                _uiState.update { it.copy(errorMessage = "章节过长 (${chapter.content.length} 字符)") }
+                val msg = "章节过长 (${chapter.content.length} 字符)"
+                chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_TOO_LONG, msg)
+                _uiState.update { it.copy(errorMessage = msg) }
                 return@launch
             }
 
@@ -252,12 +333,14 @@ class ReaderViewModel(
                     }
                     is TranslationEvent.Done -> {
                         chapterRepo.updateTranslation(chapterId, event.text, Chapter.STATUS_DONE)
+                        // 清除持久化的错误信息
+                        chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_DONE, null)
                         val doneCount = chapterRepo.getDoneCount(bookId)
                         bookRepo.updateTranslatedCount(bookId, doneCount)
                         _uiState.update { it.copy(isStreaming = false) }
                     }
                     is TranslationEvent.Error -> {
-                        chapterRepo.updateStatus(chapterId, Chapter.STATUS_FAILED)
+                        chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_FAILED, event.reason)
                         _uiState.update { it.copy(isStreaming = false, errorMessage = event.reason) }
                     }
                     is TranslationEvent.Progress -> {

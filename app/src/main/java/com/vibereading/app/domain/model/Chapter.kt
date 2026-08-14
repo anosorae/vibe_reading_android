@@ -8,7 +8,8 @@ data class Chapter(
     val chapterIndex: Int,
     val content: String = "",
     val translatedContent: String? = null,
-    val status: Int = 0
+    val status: Int = 0,
+    val errorMessage: String? = null  // 翻译失败原因（持久化，切换章节后仍可查看）
 ) {
     companion object {
         const val STATUS_PENDING = 0

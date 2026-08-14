@@ -95,7 +95,8 @@ sealed class FlowItem {
         override val chapterId: Long,
         val section: String?,
         val title: String,
-        val status: Int
+        val status: Int,
+        val errorMessage: String? = null
     ) : FlowItem()
 
     data class Para(
@@ -115,8 +116,9 @@ sealed class PageUnit {
         val section: String?,
         val title: String,
         val status: Int,
+        val errorMessage: String? = null,
         val sectionLayout: TextLayoutResult? = null, // 卷名布局（仿真位图用）
-        val titleLayout: TextLayoutResult? = null     // 章节名布局（仿真位图用）
+        val titleLayout: TextLayoutResult? = null    // 章节名布局（仿真位图用）
     ) : PageUnit()
 
     data class Para(
@@ -206,7 +208,7 @@ class ChapterPaginator(
                     val titleLayout = measureLayout(item.title, style.title)
                     val h = measureTitleHeight(sectionLayout, titleLayout)
                     if (units.isNotEmpty() && used + h > contentHeightPx) pageDone()
-                    units += PageUnit.Title(item.chapterId, item.section, item.title, item.status, sectionLayout, titleLayout)
+                    units += PageUnit.Title(item.chapterId, item.section, item.title, item.status, item.errorMessage, sectionLayout, titleLayout)
                     used += h
                     pos++
                 }

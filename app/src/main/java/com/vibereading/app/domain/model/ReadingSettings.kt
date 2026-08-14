@@ -16,7 +16,10 @@ data class ReadingSettings(
     val titleMode: Int = 0,            // 章节标题：0 左对齐 / 1 居中 / 2 隐藏（默认值，不进面板）
     val bottomJustify: Boolean = true, // 底部对齐：页内行距重分布使末行沉底（默认值，不进面板）
     val oneHandMode: Boolean = false,  // 单手模式：分页模式下点击左右两侧均翻下一页（默认关）
-    val customFontUri: String? = null  // SAF 导入的自定义字体 content:// URI（null=系统字体）
+    val customFontUri: String? = null, // SAF 导入的自定义字体 content:// URI（null=系统字体）
+    // ── 沉浸式（对齐 Legado ReadBookConfig hideStatusBar / hideNavigationBar） ──
+    val hideStatusBar: Boolean = true,     // 阅读时隐藏状态栏（默认开）
+    val hideNavigationBar: Boolean = true  // 阅读时隐藏导航栏（默认开）
 ) {
     companion object {
         // 翻页类型（对齐 Legado PageAnim）：上下滚动 / 平移 / 覆盖 / 无动画 / 仿真

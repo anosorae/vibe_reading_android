@@ -77,6 +77,8 @@ class SettingsRepository(private val context: Context) {
         val BOTTOM_JUSTIFY = booleanPreferencesKey("bottom_justify")
         val ONE_HAND_MODE = booleanPreferencesKey("one_hand_mode")
         val CUSTOM_FONT_URI = stringPreferencesKey("custom_font_uri")
+        val HIDE_STATUS_BAR = booleanPreferencesKey("hide_status_bar")
+        val HIDE_NAVIGATION_BAR = booleanPreferencesKey("hide_navigation_bar")
         val NIGHT_MODE = booleanPreferencesKey("night_mode")
     }
 
@@ -98,7 +100,9 @@ class SettingsRepository(private val context: Context) {
                 titleMode = prefs[ReadingKeys.TITLE_MODE] ?: 0,
                 bottomJustify = prefs[ReadingKeys.BOTTOM_JUSTIFY] ?: true,
                 oneHandMode = prefs[ReadingKeys.ONE_HAND_MODE] ?: false,
-                customFontUri = prefs[ReadingKeys.CUSTOM_FONT_URI]
+                customFontUri = prefs[ReadingKeys.CUSTOM_FONT_URI],
+                hideStatusBar = prefs[ReadingKeys.HIDE_STATUS_BAR] ?: true,
+                hideNavigationBar = prefs[ReadingKeys.HIDE_NAVIGATION_BAR] ?: true
             )
         }
 
@@ -118,6 +122,8 @@ class SettingsRepository(private val context: Context) {
             prefs[ReadingKeys.TITLE_MODE] = settings.titleMode
             prefs[ReadingKeys.BOTTOM_JUSTIFY] = settings.bottomJustify
             prefs[ReadingKeys.ONE_HAND_MODE] = settings.oneHandMode
+            prefs[ReadingKeys.HIDE_STATUS_BAR] = settings.hideStatusBar
+            prefs[ReadingKeys.HIDE_NAVIGATION_BAR] = settings.hideNavigationBar
             if (settings.customFontUri != null) {
                 prefs[ReadingKeys.CUSTOM_FONT_URI] = settings.customFontUri
             } else {

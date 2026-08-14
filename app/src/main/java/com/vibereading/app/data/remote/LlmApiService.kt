@@ -168,7 +168,11 @@ class LlmApiService {
                     if (!currentLine.startsWith("data: ")) continue
                     val data = currentLine.removePrefix("data: ").trim()
                     if (data == "[DONE]") {
-                        emit(TranslationEvent.Done(fullText.toString()))
+                        if (fullText.isEmpty()) {
+                            emit(TranslationEvent.Error("翻译结果为空"))
+                        } else {
+                            emit(TranslationEvent.Done(fullText.toString()))
+                        }
                         break
                     }
 

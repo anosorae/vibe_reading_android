@@ -144,7 +144,8 @@ class BookWindow(
         fun buildChapterItems(chapter: Chapter): List<FlowItem> {
             val list = mutableListOf<FlowItem>()
             list += FlowItem.Title(chapter.id, chapter.section, chapter.title, chapter.status)
-            val pairs = chapter.translatedContent?.let { parseBilingualParagraphs(it, chapter.content) }
+            val pairs = chapter.translatedContent?.takeIf { it.isNotBlank() }
+                ?.let { parseBilingualParagraphs(it, chapter.content) }
             if (pairs != null) {
                 pairs.forEachIndexed { idx, (en, cn) ->
                     list += FlowItem.Para(

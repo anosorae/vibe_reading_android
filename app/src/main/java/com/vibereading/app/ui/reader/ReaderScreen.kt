@@ -1,5 +1,6 @@
 package com.vibereading.app.ui.reader
 
+import android.app.Activity
 import android.graphics.Bitmap
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -35,12 +36,16 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.BilingualParagraph
@@ -137,6 +142,8 @@ fun ReaderScreen(
 
     // 窗口 key 含 isPagerMode/页边距：滚动↔分页切换、边距调整时重建窗口并重新排版
     // （否则旧窗口状态残留，导致切换不生效/边距不生效）
+    // 立即 recenterSync：避免 key 变化（如沉浸式切换导致 contentHeightPx 变化）时新窗口
+    // windowPages 为空 → pageCount==0 → 闪现 EmptyReaderHint（"没有任何阅读内容"）
     val window = remember(
         measurer, pageStyle, state.mode, state.chapters, contentWidthPx, contentHeightPx, isPagerMode
     ) {
@@ -149,7 +156,9 @@ fun ReaderScreen(
             measurer = measurer,
             backgroundMeasurer = { bgMeasurer },
             displayDensity = density.density
-        )
+        ).also { w ->
+            state.activeChapterId?.let { w.recenterSync(it) }
+        }
     }
     // 仿真卷页尺寸 = 全屏（对齐 Legado：位图/覆盖层/手势均使用全屏坐标系）
 
@@ -449,13 +458,62 @@ fun ReaderScreen(
     }
 
     // 浮层可见性追踪：供 pointerInput 内点按时判断是否拦截翻页（不加入 key 避免手势重启）
-    val overlayVisible by rememberUpdatedState(
-        state.toolbarVisible || state.catalogVisible || state.settingsVisible
-    )
+    val anyOverlayVisible = state.toolbarVisible || state.catalogVisible || state.settingsVisible
+    val overlayVisible by rememberUpdatedState(anyOverlayVisible)
     // 单手模式追踪：pointerInput 块内读取外部状态必须经 rememberUpdatedState 拿最新值
     // （闭包是手势协程启动时快照的旧引用，直接读 readingSettings.oneHandMode 会读到
     //  开启设置前的旧值导致开关无效；与 overlayVisible 同款模式，不加入 key）
     val oneHandMode by rememberUpdatedState(readingSettings.oneHandMode)
+
+    // ── 阅读器沉浸式（对齐 Legado BaseReadBookActivity.upSystemUiVisibility） ──
+    // toolBarHide = 浮层关闭 → 应隐藏系统栏（若设置允许）；浮层打开 → 应显示系统栏
+    val toolBarHide = !anyOverlayVisible
+    val immersiveView = LocalView.current
+    val immersiveActivity = immersiveView.context as? Activity
+
+    // 离开阅读器时恢复系统栏
+    DisposableEffect(Unit) {
+        onDispose {
+            immersiveActivity?.window?.let { window ->
+                val controller = WindowCompat.getInsetsController(window, immersiveView)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            }
+        }
+    }
+
+    // 对齐 Legado：toolBarHide + hideStatusBar/hideNavigationBar 双条件控制
+    // WindowCompat.getInsetsController 内部按 API 级别走 window.insetsController（R+）
+    // 或 systemUiVisibility flags（legacy），对齐 Legado 双路径但用统一 compat 接口
+    LaunchedEffect(toolBarHide, readingSettings.hideStatusBar, readingSettings.hideNavigationBar) {
+        val window = immersiveActivity?.window ?: return@LaunchedEffect
+        val controller = WindowCompat.getInsetsController(window, immersiveView)
+        if (toolBarHide && readingSettings.hideNavigationBar) {
+            controller.hide(WindowInsetsCompat.Type.navigationBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.navigationBars())
+        }
+        if (toolBarHide && readingSettings.hideStatusBar) {
+            controller.hide(WindowInsetsCompat.Type.statusBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.statusBars())
+        }
+        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+    }
+
+    // 对齐 Legado：阅读器内覆盖 Theme.kl 的 SideEffect（状态栏颜色 + 图标明暗）
+    // SideEffect 在子组件注册晚于父组件 Theme，故执行顺序在 Theme 之后，可覆盖
+    SideEffect {
+        immersiveActivity?.window?.let { window ->
+            val controller = WindowCompat.getInsetsController(window, immersiveView)
+            // 状态栏图标：浅色背景用深色图标，深色背景用浅色图标（对齐 Legado curStatusIconDark）
+            controller.isAppearanceLightStatusBars = !isDark
+            controller.isAppearanceLightNavigationBars = !isDark
+            // 状态栏/导航栏颜色：对齐阅读器背景（对齐 Legado readBarStyleFollowPage）
+            window.statusBarColor = bgColor.toArgb()
+            window.navigationBarColor = bgColor.toArgb()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -716,7 +774,7 @@ fun ReaderScreen(
                 nightMode = state.nightMode,
                 accentColor = accentColor,
                 barColor = bgColor,
-                isRetryEnabled = !state.isStreaming
+                isRetryEnabled = state.mode == "en" && !state.isStreaming
                     && state.activeChapter?.status in setOf(
                         Chapter.STATUS_DONE, Chapter.STATUS_FAILED, Chapter.STATUS_IN_PROGRESS
                     ),
@@ -888,7 +946,7 @@ private fun ScrollReader(
                 )
 
                 // 正文（中英文模式统一：已翻译章节显示英文，未翻译显示中文）
-                if (state.mode == "zh" && chapter.translatedContent == null) {
+                if (state.mode == "zh" && chapter.translatedContent.isNullOrBlank()) {
                     // 未翻译：纯中文显示
                     val paragraphs = splitParagraphs(chapter.content)
                     paragraphs.forEach { para ->
@@ -901,7 +959,7 @@ private fun ScrollReader(
                                 .padding(bottom = paragraphSpacingDp)
                         )
                     }
-                } else if (chapter.translatedContent != null) {
+                } else if (!chapter.translatedContent.isNullOrBlank()) {
                     // 已翻译：显示英文（zh 模式无气泡，en 模式有气泡）
                     val pairs = parseBilingualParagraphs(chapter.translatedContent, chapter.content)
                     pairs.forEach { (en, cn) ->

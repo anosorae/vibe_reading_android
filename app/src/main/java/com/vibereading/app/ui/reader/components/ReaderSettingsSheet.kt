@@ -272,6 +272,39 @@ fun ReaderSettingsSheet(
                     colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
                 )
             }
+
+            // ── 沉浸式（对齐 Legado hideStatusBar / hideNavigationBar） ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("隐藏状态栏", style = MaterialTheme.typography.bodyMedium)
+                    Text("阅读时隐藏顶部状态栏", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(
+                    checked = settings.hideStatusBar,
+                    onCheckedChange = { onUpdate(settings.copy(hideStatusBar = it)) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("隐藏导航栏", style = MaterialTheme.typography.bodyMedium)
+                    Text("阅读时隐藏底部导航栏", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(
+                    checked = settings.hideNavigationBar,
+                    onCheckedChange = { onUpdate(settings.copy(hideNavigationBar = it)) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                )
+            }
         }
     }
 }

@@ -323,13 +323,14 @@ fun PageRenderer(
                         is PageUnit.Para -> {
                             val isLastPara = idx == lastParaIdx
                             if (mode == "zh") {
-                                val enStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
+                                // zh 模式：mainLayout 即中文排版，直接渲染 cnText（无气泡）
+                                val bodyStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
                                     lineHeight = (pageStyle.body.lineHeight.value +
                                         with(density) { unit.lineHeightExtraPx.toSp().value }).sp
                                 ) else pageStyle.body
                                 Text(
                                     text = unit.cnText,
-                                    style = enStyle,
+                                    style = bodyStyle,
                                     color = textColor,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -339,7 +340,7 @@ fun PageRenderer(
                                         )
                                 )
                             } else {
-                                // en 模式：未翻译章节(enText==null)只显示原文，不显示气泡
+                                // en 模式
                                 val hasTranslation = unit.enText != null && unit.enText.isNotBlank()
                                 if (hasTranslation) {
                                     PageBilingualParagraph(
@@ -354,13 +355,13 @@ fun PageRenderer(
                                     )
                                 } else {
                                     // 未翻译：原文直接显示（无气泡，避免原文=气泡内容重复）
-                                    val enStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
+                                    val bodyStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
                                         lineHeight = (pageStyle.body.lineHeight.value +
                                             with(density) { unit.lineHeightExtraPx.toSp().value }).sp
                                     ) else pageStyle.body
                                     Text(
                                         text = unit.cnText,
-                                        style = enStyle,
+                                        style = bodyStyle,
                                         color = textColor,
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -504,7 +505,7 @@ fun renderPageBitmap(
 
                 is PageUnit.Para -> {
                     val isLastPara = idx == lastParaIdx
-                    // en 模式只画英文正文（中文原文通过弹窗显示，不画入位图）
+                    // mainLayout 已由排版器按 mode 测量（zh=中文 / en=英文），直接渲染
                     unit.mainLayout?.let { layout ->
                         drawLayout(canvas, layout, bodyPaint, cursorY)
                         cursorY += layout.size.height.toFloat()

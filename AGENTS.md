@@ -7,6 +7,7 @@
 - 环境为 Windows，只有 `gradlew.bat`（无 `gradlew` shell 脚本）。
 - **JAVA_HOME 需指向 JDK 17**（如 `C:\Program Files\Microsoft\jdk-17.0.20.8-hotspot`）；Android Studio 自带 jbr 为 JDK 25，Kotlin 2.1.0 不识别（`JavaVersion.parse` 抛错）。
 - `./gradlew.bat :app:assembleDebug` 构建 debug APK。
+- **每次代码改动后必须编译 APK 并安装到模拟器验证**：`./gradlew.bat :app:assembleDebug` → 用 android-emulator MCP 插件 `install_app`（APK 路径 `app/build/outputs/apk/debug/app-debug.apk`）→ `launch_app`。不要只编译不安装。
 - **单测**：`./gradlew.bat :app:testDebugUnitTest`（`app/src/test` 下 Robolectric 4.14 + `@GraphicsMode(NATIVE)` 提供真实换行测量；断言结构化——切段拼接/双语对原子/页高不溢出——不 pin 像素值）。
 - 单模块 `:app`，包名 `com.vibereading.app`，minSdk 26，target/compileSdk 35，Kotlin 2.1.0 + Compose BOM 2024.12.01，Gradle 8.11.1。
 - 可用 android-emulator MCP 插件做构建/安装/截图/UI 自动化验证。

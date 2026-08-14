@@ -187,6 +187,11 @@ fun ReaderScreen(
     val scope = rememberCoroutineScope()
     val simFlip = remember { SimFlipState() }
 
+    // mode 切换时清除仿真卷页旧位图，避免反面显示旧模式文字
+    LaunchedEffect(state.mode) {
+        simFlip.cleanup()
+    }
+
     // 分页模式「程序化跳章」目标（目录/上下章/窗口边界续翻）；「当前章重定位」也走这里
     var pagerJumpTarget by remember { mutableStateOf<Long?>(null) }
     var pagerJumpPage by remember { mutableIntStateOf(0) }
@@ -483,7 +488,7 @@ fun ReaderScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
-            .pointerInput(isPagerMode, flipMode, readingSettings.paddingH, readingSettings.paddingV, statusBarPx, navBarPx) {
+            .pointerInput(isPagerMode, flipMode, readingSettings.paddingH, readingSettings.paddingV, statusBarPx, navBarPx, window) {
                 val inSim = isPagerMode && flipMode == ReadingSettings.FLIP_SIMULATION
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
@@ -899,9 +904,10 @@ private fun ScrollReader(
                     isDark = isDark
                 )
 
-                // 正文（与分页模式共享同一 PageStyle：行高/字号/缩进/字距/对齐统一）
-                val paragraphs = splitParagraphs(chapter.content)
-                if (state.mode == "zh") {
+                // 正文（中英文模式统一：已翻译章节显示英文，未翻译显示中文）
+                if (state.mode == "zh" && chapter.translatedContent == null) {
+                    // 未翻译：纯中文显示
+                    val paragraphs = splitParagraphs(chapter.content)
                     paragraphs.forEach { para ->
                         Text(
                             para.trim(),
@@ -912,7 +918,30 @@ private fun ScrollReader(
                                 .padding(bottom = paragraphSpacingDp)
                         )
                     }
+                } else if (chapter.translatedContent != null) {
+                    // 已翻译：显示英文（zh 模式无气泡，en 模式有气泡）
+                    val pairs = parseBilingualParagraphs(chapter.translatedContent, chapter.content)
+                    pairs.forEach { (en, cn) ->
+                        if (state.mode == "en") {
+                            BilingualParagraph(
+                                englishText = en,
+                                chineseText = cn,
+                                pageStyle = pageStyle,
+                                isDark = isDark
+                            )
+                        } else {
+                            Text(
+                                cn,
+                                style = pageStyle.body,
+                                color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = paragraphSpacingDp)
+                            )
+                        }
+                    }
                 } else {
+                    // 未翻译章节：流式翻译中 / 等待翻译 / 错误等
                     if (state.isStreaming && state.activeChapterId == chapter.id) {
                         Text(
                             state.streamingText,
@@ -936,16 +965,6 @@ private fun ScrollReader(
                                 "翻译中...",
                                 fontSize = 12.sp,
                                 color = VibeColors.Sage
-                            )
-                        }
-                    } else if (chapter.translatedContent != null) {
-                        val pairs = parseBilingualParagraphs(chapter.translatedContent, chapter.content)
-                        pairs.forEach { (en, cn) ->
-                            BilingualParagraph(
-                                englishText = en,
-                                chineseText = cn,
-                                pageStyle = pageStyle,
-                                isDark = isDark
                             )
                         }
                     } else if (state.llmSettings.apiKey.isBlank()) {

@@ -15,8 +15,9 @@ import com.vibereading.app.domain.model.ReadingSettings
  *   由 `BookWindow`（章窗口模型）持有 ±1 窗口；
  * - **真实页宽测量**：`measureLayout` 传 `Constraints(maxWidth = contentWidth)`，
  *   行高/切段基于真实换行（修复旧实现无约束测量导致「所见≠所排」）；
- * - zh 段落可跨页（按 [TextLayoutResult] 行信息切段）；en 双语对原子化不可拆，
- *   放不下整对移下一页；单对超高退化为按行切分英文（首片段可展开，不丢内容）；
+ * - **mode 感知排版**：zh 模式测量 cnText 分页，en 模式测量 enText 分页（无则回退 cnText），
+ *   双语对原子化不可拆，放不下整段移下一页；单段超高退化为按行切分（首片段可显示气泡，
+ *   续段无气泡）；zh/en 模式页面布局独立，切换模式需重建窗口重新排版；
  * - 每页排版后按 `bottomJustify` 把剩余高度均匀分到各行（末行沉底，对齐 Legado
  *   `TextPage.upLinesPosition`）；
  * - [TextLayoutResult] 挂在 [PageUnit] 上：渲染层 `Text` 以同文本同样式渲染
@@ -155,6 +156,7 @@ class ChapterPaginator(
 
                 is FlowItem.Para -> {
                     if (mode == "zh") {
+                        // zh 模式：以中文原文排版分页
                         val text = if (isChunk) chunk!!.text else item.cnText
                         val layout = measureLayout(text, style.body)
                         val h = layout.size.height.toFloat()
@@ -171,12 +173,12 @@ class ChapterPaginator(
                             used += l1.size.height.toFloat()
                             if (c2.isNotBlank()) {
                                 pending = PendingChunk(item, c2)
-                                pageDone() // 续段放下一页（本页以切段收尾）
+                                pageDone() // 续段放下一页
                             } else {
                                 pos++
                             }
                         } else if (h > contentHeightPx) {
-                            // 极端：单行超高（几乎不可能，仅防御）——截断避免死循环
+                            // 极端：单行超高（防御）——截断避免死循环
                             val trunc = text.take(200)
                             val tl = measureLayout(trunc, style.body)
                             if (units.isNotEmpty()) pageDone()
@@ -187,7 +189,7 @@ class ChapterPaginator(
                             used += tl.size.height.toFloat()
                             pos++
                         } else {
-                            if (units.isNotEmpty() && h > contentHeightPx - used) pageDone() // 换页放下
+                            if (units.isNotEmpty() && h > contentHeightPx - used) pageDone()
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, text, null,
                                 lineCount = layout.lineCount, mainLayout = layout
@@ -196,16 +198,15 @@ class ChapterPaginator(
                             pos++
                         }
                     } else {
-                        // en：英文排版（中文原文通过弹窗显示，不参与排版测量）
+                        // en 模式：以英文译文排版分页（中文原文通过弹窗显示，不参与排版测量）
                         val en = if (isChunk) chunk!!.text
-                        else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
+                            else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
                         val head = if (isChunk) chunk!!.isHead else true
                         val enLayout = measureLayout(en, style.body)
                         val h = enLayout.size.height.toFloat()
                         val remaining = contentHeightPx - used
                         if (h > contentHeightPx) {
-                            // 单段超高：按行切分英文，不丢内容；
-                            // 本页剩不下首行时先翻页，用整页高切段
+                            // 单段超高：按行切分英文，不丢内容
                             if (units.isNotEmpty() && remaining < enLayout.getLineBottom(0)) pageDone()
                             val bound = (contentHeightPx - used)
                                 .coerceAtLeast(enLayout.getLineBottom(0))

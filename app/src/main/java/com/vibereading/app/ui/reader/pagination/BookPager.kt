@@ -206,20 +206,9 @@ fun ReaderPager(
             }
         }
 
-        // 仿真卷页覆盖层（对齐 Legado：画布与页面内容区严格对齐，位图尺寸一致）
-        // 边到边模式：先扣除系统栏再留用户边距，与 PageRenderer 保持一致
+        // 仿真卷页覆盖层（对齐 Legado：位图=全屏，覆盖层也铺满全屏，边距区域参与卷页不割裂）
         if (simFlip.animating && simFlip.isRunning && flipMode == ReadingSettings.FLIP_SIMULATION) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = paddingH.dp)
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(vertical = paddingV.dp),
-                contentAlignment = Alignment.TopStart
-            ) {
-                CurlOverlay(simFlip = simFlip)
-            }
+            CurlOverlay(simFlip = simFlip)
         }
     }
 }
@@ -441,7 +430,8 @@ fun PageRenderer(
  * Compose `Text` 渲染的是**同一个排版结果**，像素级一致——彻底消除卷页结束
  * 「覆盖层清掉后露出另一套排版」造成的跳变（对齐 Legado 单渲染路径思路）。
  *
- * 位图 = 内容区（不含页边距），先铺不透明背景再绘制文本。
+ * 位图 = 全屏（含页边距/系统栏），对齐 Legado：整个屏幕参与卷页，边距区域不割裂。
+ * 先铺不透明背景覆盖全屏，文本内容从 (padH, statusBar+padV) 偏移开始绘制。
  */
 fun renderPageBitmap(
     window: BookWindow,
@@ -450,25 +440,35 @@ fun renderPageBitmap(
     isDark: Boolean,
     pageStyle: PageStyle,
     density: androidx.compose.ui.unit.Density,
-    pageWidthPx: Int,
-    pageHeightPx: Int,
+    viewWidthPx: Int,
+    viewHeightPx: Int,
     bgColorArgb: Int,
-    sectionColorArgb: Int
+    sectionColorArgb: Int,
+    padHPx: Int = 0,
+    padVPx: Int = 0,
+    statusBarPx: Int = 0,
+    navBarPx: Int = 0
 ): Bitmap? {
     val units = window.pageUnits(page)
     if (units.isEmpty()) return null
     val bitmap = try {
         // 软件位图 + Compose Canvas：直接画 TextLayoutResult（与真实页同源，逐像素一致）
         val image = androidx.compose.ui.graphics.ImageBitmap(
-            width = pageWidthPx.coerceAtLeast(1),
-            height = pageHeightPx.coerceAtLeast(1),
+            width = viewWidthPx.coerceAtLeast(1),
+            height = viewHeightPx.coerceAtLeast(1),
             hasAlpha = true
         )
         val canvas = androidx.compose.ui.graphics.Canvas(image)
 
-        // 先铺不透明背景（卷页位图不能透明，否则透出底下真实页叠字）
+        // 先铺不透明背景覆盖全屏（卷页位图不能透明，否则透出底下真实页叠字）
         val bgPaint = Paint().apply { color = Color(bgColorArgb) }
-        canvas.drawRect(Rect(0f, 0f, pageWidthPx.toFloat(), pageHeightPx.toFloat()), bgPaint)
+        canvas.drawRect(Rect(0f, 0f, viewWidthPx.toFloat(), viewHeightPx.toFloat()), bgPaint)
+
+        // 文本偏移：内容区起点 = (padH, statusBar + padV)
+        val offsetX = padHPx.toFloat()
+        val offsetY = (statusBarPx + padVPx).toFloat()
+        canvas.save()
+        canvas.translate(offsetX, offsetY)
 
         // 文本 Paint（按真实页配色）
         val bodyPaint = textPaint(if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal)
@@ -515,6 +515,7 @@ fun renderPageBitmap(
             }
         }
 
+        canvas.restore()
         image.asAndroidBitmap()
     } catch (_: Exception) {
         null

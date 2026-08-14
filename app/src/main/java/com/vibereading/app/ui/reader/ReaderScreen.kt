@@ -179,9 +179,7 @@ fun ReaderScreen(
             backgroundMeasurer = { bgMeasurer }
         )
     }
-    // 仿真卷页内容区尺寸（与排版内容区一致）
-    val curlContentWidth = contentWidthPx
-    val curlContentHeight = contentHeightPx
+    // 仿真卷页尺寸 = 全屏（对齐 Legado：位图/覆盖层/手势均使用全屏坐标系）
 
     val pagerState = rememberPagerState(initialPage = 0) { window.pageCount }
     val scope = rememberCoroutineScope()
@@ -238,15 +236,19 @@ fun ReaderScreen(
 
     /** 卷页快照对（对齐 Legado setBitmap）：curBitmap=当前页, targetBitmap=目标页。 */
     fun curlBitmaps(cur: Int, target: Int): Pair<Bitmap, Bitmap>? {
-        val w = curlContentWidth.toInt()
-        val h = curlContentHeight.toInt()
+        val w = screenWidthPx.toInt()
+        val h = screenHeightPx.toInt()
         val curBmp = renderPageBitmap(
             window, cur, state.mode, isDark, pageStyle, density, w, h,
-            bgColor.toArgb(), accentColor.toArgb()
+            bgColor.toArgb(), accentColor.toArgb(),
+            padHPx = padHPx.toInt(), padVPx = padVPx.toInt(),
+            statusBarPx = statusBarPx, navBarPx = navBarPx
         ) ?: return null
         val targetBmp = renderPageBitmap(
             window, target, state.mode, isDark, pageStyle, density, w, h,
-            bgColor.toArgb(), accentColor.toArgb()
+            bgColor.toArgb(), accentColor.toArgb(),
+            padHPx = padHPx.toInt(), padVPx = padVPx.toInt(),
+            statusBarPx = statusBarPx, navBarPx = navBarPx
         )
         if (targetBmp == null) { curBmp.recycle(); return null }
         return curBmp to targetBmp
@@ -255,15 +257,13 @@ fun ReaderScreen(
     /** 启动仿真卷页自动动画（对齐 Legado Scroller 式：cancel 回弹 / complete 完成）。 */
     fun startSimFlip(cur: Int, next: Int, goingNext: Boolean) {
         if (simFlip.isRunning) return
-        val w = curlContentWidth.toInt()
-        val h = curlContentHeight.toInt()
         val pair = curlBitmaps(cur, next)
         if (pair == null) {
             scope.launch { if (pagerState.currentPage != next) pagerState.scrollToPage(next) }
             return
         }
-        val wf = w.toFloat()
-        val hf = h.toFloat()
+        val wf = screenWidthPx
+        val hf = screenHeightPx
         simFlip.curl.setViewSize(wf, hf)
         simFlip.curBitmap = pair.first
         simFlip.targetBitmap = pair.second
@@ -331,8 +331,8 @@ fun ReaderScreen(
     /** 仿真卷页抬手动画（对齐 Legado SimulationPageDelegate.onAnimStart：cancel 回弹 / complete 完成）。 */
     fun simFlipAnimStart(cur: Int, target: Int) {
         simFlip.isRunning = true
-        val wf = curlContentWidth
-        val hf = curlContentHeight
+        val wf = screenWidthPx
+        val hf = screenHeightPx
         scope.launch {
             val startTouchX = simFlip.touchX
             val startTouchY = simFlip.touchY
@@ -494,18 +494,17 @@ fun ReaderScreen(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     if (inSim) {
                         // ── 仿真模式手势（对齐 Legado HorizontalPageDelegate + SimulationPageDelegate）──
-                        val padX = with(density) { readingSettings.paddingH.dp.toPx() }
-                        val padY = with(density) { readingSettings.paddingV.dp.toPx() }
-                        val contentW = size.width - padX * 2
-                        val contentH = size.height - statusBarPx.toFloat() - navBarPx.toFloat() - padY * 2
+                        // 全屏坐标系：位图=全屏，手势坐标直接用屏幕坐标（不减边距），对齐 Legado
+                        val viewW = size.width.toFloat()
+                        val viewH = size.height.toFloat()
                         val slopSquare = 30f * 30f // 对齐 Legado pageSlopSquare2
 
                         // DOWN: 记录起点，reset 状态，计算角落
-                        val downX = down.position.x - padX
-                        val downY = down.position.y - statusBarPx.toFloat() - padY
+                        val downX = down.position.x
+                        val downY = down.position.y
                         simFlip.onDown(downX, downY)
-                        simFlip.calcCornerXY(downX, contentW, contentH)
-                        simFlip.curl.setViewSize(contentW, contentH)
+                        simFlip.calcCornerXY(downX, viewW, viewH)
+                        simFlip.curl.setViewSize(viewW, viewH)
 
                         var curlActive = false
 
@@ -536,8 +535,8 @@ fun ReaderScreen(
                                 break
                             }
                             // ── MOVE ──
-                            val focusX = change.position.x - padX
-                            val focusY = change.position.y - statusBarPx.toFloat() - padY
+                            val focusX = change.position.x
+                            val focusY = change.position.y
                             if (!simFlip.isMoved) {
                                 val deltaX = focusX - simFlip.startX
                                 val deltaY = focusY - simFlip.startY
@@ -548,7 +547,7 @@ fun ReaderScreen(
                                         // 右滑 → PREV
                                         val target = pagerState.currentPage - 1
                                         if (target < 0) break
-                                        simFlip.setDirection(PageCurl.Direction.PREV, contentW, contentH)
+                                        simFlip.setDirection(PageCurl.Direction.PREV, viewW, viewH)
                                         val pair = curlBitmaps(pagerState.currentPage, target)
                                         if (pair == null) break
                                         simFlip.curBitmap = pair.first
@@ -560,7 +559,7 @@ fun ReaderScreen(
                                         // 左滑 → NEXT
                                         val target = pagerState.currentPage + 1
                                         if (target >= window.pageCount) break
-                                        simFlip.setDirection(PageCurl.Direction.NEXT, contentW, contentH)
+                                        simFlip.setDirection(PageCurl.Direction.NEXT, viewW, viewH)
                                         val pair = curlBitmaps(pagerState.currentPage, target)
                                         if (pair == null) break
                                         simFlip.curBitmap = pair.first
@@ -584,7 +583,7 @@ fun ReaderScreen(
                                 simFlip.touchX = focusX
                                 simFlip.touchY = focusY
                                 // 垂直位置调整（对齐 Legado SimulationPageDelegate.onTouch MOVE）
-                                simFlip.adjustTouchY(contentH)
+                                simFlip.adjustTouchY(viewH)
                                 simFlip.isRunning = true
                             }
                             if (change.isConsumed) break

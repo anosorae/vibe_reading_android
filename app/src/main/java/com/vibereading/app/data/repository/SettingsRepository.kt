@@ -70,6 +70,7 @@ class SettingsRepository(private val context: Context) {
         val PAGE_FLIP_MODE = stringPreferencesKey("page_flip_mode")
         val PADDING_H = intPreferencesKey("padding_h")
         val PADDING_V = intPreferencesKey("padding_v")
+        val OVERLAY_CONTENT_GAP = intPreferencesKey("overlay_content_gap")
         val LETTER_SPACING = floatPreferencesKey("letter_spacing")
         val JUSTIFY = booleanPreferencesKey("justify")
         val INDENT_EM = floatPreferencesKey("indent_em")
@@ -94,6 +95,7 @@ class SettingsRepository(private val context: Context) {
                 pageFlipMode = prefs[ReadingKeys.PAGE_FLIP_MODE] ?: ReadingSettings.FLIP_PAGER,
                 paddingH = prefs[ReadingKeys.PADDING_H] ?: 22,
                 paddingV = prefs[ReadingKeys.PADDING_V] ?: 20,
+                overlayContentGap = prefs[ReadingKeys.OVERLAY_CONTENT_GAP] ?: 20,
                 letterSpacing = prefs[ReadingKeys.LETTER_SPACING] ?: 0f,
                 justify = prefs[ReadingKeys.JUSTIFY] ?: true,
                 indentEm = prefs[ReadingKeys.INDENT_EM] ?: 2f,
@@ -116,6 +118,7 @@ class SettingsRepository(private val context: Context) {
             prefs[ReadingKeys.PAGE_FLIP_MODE] = settings.pageFlipMode
             prefs[ReadingKeys.PADDING_H] = settings.paddingH
             prefs[ReadingKeys.PADDING_V] = settings.paddingV
+            prefs[ReadingKeys.OVERLAY_CONTENT_GAP] = settings.overlayContentGap
             prefs[ReadingKeys.LETTER_SPACING] = settings.letterSpacing
             prefs[ReadingKeys.JUSTIFY] = settings.justify
             prefs[ReadingKeys.INDENT_EM] = settings.indentEm

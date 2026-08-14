@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -35,8 +36,24 @@ fun CatalogBottomSheet(
     onChapterClick: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
-    // Track expanded sections — lift state up so it controls item visibility
-    val expandedSections = remember { mutableStateOf(setOf<String>()) }
+    // 预展开当前章节所在卷
+    val activeSection = remember(activeChapterId, groups) {
+        groups.find { it.chapters.any { ch -> ch.id == activeChapterId } }?.section
+    }
+    val expandedSections = remember {
+        mutableStateOf(setOf<String>() + (activeSection?.let { setOf(it) } ?: emptySet()))
+    }
+    val listState = rememberLazyListState()
+
+    // 打开目录后自动滚动到当前章节
+    LaunchedEffect(activeChapterId) {
+        if (activeChapterId != null) {
+            val index = computeActiveChapterIndex(groups, activeChapterId, expandedSections.value)
+            if (index >= 0) {
+                listState.scrollToItem(index)
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -68,6 +85,7 @@ fun CatalogBottomSheet(
 
             // Chapter list
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp)
@@ -201,4 +219,30 @@ private fun ChapterItem(
             modifier = Modifier.weight(1f)
         )
     }
+}
+
+/** 计算 activeChapterId 在 LazyColumn 中的扁平索引（含 section header 占位）。 */
+private fun computeActiveChapterIndex(
+    groups: List<CatalogGroup>,
+    activeChapterId: Long,
+    expandedSections: Set<String>
+): Int {
+    var index = 0
+    for (group in groups) {
+        if (group.section != null) {
+            index++ // section header 占一项
+            if (group.section in expandedSections) {
+                for (chapter in group.chapters) {
+                    if (chapter.id == activeChapterId) return index
+                    index++
+                }
+            }
+        } else {
+            for (chapter in group.chapters) {
+                if (chapter.id == activeChapterId) return index
+                index++
+            }
+        }
+    }
+    return -1
 }

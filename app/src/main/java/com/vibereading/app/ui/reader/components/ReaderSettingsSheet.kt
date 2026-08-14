@@ -222,6 +222,14 @@ fun ReaderSettingsSheet(
             ) { onUpdate(settings.copy(paddingV = it.toInt())) }
 
             SettingSliderRow(
+                title = "页眉页脚间距",
+                value = settings.overlayContentGap.toFloat(),
+                display = "${settings.overlayContentGap}dp",
+                range = 0f..50f,
+                accentColor = accentColor
+            ) { onUpdate(settings.copy(overlayContentGap = it.toInt())) }
+
+            SettingSliderRow(
                 title = "字间距",
                 value = settings.letterSpacing,
                 display = String.format("%.2f", settings.letterSpacing),

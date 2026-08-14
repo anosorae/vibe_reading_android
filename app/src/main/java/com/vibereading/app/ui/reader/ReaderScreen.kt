@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -145,6 +146,8 @@ fun ReaderScreen(
     val navBarPx = cachedNavBarPx.intValue           // 排版/渲染用（稳定）
     val cutoutLeftPx = cachedCutoutLeftPx.intValue    // 页眉/工具栏左侧避让
     val cutoutRightPx = cachedCutoutRightPx.intValue  // 页眉/工具栏右侧避让
+    // 底部工具栏动态高度（用于翻译进度面板定位）
+    var bottomBarHeightDp by remember { mutableFloatStateOf(0f) }
     // padding 用 roundToPx 对齐 Compose 布局系统（dp→round(density*dp)→Int）
     val padHPx = with(density) { readingSettings.paddingH.dp.roundToPx() }
     val padVPx = with(density) { readingSettings.paddingV.dp.roundToPx() }
@@ -728,6 +731,8 @@ fun ReaderScreen(
                 pagerState = pagerState,
                 palette = palette,
                 padH = readingSettings.paddingH,
+                padV = readingSettings.paddingV,
+                overlayContentGap = readingSettings.overlayContentGap,
                 statusBarPx = statusBarPx,
                 navBarPx = navBarPx,
                 cutoutLeftPx = cutoutLeftPx,
@@ -797,7 +802,11 @@ fun ReaderScreen(
             visible = state.toolbarVisible,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .onGloballyPositioned { coords ->
+                    bottomBarHeightDp = with(density) { coords.size.height.toDp() }.value
+                }
         ) {
             BottomControlBar(
                 chapters = state.chapters,
@@ -823,7 +832,7 @@ fun ReaderScreen(
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (state.toolbarVisible) 120.dp else 16.dp + with(density) { navBarPx.toDp() })
+                    .padding(bottom = if (state.toolbarVisible) bottomBarHeightDp.dp + 8.dp else 16.dp + with(density) { navBarPx.toDp() })
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
                     .heightIn(max = 160.dp),

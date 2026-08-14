@@ -50,6 +50,8 @@ fun PageInfoOverlays(
     pagerState: PagerState,
     palette: ReaderPalette,
     padH: Int,
+    padV: Int,
+    overlayContentGap: Int = 20,
     statusBarPx: Int,
     navBarPx: Int,
     cutoutLeftPx: Int = 0,
@@ -94,10 +96,16 @@ fun PageInfoOverlays(
     val navBarDp = with(density) { navBarPx.toDp() }
     val cutoutLeftDp = with(density) { cutoutLeftPx.toDp() }
     val cutoutRightDp = with(density) { cutoutRightPx.toDp() }
+    // 正文内容区边界（与排版几何一致：contentTop = statusBar + padV, contentBottom = navBar + padV）
+    val contentTopDp = statusBarDp + padV.dp
+    val contentBottomDp = navBarDp + padV.dp
+    // 12sp 单行文字高度（用于推算页眉/页脚离正文区间距）
+    val overlayTextHeightDp = 16.dp
 
     Box(modifier = Modifier.fillMaxSize()) {
         // ── 页眉（左上）：章节号 · 章节名 ──
-        // 标题本身已含章号前缀（如「第6章 终于死了」）时不重复拼章号；序章/楔子同理
+        // 以正文区顶部为锚点向上退让：文字底边 = contentTop - gap，文字顶边 = contentTop - gap - textHeight
+        // 若 margin 不够，文字可少量叠入系统栏区域（边到边模式下状态栏半透明，可接受）
         Text(
             text = if (inBook) {
                 val title = chapters[chapterIndex].title
@@ -109,19 +117,24 @@ fun PageInfoOverlays(
             maxLines = 1,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(top = statusBarDp)
-                .padding(start = maxOf(padH.dp, cutoutLeftDp), top = 2.dp)
+                .padding(
+                    top = contentTopDp - overlayContentGap.dp - overlayTextHeightDp,
+                    start = maxOf(padH.dp, cutoutLeftDp)
+                )
         )
 
         // ── 页脚（左下）：当前页 / 本章总页 ──
+        // 以正文区底部为锚点向下退让：文字顶边 = contentBottom - gap，文字底边 = contentBottom - gap - textHeight
         Text(
             text = if (totalPages > 0) "${currentPage + 1}/$totalPages" else "",
             fontSize = 12.sp,
             color = tipColor,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(bottom = navBarDp)
-                .padding(start = maxOf(padH.dp, cutoutLeftDp), bottom = 2.dp)
+                .padding(
+                    bottom = contentBottomDp - overlayContentGap.dp - overlayTextHeightDp,
+                    start = maxOf(padH.dp, cutoutLeftDp)
+                )
         )
 
         // ── 页脚（右下）：时间 + 电量 ──
@@ -131,8 +144,10 @@ fun PageInfoOverlays(
             color = tipColor,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(bottom = navBarDp)
-                .padding(end = maxOf(padH.dp, cutoutRightDp), bottom = 2.dp)
+                .padding(
+                    bottom = contentBottomDp - overlayContentGap.dp - overlayTextHeightDp,
+                    end = maxOf(padH.dp, cutoutRightDp)
+                )
         )
     }
 }

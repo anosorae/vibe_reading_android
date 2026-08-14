@@ -481,6 +481,7 @@ fun renderPageBitmap(
                         drawLayout(canvas, layout, titlePaint, cursorY)
                         cursorY += layout.size.height.toFloat()
                     }
+                    cursorY += ReaderMetrics.TITLE_BOTTOM_DP * density.density
                 }
 
                 is PageUnit.Para -> {
@@ -591,7 +592,7 @@ private fun PageTitleBlock(
             style = pageStyle.title.copy(textAlign = titleAlign),
             color = palette.titleText,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().padding(bottom = ReaderMetrics.TITLE_BOTTOM_DP.dp)
         )
     }
 }

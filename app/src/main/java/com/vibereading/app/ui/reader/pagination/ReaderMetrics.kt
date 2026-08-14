@@ -5,11 +5,14 @@ package com.vibereading.app.ui.reader.pagination
  * 排版器（px）、卷页位图（px）、渲染组件（dp）三处引用同一来源，改一处到处同步。
  */
 object ReaderMetrics {
-    /** 章节标题块顶部留白 */
-    const val TITLE_TOP_DP = 24
+    /** 章节标题块顶部留白（0 = 标题紧贴内容区顶部） */
+    const val TITLE_TOP_DP = 0
 
     /** 卷名 → 章节名间距 */
     const val SECTION_TITLE_GAP_DP = 8
+
+    /** 章节标题底部到第一行正文的间距 */
+    const val TITLE_BOTTOM_DP = 44
 
     /** 双语对英文段上下 padding（单边） */
     const val BILINGUAL_PAD_DP = 4

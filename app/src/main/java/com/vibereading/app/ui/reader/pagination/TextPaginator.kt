@@ -42,9 +42,14 @@ data class PageStyle(
 ) {
     companion object {
         /** 由 ReadingSettings 构造排版样式（分页与滚动共用同一口径，对齐 Legado 微信读书预设）。 */
-        fun of(settings: ReadingSettings, density: Density): PageStyle {
+        fun of(settings: ReadingSettings, density: Density, mode: String = "zh"): PageStyle {
             val family = fontFamilyOf(settings.fontFamily)
-            val indent = if (settings.indentEm > 0f) TextIndent(
+            // zh 模式：首行缩进；en 模式：正文不缩进（英文用段间距区分段落）
+            val bodyIndent = if (mode == "zh" && settings.indentEm > 0f) TextIndent(
+                firstLine = settings.indentEm.em
+            ) else null
+            // 中文原文弹窗始终保留缩进（不影响排版测量）
+            val cnIndent = if (settings.indentEm > 0f) TextIndent(
                 firstLine = settings.indentEm.em
             ) else null
             val align = if (settings.justify) TextAlign.Justify else TextAlign.Start
@@ -54,15 +59,15 @@ data class PageStyle(
                     fontSize = settings.fontSize.sp,
                     lineHeight = (settings.fontSize * 1.6 + settings.lineSpacing).sp,
                     letterSpacing = settings.letterSpacing.em,
-                    textIndent = indent,
-                    textAlign = align
-                ),
-                cn = TextStyle(
-                    fontFamily = family,
-                    fontSize = (settings.fontSize * 0.875).sp,
-                    lineHeight = (settings.fontSize * 1.5 + settings.lineSpacing).sp,
-                    letterSpacing = settings.letterSpacing.em,
-                    textIndent = indent,
+                textIndent = bodyIndent,
+                textAlign = align
+            ),
+            cn = TextStyle(
+                fontFamily = family,
+                fontSize = (settings.fontSize * 0.875).sp,
+                lineHeight = (settings.fontSize * 1.5 + settings.lineSpacing).sp,
+                letterSpacing = settings.letterSpacing.em,
+                textIndent = cnIndent,
                     textAlign = align
                 ),
                 title = TextStyle(
@@ -199,7 +204,7 @@ class ChapterPaginator(
                     val h = measureTitleHeight(sectionLayout, titleLayout)
                     if (units.isNotEmpty() && used + h > contentHeightPx) pageDone()
                     units += PageUnit.Title(item.chapterId, item.section, item.title, item.status, sectionLayout, titleLayout)
-                    used += h + style.paragraphSpacingPx * 0.5f
+                    used += h
                     pos++
                 }
 
@@ -361,7 +366,7 @@ class ChapterPaginator(
         val sectionH = sectionLayout?.size?.height?.toFloat()
             ?.plus(ReaderMetrics.SECTION_TITLE_GAP_DP * density) ?: 0f  // section→title 间距 = 8dp
         val titleH = titleLayout?.size?.height?.toFloat() ?: 0f
-        return ReaderMetrics.TITLE_TOP_DP * density + sectionH + titleH + style.paragraphSpacingPx * 0.5f  // 顶部留白 = 24dp
+        return ReaderMetrics.TITLE_TOP_DP * density + sectionH + titleH + ReaderMetrics.TITLE_BOTTOM_DP * density  // 顶部无留白，底部间距 = 44dp
     }
 
     companion object {

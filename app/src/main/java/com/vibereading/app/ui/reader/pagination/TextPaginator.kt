@@ -74,7 +74,8 @@ data class PageStyle(
                     fontFamily = family,
                     fontSize = (settings.fontSize + 4).sp,
                     lineHeight = ((settings.fontSize + 4) * 1.3f).sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    textIndent = cnIndent  // 章节标题与卷标/正文首行对齐
                 ),
                 paragraphSpacingPx = with(density) { settings.paragraphSpacing.dp.toPx() },
                 bottomJustify = settings.bottomJustify,

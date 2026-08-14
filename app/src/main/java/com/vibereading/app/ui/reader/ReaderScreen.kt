@@ -424,9 +424,9 @@ fun ReaderScreen(
     // 程序化滚动进行中标记：期间滚动跟踪不响应，避免回卷（初始定位/跳章后 300ms 内）
     var suppressTracking by remember { mutableStateOf(false) }
 
-    // 初始定位到最后阅读章
-    LaunchedEffect(scrollChunks.size) {
-        if (scrollChunks.isEmpty()) return@LaunchedEffect
+    // 初始定位 + 切换到滚动模式时定位到当前章
+    LaunchedEffect(scrollChunks.size, !isPagerMode) {
+        if (isPagerMode || scrollChunks.isEmpty()) return@LaunchedEffect
         val idx = scrollChunks.indexInChunks(state.activeChapterId) ?: return@LaunchedEffect
         suppressTracking = true
         scrollState.scrollToItem(idx)
@@ -1055,7 +1055,7 @@ private fun ScrollReader(
                         Text(
                             para.trim(),
                             style = pageStyle.body,
-                            color = palette.scrollBodyText,
+                            color = palette.bodyText,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = paragraphSpacingDp)
@@ -1076,7 +1076,7 @@ private fun ScrollReader(
                             Text(
                                 cn,
                                 style = pageStyle.body,
-                                color = palette.scrollBodyText,
+                                color = palette.bodyText,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(bottom = paragraphSpacingDp)
@@ -1084,55 +1084,17 @@ private fun ScrollReader(
                         }
                     }
                 } else {
-                    // 未翻译章节：等待翻译 / 错误等
-                    if (state.llmSettings.apiKey.isBlank()) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("尚未配置翻译引擎", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(8.dp))
-                            Text("请在设置中配置 API Key", fontSize = 13.sp, color = VibeColors.WarmGray)
-                        }
-                    } else if (chapter.status == Chapter.STATUS_PENDING || chapter.status == Chapter.STATUS_FAILED) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text("等待翻译...", fontSize = 13.sp, color = VibeColors.WarmGray)
-                        }
-                    } else if (chapter.status == Chapter.STATUS_IN_PROGRESS) {
-                        // 翻译中断（status 卡在 IN_PROGRESS 但无流式输出）
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("翻译中断", color = VibeColors.BlueMuted)
-                        }
-                    }
-
-                    // Error message（优先显示实时错误，回退到持久化的章节错误）
-                    val chapterError = if (state.errorMessage != null && state.activeChapterId == chapter.id)
-                        state.errorMessage else chapter.errorMessage
-                    if (chapterError != null) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            color = VibeColors.RedMuted.copy(alpha = 0.1f)
-                        ) {
-                            Text(
-                                "翻译失败: $chapterError",
-                                modifier = Modifier.padding(12.dp),
-                                fontSize = 13.sp,
-                                color = VibeColors.RedMuted
-                            )
-                        }
+                    // 未翻译章节：直接显示中文原文（状态提示由底部浮动面板统一显示）
+                    val paragraphs = splitParagraphs(chapter.content)
+                    paragraphs.forEach { para ->
+                        Text(
+                            para.trim(),
+                            style = pageStyle.body,
+                            color = palette.bodyText,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = paragraphSpacingDp)
+                        )
                     }
                 }
             }

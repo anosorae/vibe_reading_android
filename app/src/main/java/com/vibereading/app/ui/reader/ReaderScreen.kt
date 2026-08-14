@@ -33,18 +33,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
@@ -60,8 +55,6 @@ import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.VibeDarkColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-
-private fun Color.withAlpha(alpha: Float): Color = Color(this.red, this.green, this.blue, alpha)
 
 @Composable
 fun ReaderScreen(
@@ -83,6 +76,8 @@ fun ReaderScreen(
     val flipMode = readingSettings.pageFlipMode
     val isPagerMode = flipMode != ReadingSettings.FLIP_SCROLL
     val accentColor = MaterialTheme.colorScheme.primary
+    // 语义色板：把 isDark 亮/暗三元集中一处（正文/标题/气泡/弹窗共用）
+    val palette = remember(isDark) { ReaderPalette.of(isDark) }
 
     // Build catalog groups
     val catalogGroups = remember(state.chapters) {
@@ -112,51 +107,12 @@ fun ReaderScreen(
     val measurer = rememberTextMeasurer()
     val bgMeasurer = rememberTextMeasurer(cacheSize = 8) // 后台预载独立实例（后台线程测量）
     val density = LocalDensity.current
-    val pageStyle = remember(
-        readingSettings.fontSize, readingSettings.fontFamily, readingSettings.lineSpacing,
-        readingSettings.paragraphSpacing, readingSettings.letterSpacing, readingSettings.justify,
-        readingSettings.indentEm, readingSettings.titleMode, readingSettings.bottomJustify, density
-    ) {
-        val family = fontFamilyOf(readingSettings.fontFamily)
-        val indent = if (readingSettings.indentEm > 0f) TextIndent(
-            firstLine = readingSettings.indentEm.em
-        ) else null
-        val align = if (readingSettings.justify) TextAlign.Justify else TextAlign.Start
-        PageStyle(
-            body = TextStyle(
-                fontFamily = family,
-                fontSize = readingSettings.fontSize.sp,
-                lineHeight = (readingSettings.fontSize * 1.6 + readingSettings.lineSpacing).sp,
-                letterSpacing = readingSettings.letterSpacing.em,
-                textIndent = indent,
-                textAlign = align
-            ),
-            cn = TextStyle(
-                fontFamily = family,
-                fontSize = (readingSettings.fontSize * 0.875).sp,
-                lineHeight = (readingSettings.fontSize * 1.5 + readingSettings.lineSpacing).sp,
-                letterSpacing = readingSettings.letterSpacing.em,
-                textIndent = indent,
-                textAlign = align
-            ),
-            title = TextStyle(
-                fontFamily = family,
-                fontSize = (readingSettings.fontSize + 4).sp,
-                lineHeight = ((readingSettings.fontSize + 4) * 1.3f).sp,
-                fontWeight = FontWeight.Bold
-            ),
-            paragraphSpacingPx = with(density) { readingSettings.paragraphSpacing.dp.toPx() },
-            bottomJustify = readingSettings.bottomJustify,
-            titleMode = readingSettings.titleMode
-        )
-    }
+    val pageStyle = remember(readingSettings, density) { PageStyle.of(readingSettings, density) }
     // 页几何：内容区 = 屏尺寸 − 页边距（与 BookPager 渲染内边距严格一致，排版所见即所排）
     // 屏幕像素取 displayMetrics 实际值（不通过 screenWidthDp*density 转换，
     // 因 screenWidthDp 为截断整数，411dp*2.625=1078.875→round=1079≠1080 实际宽度，
     // 差 1px 导致排版区窄 1px → 仿真翻页位图与 Compose 页换行不一致 → 文字重排抖动）
     val displayMetrics = LocalContext.current.resources.displayMetrics
-    val screenWidthPx = displayMetrics.widthPixels
-    val screenHeightPx = displayMetrics.heightPixels
     // 边到边模式下系统栏占据像素高度，排版与渲染均需扣除（否则末行被导航栏遮挡）
     val statusBarPx = WindowInsets.systemBars.getTop(density)
     val navBarPx = WindowInsets.systemBars.getBottom(density)
@@ -165,8 +121,18 @@ fun ReaderScreen(
     val padVPx = with(density) { readingSettings.paddingV.dp.roundToPx() }
     // 内容区 = 屏幕整像素 − 两侧边距整像素（Int 运算，与 Compose 约束一致）；
     // Compose Layout 系统对每个 padding 值做 roundToPx 后相减，此计算复现相同逻辑
-    val contentWidthPx = (screenWidthPx - padHPx * 2).coerceAtLeast(0).toFloat()
-    val contentHeightPx = (screenHeightPx - statusBarPx - navBarPx - padVPx * 2).coerceAtLeast(0).toFloat()
+    val geometry = ReaderPageGeometry.of(
+        screenWidthPx = displayMetrics.widthPixels,
+        screenHeightPx = displayMetrics.heightPixels,
+        statusBarPx = statusBarPx,
+        navBarPx = navBarPx,
+        padHPx = padHPx,
+        padVPx = padVPx
+    )
+    val screenWidthPx = geometry.screenWidthPx
+    val screenHeightPx = geometry.screenHeightPx
+    val contentWidthPx = geometry.contentWidthPx
+    val contentHeightPx = geometry.contentHeightPx
 
     // 窗口 key 含 isPagerMode/页边距：滚动↔分页切换、边距调整时重建窗口并重新排版
     // （否则旧窗口状态残留，导致切换不生效/边距不生效）
@@ -241,24 +207,13 @@ fun ReaderScreen(
 
     /** 卷页快照对（对齐 Legado setBitmap）：curBitmap=当前页, targetBitmap=目标页。 */
     fun curlBitmaps(cur: Int, target: Int): Pair<Bitmap, Bitmap>? {
-        // screenWidthPx/padHPx 已是 roundToPx 的 Int，直接传入（不再 .toInt() 截断）
-        val w = screenWidthPx
-        val h = screenHeightPx
         val curBmp = renderPageBitmap(
-            window, cur, state.mode, isDark, pageStyle, density, w, h,
-            bgColor.toArgb(), accentColor.toArgb(),
-            contentWidthPx = contentWidthPx.toInt(),
-            padHPx = padHPx, padVPx = padVPx,
-            statusBarPx = statusBarPx, navBarPx = navBarPx,
-            measurer = measurer
+            window, cur, state.mode, pageStyle, geometry, palette, density,
+            bgColor.toArgb(), accentColor.toArgb(), measurer
         ) ?: return null
         val targetBmp = renderPageBitmap(
-            window, target, state.mode, isDark, pageStyle, density, w, h,
-            bgColor.toArgb(), accentColor.toArgb(),
-            contentWidthPx = contentWidthPx.toInt(),
-            padHPx = padHPx, padVPx = padVPx,
-            statusBarPx = statusBarPx, navBarPx = navBarPx,
-            measurer = measurer
+            window, target, state.mode, pageStyle, geometry, palette, density,
+            bgColor.toArgb(), accentColor.toArgb(), measurer
         )
         if (targetBmp == null) { curBmp.recycle(); return null }
         return curBmp to targetBmp
@@ -634,7 +589,7 @@ fun ReaderScreen(
                         pagerState = pagerState,
                         window = window,
                         flipMode = flipMode,
-                        isDark = isDark,
+                        palette = palette,
                         mode = state.mode,
                         pageStyle = pageStyle,
                         paddingH = readingSettings.paddingH,
@@ -655,9 +610,9 @@ fun ReaderScreen(
                         scrollState = scrollState,
                         state = state,
                         pageStyle = pageStyle,
+                        palette = palette,
                         paddingH = readingSettings.paddingH,
                         paddingV = readingSettings.paddingV,
-                        isDark = isDark,
                         onJumpChapter = { id ->
                             pendingJumpChapter = id
                             vm.navigateTo(id, 0)
@@ -675,7 +630,7 @@ fun ReaderScreen(
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
             Surface(
-                color = bgColor.withAlpha(0.95f),
+                color = bgColor.copy(alpha = 0.95f),
                 shadowElevation = 4.dp
             ) {
                 Row(
@@ -711,13 +666,7 @@ fun ReaderScreen(
                     // 当前章翻译状态小圆点（颜色与目录一致）
                     val activeStatus = state.activeChapter?.status
                     if (activeStatus != null) {
-                        val dotColor = when (activeStatus) {
-                            Chapter.STATUS_DONE -> VibeColors.Sage
-                            Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
-                            Chapter.STATUS_FAILED -> VibeColors.RedMuted
-                            Chapter.STATUS_TOO_LONG -> VibeColors.Amber
-                            else -> VibeColors.Sand
-                        }
+                        val dotColor = chapterStatusColor(activeStatus)
                         Spacer(Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
@@ -881,9 +830,9 @@ private fun ScrollReader(
     scrollState: LazyListState,
     state: ReaderUiState,
     pageStyle: PageStyle,
+    palette: ReaderPalette,
     paddingH: Int,
     paddingV: Int,
-    isDark: Boolean,
     onJumpChapter: (Long) -> Unit
 ) {
     val density = LocalDensity.current
@@ -910,7 +859,7 @@ private fun ScrollReader(
                 // 章节标题头
                 ChapterHeader(
                     chunk = chunk,
-                    isDark = isDark
+                    palette = palette
                 )
 
                 // 正文（中英文模式统一：已翻译章节显示英文，未翻译显示中文）
@@ -921,7 +870,7 @@ private fun ScrollReader(
                         Text(
                             para.trim(),
                             style = pageStyle.body,
-                            color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal,
+                            color = palette.scrollBodyText,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = paragraphSpacingDp)
@@ -936,13 +885,13 @@ private fun ScrollReader(
                                 englishText = en,
                                 chineseText = cn,
                                 pageStyle = pageStyle,
-                                isDark = isDark
+                                palette = palette
                             )
                         } else {
                             Text(
                                 cn,
                                 style = pageStyle.body,
-                                color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal,
+                                color = palette.scrollBodyText,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(bottom = paragraphSpacingDp)
@@ -955,7 +904,7 @@ private fun ScrollReader(
                         Text(
                             state.streamingText,
                             style = pageStyle.body,
-                            color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal,
+                            color = palette.scrollBodyText,
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(8.dp))
@@ -1032,7 +981,7 @@ private fun ScrollReader(
 @Composable
 private fun ChapterHeader(
     chunk: ScrollChunk,
-    isDark: Boolean
+    palette: ReaderPalette
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         if (chunk.section != null) {
@@ -1047,7 +996,7 @@ private fun ChapterHeader(
             chunk.title,
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Ink,
+            color = palette.titleText,
             modifier = Modifier.padding(bottom = 20.dp)
         )
     }
@@ -1076,7 +1025,7 @@ private fun BottomControlBar(
     val sliderValue = if (dragging) dragChapter else chapterIndex
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
-        color = barColor.withAlpha(0.97f),
+        color = barColor.copy(alpha = 0.97f),
         shadowElevation = 4.dp
     ) {
         Column(
@@ -1108,7 +1057,7 @@ private fun BottomControlBar(
                             "${chapterLabel(chapters, sliderValue)} / 共${chapters.size}章",
                             fontSize = 11.sp,
                             color = labelColor,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
                         Slider(

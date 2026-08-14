@@ -20,7 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.domain.model.Chapter
-import com.vibereading.app.ui.theme.VibeColors
+import com.vibereading.app.ui.reader.chapterStatusColor
 
 data class CatalogGroup(
     val section: String?,
@@ -168,13 +168,7 @@ private fun ChapterItem(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
-    val statusColor = when (chapter.status) {
-        Chapter.STATUS_DONE -> VibeColors.Sage
-        Chapter.STATUS_IN_PROGRESS -> VibeColors.BlueMuted
-        Chapter.STATUS_FAILED -> VibeColors.RedMuted
-        Chapter.STATUS_TOO_LONG -> VibeColors.Amber
-        else -> VibeColors.Sand
-    }
+    val statusColor = chapterStatusColor(chapter.status)
 
     val bgColor = if (isActive) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)

@@ -2,15 +2,11 @@ package com.vibereading.app.ui.reader.pagination
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,26 +18,20 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
+import com.vibereading.app.ui.reader.ReaderPalette
+import com.vibereading.app.ui.reader.ReaderPageGeometry
+import com.vibereading.app.ui.reader.components.BilingualParagraph
 import com.vibereading.app.ui.theme.VibeColors
-import com.vibereading.app.ui.theme.VibeDarkColors
 
 /**
  * 仿真卷页状态机（对齐 Legado PageDelegate + HorizontalPageDelegate + SimulationPageDelegate）。
@@ -166,7 +156,7 @@ fun ReaderPager(
     pagerState: PagerState,
     window: BookWindow,
     flipMode: String,
-    isDark: Boolean,
+    palette: ReaderPalette,
     mode: String,
     pageStyle: PageStyle,
     paddingH: Int,
@@ -175,10 +165,6 @@ fun ReaderPager(
     isStreaming: Boolean = false,
     activeChapterId: Long? = null
 ) {
-    val density = LocalDensity.current
-    val padH = with(density) { paddingH.dp.toPx() }
-    val padV = with(density) { paddingV.dp.toPx() }
-
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
@@ -198,9 +184,8 @@ fun ReaderPager(
                 PageRenderer(
                     units = units,
                     mode = mode,
-                    isDark = isDark,
+                    palette = palette,
                     pageStyle = pageStyle,
-                    textColor = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal,
                     paddingH = paddingH,
                     paddingV = paddingV,
                     isStreaming = isStreaming,
@@ -269,9 +254,8 @@ private fun CurlOverlay(simFlip: SimFlipState) {
 fun PageRenderer(
     units: List<PageUnit>,
     mode: String,
-    isDark: Boolean,
+    palette: ReaderPalette,
     pageStyle: PageStyle,
-    textColor: Color,
     paddingH: Int,
     paddingV: Int,
     isStreaming: Boolean = false,
@@ -309,7 +293,7 @@ fun PageRenderer(
                         is PageUnit.Title -> PageTitleBlock(
                             section = unit.section,
                             title = unit.title,
-                            isDark = isDark,
+                            palette = palette,
                             pageStyle = pageStyle
                         )
                         is PageUnit.Para -> {
@@ -323,7 +307,7 @@ fun PageRenderer(
                                 Text(
                                     text = unit.cnText,
                                     style = bodyStyle,
-                                    color = textColor,
+                                    color = palette.bodyText,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(
@@ -335,15 +319,14 @@ fun PageRenderer(
                                 // en 模式
                                 val hasTranslation = unit.enText != null && unit.enText.isNotBlank()
                                 if (hasTranslation) {
-                                    PageBilingualParagraph(
+                                    BilingualParagraph(
                                         englishText = unit.enText!!,
                                         chineseText = unit.cnText,
                                         pairHead = unit.pairHead,
                                         pageStyle = pageStyle,
-                                        isDark = isDark,
+                                        palette = palette,
                                         lineHeightExtraPx = unit.lineHeightExtraPx,
-                                        paragraphSpacingPx = pageStyle.paragraphSpacingPx,
-                                        isLastPara = isLastPara
+                                        showSpacer = !isLastPara
                                     )
                                 } else {
                                     // 未翻译：原文直接显示（无气泡，避免原文=气泡内容重复）
@@ -354,7 +337,7 @@ fun PageRenderer(
                                     Text(
                                         text = unit.cnText,
                                         style = bodyStyle,
-                                        color = textColor,
+                                        color = palette.bodyText,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(
@@ -440,22 +423,22 @@ fun renderPageBitmap(
     window: BookWindow,
     page: Int,
     mode: String,
-    isDark: Boolean,
     pageStyle: PageStyle,
+    geometry: ReaderPageGeometry,
+    palette: ReaderPalette,
     density: androidx.compose.ui.unit.Density,
-    viewWidthPx: Int,
-    viewHeightPx: Int,
     bgColorArgb: Int,
     sectionColorArgb: Int,
-    contentWidthPx: Int,     // 排版内容区宽度（与 ChapterPaginator 的 contentWidthPx 一致）
-    padHPx: Int = 0,
-    padVPx: Int = 0,
-    statusBarPx: Int = 0,
-    navBarPx: Int = 0,
     measurer: TextMeasurer? = null
 ): Bitmap? {
     val units = window.pageUnits(page)
     if (units.isEmpty()) return null
+    val viewWidthPx = geometry.screenWidthPx
+    val viewHeightPx = geometry.screenHeightPx
+    val contentWidthPx = geometry.contentWidthPx.toInt()
+    val padHPx = geometry.padHPx
+    val statusBarPx = geometry.statusBarPx
+    val padVPx = geometry.padVPx
     val bitmap = try {
         // 软件位图 + Compose Canvas：直接画 TextLayoutResult（与真实页同源，逐像素一致）
         val image = androidx.compose.ui.graphics.ImageBitmap(
@@ -476,8 +459,8 @@ fun renderPageBitmap(
         canvas.translate(offsetX, offsetY)
 
         // 文本 Paint（按真实页配色）
-        val bodyPaint = textPaint(if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal)
-        val titlePaint = textPaint(if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Ink)
+        val bodyPaint = textPaint(palette.bodyText)
+        val titlePaint = textPaint(palette.titleText)
         val sectionPaint = textPaint(Color(sectionColorArgb))
 
         var cursorY = 0f
@@ -488,12 +471,12 @@ fun renderPageBitmap(
         units.forEachIndexed { idx, unit ->
             when (unit) {
                 is PageUnit.Title -> {
-                    cursorY += with(density) { 24.dp.toPx() }
+                    cursorY += ReaderMetrics.TITLE_TOP_DP * density.density
                     unit.sectionLayout?.let { layout ->
                         drawLayout(canvas, layout, sectionPaint, cursorY)
                         cursorY += layout.size.height.toFloat()
                     }
-                    cursorY += with(density) { 8.dp.toPx() }
+                    cursorY += ReaderMetrics.SECTION_TITLE_GAP_DP * density.density
                     unit.titleLayout?.let { layout ->
                         drawLayout(canvas, layout, titlePaint, cursorY)
                         cursorY += layout.size.height.toFloat()
@@ -510,7 +493,7 @@ fun renderPageBitmap(
                     val layout = if (unit.lineHeightExtraPx > 0f && measurer != null) {
                         val adjustedStyle = pageStyle.body.copy(
                             lineHeight = (pageStyle.body.lineHeight.value +
-                                with(density) { unit.lineHeightExtraPx.toSp().value }).sp
+                                density.run { unit.lineHeightExtraPx.toSp().value }).sp
                         )
                         val text = if (mode == "zh") unit.cnText else (unit.enText ?: unit.cnText)
                         val cw = contentWidthPx.coerceAtLeast(1)
@@ -520,28 +503,26 @@ fun renderPageBitmap(
                             constraints = Constraints(minWidth = cw, maxWidth = cw)
                         )
                     } else unit.mainLayout
-                    // en 模式双语对：对齐 PageBilingualParagraph 的 4dp top/bottom padding
+                    // en 模式双语对：对齐 BilingualParagraph 的 4dp top/bottom padding
                     if (hasTranslation) {
-                        cursorY += with(density) { 4.dp.toPx() }
+                        cursorY += ReaderMetrics.BILINGUAL_PAD_DP * density.density
                     }
                     layout?.let {
                         drawLayout(canvas, it, bodyPaint, cursorY)
                         cursorY += it.size.height.toFloat()
                     }
                     if (hasTranslation) {
-                        cursorY += with(density) { 4.dp.toPx() }
-                        // 气泡指示器（对齐 PageBilingualParagraph 的 18×6dp 小矩形），
+                        cursorY += ReaderMetrics.BILINGUAL_PAD_DP * density.density
+                        // 气泡指示器（对齐 BilingualParagraph 的 18×6dp 小矩形），
                         // 仅首片段 pairHead 显示，续段不重复
                         if (unit.pairHead) {
-                            val bubbleW = with(density) { 18.dp.toPx() }
-                            val bubbleH = with(density) { 6.dp.toPx() }
-                            val bubbleX = contentWidthPx.toFloat() - bubbleW - with(density) { 4.dp.toPx() }
-                            val bubbleY = cursorY - bubbleH - with(density) { 2.dp.toPx() }
-                            val bubbleColor = if (isDark) VibeColors.SiennaLight.copy(alpha = 0.25f)
-                                else VibeColors.Sienna.copy(alpha = 0.3f)
+                            val bubbleW = ReaderMetrics.BUBBLE_WIDTH_DP * density.density
+                            val bubbleH = ReaderMetrics.BUBBLE_HEIGHT_DP * density.density
+                            val bubbleX = contentWidthPx.toFloat() - bubbleW - ReaderMetrics.BUBBLE_END_DP * density.density
+                            val bubbleY = cursorY - bubbleH - ReaderMetrics.BUBBLE_BOTTOM_DP * density.density
                             val bubblePaint = Paint().apply {
                                 isAntiAlias = true
-                                color = bubbleColor
+                                color = palette.sourceBubble
                             }
                             canvas.drawRect(
                                 Rect(bubbleX, bubbleY, bubbleX + bubbleW, bubbleY + bubbleH),
@@ -588,157 +569,30 @@ private fun drawLayout(
 private fun PageTitleBlock(
     section: String?,
     title: String,
-    isDark: Boolean,
+    palette: ReaderPalette,
     pageStyle: PageStyle
 ) {
     val titleAlign = when (pageStyle.titleMode) {
         ReadingSettings.TITLE_MODE_CENTER -> TextAlign.Center
         else -> TextAlign.Start
     }
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = ReaderMetrics.TITLE_TOP_DP.dp)) {
         if (section != null) {
             Text(
                 section,
                 style = pageStyle.cn,
                 color = MaterialTheme.colorScheme.primary,
                 textAlign = titleAlign,
-                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                modifier = Modifier.fillMaxWidth().padding(bottom = ReaderMetrics.SECTION_TITLE_GAP_DP.dp)
             )
         }
         Text(
             title,
             style = pageStyle.title.copy(textAlign = titleAlign),
-            color = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Ink,
+            color = palette.titleText,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.fillMaxWidth()
         )
     }
 }
 
-/** 章节状态徽章（与滚动模式共用语义）。 */
-@Composable
-fun ReaderStatusBadge(status: Int) {
-    val (text, color) = when (status) {
-        Chapter.STATUS_PENDING -> "待翻译" to VibeColors.Sand
-        Chapter.STATUS_IN_PROGRESS -> "翻译中" to VibeColors.BlueMuted
-        Chapter.STATUS_DONE -> "已翻译" to VibeColors.Sage
-        Chapter.STATUS_FAILED -> "翻译失败" to VibeColors.RedMuted
-        Chapter.STATUS_TOO_LONG -> "过长" to VibeColors.Amber
-        else -> "未知" to VibeColors.Stone
-    }
-    Surface(
-        shape = RoundedCornerShape(4.dp),
-        color = color.copy(alpha = 0.15f)
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            fontSize = 11.sp,
-            color = color,
-            fontWeight = FontWeight.Medium
-        )
-    }
-}
-
-/** 双语对（分页版）：英文 + 尾部气泡（点击弹窗查看中文原文）。
- *  气泡与弹窗均为视觉叠加层，不影响排版测量，无需重排。 */
-@Composable
-fun PageBilingualParagraph(
-    englishText: String,
-    chineseText: String,
-    pairHead: Boolean,
-    pageStyle: PageStyle,
-    isDark: Boolean,
-    lineHeightExtraPx: Float,
-    paragraphSpacingPx: Float,
-    isLastPara: Boolean = false
-) {
-    var showPopup by remember { mutableStateOf(false) }
-    val density = LocalDensity.current
-
-    val bubbleColor = if (isDark) VibeColors.SiennaLight.copy(alpha = 0.25f)
-    else VibeColors.Sienna.copy(alpha = 0.3f)
-    val popupBgColor = if (isDark) VibeDarkColors.Surface else VibeColors.Parchment
-    val cnTextColor = if (isDark) VibeColors.Stone else VibeColors.WarmGray
-    val borderColor = if (isDark) VibeColors.Sand.copy(alpha = 0.3f) else VibeColors.Sand
-
-    fun extraLineHeight(base: androidx.compose.ui.unit.TextUnit): androidx.compose.ui.unit.TextUnit =
-        if (lineHeightExtraPx > 0f) {
-            (base.value + with(density) { lineHeightExtraPx.toSp().value }).sp
-        } else base
-    val enStyle = if (lineHeightExtraPx > 0f)
-        pageStyle.body.copy(lineHeight = extraLineHeight(pageStyle.body.lineHeight)) else pageStyle.body
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // 英文段落 + 尾部气泡（仅首片段 pairHead 显示气泡，续段不重复）
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = englishText,
-                style = enStyle,
-                color = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, bottom = 4.dp)
-            )
-            if (chineseText.isNotBlank() && pairHead) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 4.dp, bottom = 2.dp)
-                        .size(width = 18.dp, height = 6.dp)
-                        .clickable { showPopup = !showPopup }
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(3.dp),
-                        color = bubbleColor,
-                        modifier = Modifier.fillMaxSize()
-                    ) {}
-                }
-                if (showPopup) {
-                    Popup(
-                        alignment = Alignment.TopEnd,
-                        offset = IntOffset(0, with(density) { (-4).dp.roundToPx() }),
-                        onDismissRequest = { showPopup = false },
-                        properties = PopupProperties(focusable = true)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = popupBgColor,
-                            shadowElevation = 4.dp,
-                            modifier = Modifier
-                                .widthIn(max = 300.dp)
-                                .padding(4.dp)
-                        ) {
-                            Text(
-                                text = chineseText,
-                                style = pageStyle.cn,
-                                color = cnTextColor,
-                                fontStyle = FontStyle.Italic,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .drawBehind {
-                                        drawLine(
-                                            color = borderColor,
-                                            start = Offset(0f, 0f),
-                                            end = Offset(0f, size.height),
-                                            strokeWidth = 2.dp.toPx()
-                                        )
-                                    }
-                                    .then(
-                                        if (pageStyle.cn.textIndent != null)
-                                            Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
-                                        else
-                                            Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
-                                    )
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        // 末段不加段距（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx）
-        if (!isLastPara) {
-            Spacer(Modifier.height(with(density) { paragraphSpacingPx.toDp() }))
-        }
-    }
-}

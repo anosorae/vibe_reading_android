@@ -5,7 +5,14 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.ReadingSettings
 
 /**
@@ -32,7 +39,45 @@ data class PageStyle(
     val paragraphSpacingPx: Float,
     val bottomJustify: Boolean = true, // 底部对齐：页内行距重分布使末行沉底
     val titleMode: Int = ReadingSettings.TITLE_MODE_LEFT // 0 左 / 1 居中 / 2 隐藏
-)
+) {
+    companion object {
+        /** 由 ReadingSettings 构造排版样式（分页与滚动共用同一口径，对齐 Legado 微信读书预设）。 */
+        fun of(settings: ReadingSettings, density: Density): PageStyle {
+            val family = fontFamilyOf(settings.fontFamily)
+            val indent = if (settings.indentEm > 0f) TextIndent(
+                firstLine = settings.indentEm.em
+            ) else null
+            val align = if (settings.justify) TextAlign.Justify else TextAlign.Start
+            return PageStyle(
+                body = TextStyle(
+                    fontFamily = family,
+                    fontSize = settings.fontSize.sp,
+                    lineHeight = (settings.fontSize * 1.6 + settings.lineSpacing).sp,
+                    letterSpacing = settings.letterSpacing.em,
+                    textIndent = indent,
+                    textAlign = align
+                ),
+                cn = TextStyle(
+                    fontFamily = family,
+                    fontSize = (settings.fontSize * 0.875).sp,
+                    lineHeight = (settings.fontSize * 1.5 + settings.lineSpacing).sp,
+                    letterSpacing = settings.letterSpacing.em,
+                    textIndent = indent,
+                    textAlign = align
+                ),
+                title = TextStyle(
+                    fontFamily = family,
+                    fontSize = (settings.fontSize + 4).sp,
+                    lineHeight = ((settings.fontSize + 4) * 1.3f).sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                paragraphSpacingPx = with(density) { settings.paragraphSpacing.dp.toPx() },
+                bottomJustify = settings.bottomJustify,
+                titleMode = settings.titleMode
+            )
+        }
+    }
+}
 
 /** 章节内排版条目：章节标题 或 段落（en 模式为双语对）。 */
 sealed class FlowItem {
@@ -106,14 +151,14 @@ class ChapterPaginator(
     private val contentWidthPx: Float,
     private val contentHeightPx: Float,
     private val measurer: TextMeasurer,
-    private val density: Float           // display density，用于 dp→px 转换
+    private val density: Float = 1f          // display density，用于 dp→px 转换
 ) {
 
     var pages: List<TextPage> = emptyList()
         private set
 
     /** en 模式双语对额外占位：PageBilingualParagraph 的 4.dp top + 4.dp bottom padding（px） */
-    private val bilingualPadPx = (2 * kotlin.math.round(4f * density)).toFloat()
+    private val bilingualPadPx = ReaderMetrics.bilingualPadPx(density)
 
     init {
         pages = layoutAll()
@@ -313,9 +358,10 @@ class ChapterPaginator(
 
     /** 标题块高度：顶部留白 + 卷名 + 章节名（与 PageTitleBlock 一致，无徽章）。 */
     private fun measureTitleHeight(sectionLayout: TextLayoutResult?, titleLayout: TextLayoutResult?): Float {
-        val sectionH = sectionLayout?.size?.height?.toFloat()?.plus(8f * density) ?: 0f  // section→title 间距 = 8dp
+        val sectionH = sectionLayout?.size?.height?.toFloat()
+            ?.plus(ReaderMetrics.SECTION_TITLE_GAP_DP * density) ?: 0f  // section→title 间距 = 8dp
         val titleH = titleLayout?.size?.height?.toFloat() ?: 0f
-        return 24f * density + sectionH + titleH + style.paragraphSpacingPx * 0.5f  // 顶部留白 = 24dp
+        return ReaderMetrics.TITLE_TOP_DP * density + sectionH + titleH + style.paragraphSpacingPx * 0.5f  // 顶部留白 = 24dp
     }
 
     companion object {

@@ -14,105 +14,129 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.pagination.PageStyle
-import com.vibereading.app.ui.theme.VibeColors
-import com.vibereading.app.ui.theme.VibeDarkColors
+import com.vibereading.app.ui.reader.pagination.ReaderMetrics
 
 /**
- * 滚动模式双语段落：英文 + 尾部气泡（点击弹窗查看中文原文）。
+ * 双语段落（滚动模式与分页模式共用）：英文 + 尾部气泡（点击弹窗查看中文原文）。
  * 气泡与弹窗均为视觉叠加层，不影响排版测量，无需重排。
+ *
+ * - [lineHeightExtraPx]：分页模式底部对齐分配到每行的额外行高（px），滚动模式恒 0。
+ * - [pairHead]：是否为双语对首片段——仅首片段显示气泡，续段不重复。
+ * - [showSpacer]：是否在段尾加段距（分页末段不加，对齐排版器 buildPage 的 realUsed）。
  */
 @Composable
 fun BilingualParagraph(
     englishText: String,
     chineseText: String,
     pageStyle: PageStyle,
-    isDark: Boolean = false
+    palette: ReaderPalette,
+    lineHeightExtraPx: Float = 0f,
+    pairHead: Boolean = true,
+    showSpacer: Boolean = true
+) {
+    val density = LocalDensity.current
+    // 分页模式 lineHeightExtraPx > 0 时调整行高，与 PageRenderer 的 Text 排版一致
+    val enStyle = if (lineHeightExtraPx > 0f) pageStyle.body.copy(
+        lineHeight = (pageStyle.body.lineHeight.value + with(density) { lineHeightExtraPx.toSp().value }).sp
+    ) else pageStyle.body
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = englishText,
+                style = enStyle,
+                color = palette.bodyText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        top = ReaderMetrics.BILINGUAL_PAD_DP.dp,
+                        bottom = ReaderMetrics.BILINGUAL_PAD_DP.dp
+                    )
+            )
+            if (chineseText.isNotBlank() && pairHead) {
+                SourceBubble(chineseText = chineseText, pageStyle = pageStyle, palette = palette)
+            }
+        }
+        if (showSpacer) {
+            Spacer(Modifier.height(with(density) { pageStyle.paragraphSpacingPx.toDp() }))
+        }
+    }
+}
+
+/** 原文气泡 + 弹窗（视觉叠加层，不参与排版测量）。需在 Box 作用域内调用以使用 align 定位。 */
+@Composable
+private fun BoxScope.SourceBubble(
+    chineseText: String,
+    pageStyle: PageStyle,
+    palette: ReaderPalette
 ) {
     var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
-    val textColor = if (isDark) VibeColors.Cream.copy(alpha = 0.9f) else VibeColors.Charcoal
-    val bubbleColor = if (isDark) VibeColors.SiennaLight.copy(alpha = 0.25f)
-    else VibeColors.Sienna.copy(alpha = 0.3f)
-    val popupBgColor = if (isDark) VibeDarkColors.Surface else VibeColors.Parchment
-    val cnTextColor = if (isDark) VibeColors.Stone else VibeColors.WarmGray
-    val borderColor = if (isDark) VibeColors.Sand.copy(alpha = 0.3f) else VibeColors.Sand
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // 英文段落 + 尾部气泡
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = englishText,
-                style = pageStyle.body,
-                color = textColor,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp, bottom = 4.dp)
+    Box(
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(
+                end = ReaderMetrics.BUBBLE_END_DP.dp,
+                bottom = ReaderMetrics.BUBBLE_BOTTOM_DP.dp
             )
-            // 气泡：仅当有中文原文时显示
-            if (chineseText.isNotBlank()) {
-                Box(
+            .size(
+                width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
+                height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp
+            )
+            .clickable { showPopup = !showPopup }
+    ) {
+        Surface(
+            shape = RoundedCornerShape(3.dp),
+            color = palette.sourceBubble,
+            modifier = Modifier.fillMaxSize()
+        ) {}
+    }
+
+    if (showPopup) {
+        Popup(
+            alignment = Alignment.TopEnd,
+            offset = IntOffset(0, with(density) { (-4).dp.roundToPx() }),
+            onDismissRequest = { showPopup = false },
+            properties = PopupProperties(focusable = true)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = palette.popupBg,
+                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .padding(4.dp)
+            ) {
+                Text(
+                    text = chineseText,
+                    style = pageStyle.cn,
+                    color = palette.cnText,
+                    fontStyle = FontStyle.Italic,
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 4.dp, bottom = 2.dp)
-                        .size(width = 18.dp, height = 6.dp)
-                        .clickable { showPopup = !showPopup }
-                ) {
-                    // 半透明色块
-                    Surface(
-                        shape = RoundedCornerShape(3.dp),
-                        color = bubbleColor,
-                        modifier = Modifier.fillMaxSize()
-                    ) {}
-                }
-                // 弹窗：显示中文原文
-                if (showPopup) {
-                    Popup(
-                        alignment = Alignment.TopEnd,
-                        offset = IntOffset(0, with(density) { (-4).dp.roundToPx() }),
-                        onDismissRequest = { showPopup = false },
-                        properties = PopupProperties(focusable = true)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = popupBgColor,
-                            shadowElevation = 4.dp,
-                            modifier = Modifier
-                                .widthIn(max = 300.dp)
-                                .padding(4.dp)
-                        ) {
-                            Text(
-                                text = chineseText,
-                                style = pageStyle.cn,
-                                color = cnTextColor,
-                                fontStyle = FontStyle.Italic,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .drawBehind {
-                                        drawLine(
-                                            color = borderColor,
-                                            start = Offset(0f, 0f),
-                                            end = Offset(0f, size.height),
-                                            strokeWidth = 2.dp.toPx()
-                                        )
-                                    }
-                                    .then(
-                                        if (pageStyle.cn.textIndent != null)
-                                            Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
-                                        else
-                                            Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
-                                    )
+                        .fillMaxWidth()
+                        .drawBehind {
+                            drawLine(
+                                color = palette.popupBorder,
+                                start = Offset(0f, 0f),
+                                end = Offset(0f, size.height),
+                                strokeWidth = 2.dp.toPx()
                             )
                         }
-                    }
-                }
+                        .then(
+                            if (pageStyle.cn.textIndent != null)
+                                Modifier.padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
+                            else
+                                Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
+                        )
+                )
             }
         }
-
-        Spacer(Modifier.height(with(density) { pageStyle.paragraphSpacingPx.toDp() }))
     }
 }
 

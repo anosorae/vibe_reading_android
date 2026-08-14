@@ -19,7 +19,8 @@
   - `data/` — Room 本地库（`local/entity`、`local/dao`）、`remote/LlmApiService.kt`（SSE 流式翻译）、`repository/`（Book/Chapter/Settings 三个仓库）
   - `domain/` — 纯 Kotlin 模型（`model/`）+ `parser/TxtParser.kt`
   - `ui/` — Compose：`bookshelf`（书架 + `BookCover.kt`）、`reader`（阅读器 + `components/` + `pagination/`）、`settings`、`navigation`、`theme`
-    - `reader/pagination/` — `TextPaginator.kt`（`PageStyle`/`FlowItem`/`PageUnit` 共享类型 + `ChapterPaginator` 单章全量排版）、`BookWindow.kt`（章窗口管理器）、`BookPager.kt`（ReaderPager + 卷页位图渲染 + 卷页覆盖层）、`PageCurl.kt`（Legado 移植卷页几何）
+    - `reader/` — `ReaderScreen.kt`（阅读器主界面）、`ReaderViewModel.kt`（状态机）；`ReaderPalette.kt`（语义色板）、`ReaderGeometry.kt`（页几何）、`ChapterStatusUi.kt`（状态→颜色）为跨组件共享的单一数据源
+    - `reader/pagination/` — `TextPaginator.kt`（`PageStyle`/`FlowItem`/`PageUnit` 共享类型 + `ChapterPaginator` 单章全量排版）、`BookWindow.kt`（章窗口管理器）、`BookPager.kt`（ReaderPager + 卷页位图渲染 + 卷页覆盖层）、`PageCurl.kt`（Legado 移植卷页几何）、`ReaderMetrics.kt`（排版/渲染共享 dp 常量）
   - `VibeReadingApp.kt` — Application，持有 Room 单例
 - `app/src/test/java/com/vibereading/app/ui/reader/pagination/` — `ChapterPaginatorTest` / `BookWindowTest`（排版引擎单测）
 - `docs/` — ADR（`ADR-001-window-layout-model.md`：章窗口 + 行级排版模型决策记录）
@@ -49,6 +50,17 @@
 - 夜间模式独立于背景色预设，翻转时不改背景设置本身。
 - **主题系统**：全局主题由 `ThemeSettings`（`ThemeMode` SYSTEM/LIGHT/DARK × `AppAccent` VIBE/WEREAD，DataStore 持久化，旧 key "theme" 自动迁移为 accent）驱动，`VibeReadingTheme` 动态切换；阅读器页面背景/文字色由 `ReadingSettings` + `ReaderBgPresets` 独立控制，不依赖全局主题。
 - **书架**：`BookshelfViewModel` 内做排序（最近阅读/书名/上传时间）与搜索过滤（Repository 只给 `getShelfItems()` 原始流）；布局（列表/网格）、排序经 `SettingsRepository` 持久化；封面由 `BookCover.kt` 按书名 hash 生成渐变默认封面。
+
+## 代码复用与内聚（高内聚低耦合 / 一处修改，到处同步）
+
+- **高内聚低耦合**：同一概念（配色、几何、常量、状态映射）只在一处定义，其余代码引用——改一处即全局生效，避免「改 A 忘了改 B」导致底行被裁/气泡错位/亮暗不一致。
+- **单一数据源（Single Source of Truth）**：阅读器跨组件共享概念集中在以下文件，新增同类需求先查此处，禁止另起炉灶硬编码：
+  - `ui/reader/ReaderPalette.kt` — `ReaderPalette` 语义色板（`ReaderPalette.of(isDark)` 集中亮/暗三元），正文/标题/气泡/弹窗文字色共用。
+  - `ui/reader/ChapterStatusUi.kt` — `chapterStatusColor(status)` 章节状态→颜色映射（顶栏圆点/目录/徽章共用）。
+  - `ui/reader/ReaderGeometry.kt` — `ReaderPageGeometry` 页几何（`of(...)` 集中「内容区 = 屏 − 系统栏 − 用户边距」公式），排版/渲染/手势三处共用。
+  - `ui/reader/pagination/ReaderMetrics.kt` — 排版/渲染共享 dp 常量（标题顶距/卷名间距/双语 padding/气泡尺寸），排版器（px）、卷页位图（px）、渲染组件（dp）三处引用同一来源。
+- **能抽象的参数尽量抽象**：`PageStyle.of(readingSettings, density)` 统一样式构造（分页与滚动共用口径）；`renderPageBitmap` 几何/配色收敛为 `geometry` + `palette` 对象，避免十几枚平铺参数。
+- **复用而非复制**：滚动模式 `components/BilingualParagraph` 与分页模式 `PageBilingualParagraph` 已合并为单一 `BilingualParagraph`（可选参 `lineHeightExtraPx`/`pairHead`/`showSpacer` 区分场景）；删除死代码（如未被调用的 `ReaderStatusBadge`）。
 
 ## 代码约定
 

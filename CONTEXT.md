@@ -34,6 +34,10 @@
 | **长按操作菜单 (Long-press Action Menu)** | 书架上长按书籍弹出的操作列表：`开始阅读` / `删除`（二次确认） | 书籍卡片 |
 | **书籍卡片 (Book Row / Grid Card)** | 书架列表行或网格卡片：封面 + 书名 + 元数据 + 阅读进度条；点击=打开，长按=操作菜单 | 长按操作菜单 |
 | **章节状态 (Chapter Status)** | 0=待翻译 1=翻译中 2=已翻译 -1=失败 3=过长 | — |
+| **语义色板 (Reader Palette)** | 阅读器亮/暗配色的一处定义（`ReaderPalette.of(isDark)`）：正文/标题/气泡/弹窗文字色集中，组件共用，避免亮暗不一致 | 分散的三元色 |
+| **阅读页几何 (Reader Page Geometry)** | 「内容区 = 屏幕 − 系统栏 − 用户边距」的集中计算（`ReaderPageGeometry.of(...)`），排版/渲染/手势三处共用同一口径 | 各处手算 |
+| **排版共享常量 (Reader Metrics)** | 标题顶距/卷名间距/双语 padding/气泡尺寸等 dp 常量的单一来源（`ReaderMetrics`），排版器（px）、卷页位图（px）、渲染组件（dp）三处引用 | 魔法数散布 |
+| **章节状态颜色 (Chapter Status Color)** | 章节状态→颜色映射的单一函数（`chapterStatusColor`），顶栏圆点/目录/徽章共用 | 各处 when 重复 |
 
 ## 关键边界（决策摘要）
 
@@ -47,3 +51,4 @@
 - 仿真卷页：Canvas 卷页几何来自 Legado `SimulationPageDelegate` 移植（`PageCurl`）；页面快照位图用 `StaticLayout` + **真实 px 字号**绘制（与真实页视觉一致，旧实现把 sp 数值当 px 导致位图小字重叠）；手势 = 拖拽跟手 + 点按自动卷页（360ms）；**边到边模式下手势坐标需减去 statusBar 偏移**，内容区高度也扣除系统栏。
 - **边到边模式**：排版内容区 = 屏幕 − 系统栏 − 用户边距（`contentHeightPx = floor(screen - statusBar - navBar - paddingV*2)`）；渲染层 `PageRenderer`/`CurlOverlay` 用 `.statusBarsPadding().navigationBarsPadding()` + 用户边距；滚动模式 `LazyColumn` 的 `contentPadding` = 系统栏 + 用户边距；**仿真手势坐标 `downY/focusY` 需减去 statusBar**；排版/渲染/手势三处系统栏扣除必须一致，否则内容区错位导致底行被裁或手势偏移。
 - 滚动模式（`FLIP_SCROLL`）与分页模式**共享同一 `PageStyle`**（行高/字号/缩进/字距/两端对齐一致），边距也共用 `paddingH/paddingV`；滚动模式不参与行级排版与章窗口（LazyColumn + Text 结构）。
+- **高内聚低耦合（单一数据源）**：阅读器配色/几何/常量/状态映射各自只有一处定义（`ReaderPalette` / `ReaderPageGeometry` / `ReaderMetrics` / `chapterStatusColor`），样式构造统一走 `PageStyle.of(readingSettings, density)`；滚动与分页共用单一 `BilingualParagraph`。新增同类需求先查共享文件，不另起炉灶硬编码。

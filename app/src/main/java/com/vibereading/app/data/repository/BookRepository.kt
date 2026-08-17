@@ -35,8 +35,8 @@ class BookRepository(private val bookDao: BookDao) {
         bookDao.deleteById(id)
 
     /** 保存阅读进度：记录章节及原文字符 offset。 */
-    suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int) =
-        bookDao.updateLastReadProgress(bookId, chapterId, offset.coerceAtLeast(0), System.currentTimeMillis())
+    suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int): Boolean =
+        bookDao.updateLastReadProgress(bookId, chapterId, offset.coerceAtLeast(0), System.currentTimeMillis()) > 0
 
     suspend fun updateTranslatedCount(bookId: Long, count: Int) =
         bookDao.updateTranslatedCount(bookId, count)

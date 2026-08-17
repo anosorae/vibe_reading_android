@@ -532,35 +532,3 @@ private fun drawLayout(
     layout.multiParagraph.paint(canvas = canvas, color = paint.color)
     canvas.restore()
 }
-
-@Composable
-private fun PageTitleBlock(
-    section: String?,
-    title: String,
-    palette: ReaderPalette,
-    pageStyle: PageStyle
-) {
-    val titleAlign = when (pageStyle.titleMode) {
-        ReadingSettings.TITLE_MODE_CENTER -> TextAlign.Center
-        else -> TextAlign.Start
-    }
-    Column(modifier = Modifier.fillMaxWidth().padding(top = ReaderMetrics.TITLE_TOP_DP.dp)) {
-        if (section != null) {
-            Text(
-                section,
-                style = pageStyle.cn,
-                color = MaterialTheme.colorScheme.primary,
-                textAlign = titleAlign,
-                modifier = Modifier.fillMaxWidth().padding(bottom = ReaderMetrics.SECTION_TITLE_GAP_DP.dp)
-            )
-        }
-        Text(
-            title,
-            style = pageStyle.title.copy(textAlign = titleAlign),
-            color = palette.titleText,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.fillMaxWidth().padding(bottom = ReaderMetrics.TITLE_BOTTOM_DP.dp)
-        )
-    }
-}
-

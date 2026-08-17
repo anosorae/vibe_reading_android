@@ -24,6 +24,7 @@ fun ReadingChapterTitle(
     palette: ReaderPalette,
     pageStyle: PageStyle
 ) {
+    if (pageStyle.titleMode == ReadingSettings.TITLE_MODE_HIDDEN) return
     val align = when (pageStyle.titleMode) {
         ReadingSettings.TITLE_MODE_CENTER -> TextAlign.Center
         else -> TextAlign.Start

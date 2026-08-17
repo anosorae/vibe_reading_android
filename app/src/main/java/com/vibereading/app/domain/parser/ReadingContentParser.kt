@@ -53,38 +53,45 @@ data class BilingualParagraph(
  */
 object ReadingContentParser {
 
-    private val blankLineSeparator = Regex("(?:\\r?\\n)[^\\S\\r\\n]*(?:\\r?\\n[^\\S\\r\\n]*)+")
-    private val lineSeparator = Regex("\\r\\n|\\n|\\r")
-    private val marker = Regex("\\[(\\d+)]\\s*")
+    private val marker = Regex("""\[(\d+)]""")
 
     /**
-     * 按旧阅读器约定拆分段落：有空行时按空行，否则每个非空行一段。
-     * 返回值保留 trim 后正文的准确字符范围，不会把换行或空格误算进正文。
+     * 按阅读器约定拆分段落，并保留正文在原始章节中的准确范围。
+     *
+     * 换行统一按 LF、CRLF、CR 识别。存在空白行时，连续的非空行属于同一段；
+     * 没有空白行时，每个非空行是一段。段首尾的空白（包括换行）不属于正文，
+     * 段内的换行和空格则原样保留。
      */
     fun parseParagraphs(content: String): List<ReadingParagraph> {
         if (content.isEmpty()) return emptyList()
 
-        val blankSeparated = blankLineSeparator.splitWithRanges(content)
-        val candidates = if (blankSeparated.size > 1) {
-            blankSeparated
+        val lines = linesWithRanges(content)
+        val hasBlankLine = lines.any { (start, end) -> isBlank(content, start, end) }
+        val rawRanges = if (hasBlankLine) {
+            groupedByBlankLines(content, lines)
         } else {
-            lineSeparator.splitWithRanges(content)
+            lines.map { (start, end) -> start to end }
         }
-        return candidates.mapNotNull { (start, end) -> trimRange(content, start, end) }
-            .map { (start, end) -> ReadingParagraph(content.substring(start, end), start, end) }
+
+        return rawRanges.mapNotNull { (start, end) ->
+            trimRange(content, start, end)
+        }.map { (start, end) ->
+            ReadingParagraph(content.substring(start, end), start, end)
+        }
     }
 
     /** 原文段落的明确命名入口。 */
     fun parseOriginalParagraphs(content: String): List<ReadingParagraph> = parseParagraphs(content)
 
     /** 兼容原 splitParagraphs API 的纯文本视图。 */
-    fun splitParagraphs(content: String): List<String> =
-        parseParagraphs(content).map { it.text }
+    fun splitParagraphs(content: String): List<String> = parseParagraphs(content).map { it.text }
 
     /**
      * 解析带 [N] 标记的译文，并把每个标记绑定到原文段落及其 offset。
-     * 没有标记时按兼容的段落顺序配对；无效/越界标记仍保留译文，但 original 为 null，
-     * 避免静默把错误标记绑定到另一段原文。
+     *
+     * 合法标记按原文顺序返回；缺失的合法标记也返回一个空译文段落，以保留原文。
+     * 非法标记不会绑定到其他原文，也不会被丢弃，而是作为 original=null 的译文
+     * 返回给调用方。没有任何标记时，两边按共同的段落规则顺序配对。
      */
     fun parseBilingualParagraphs(
         translatedContent: String,
@@ -92,36 +99,130 @@ object ReadingContentParser {
     ): List<BilingualParagraph> {
         val originals = parseParagraphs(originalContent)
         val matches = marker.findAll(translatedContent).toList()
+
         if (matches.isEmpty()) {
-            return splitParagraphs(translatedContent).mapIndexed { index, text ->
-                BilingualParagraph(
-                    marker = null,
-                    translatedText = text,
-                    original = originals.getOrNull(index)
-                )
+            return pairUnmarked(translatedContent, originals)
+        }
+
+        val marked = matches.mapIndexed { index, match ->
+            val textStart = match.range.last + 1
+            val textEnd = matches.getOrNull(index + 1)?.range?.first ?: translatedContent.length
+            MarkedTranslation(
+                marker = match.groupValues[1].toIntOrNull(),
+                text = translatedContent.substring(textStart, textEnd).trim()
+            )
+        }.toMutableList()
+        // marker 之前的正文也必须保留，不能因为模型漏写/错写标记而静默丢失。
+        val prefix = translatedContent.substring(0, matches.first().range.first).trim()
+        if (prefix.isNotEmpty()) marked.add(0, MarkedTranslation(marker = null, text = prefix))
+        val legal = marked.filter { it.marker != null && it.marker in 1..originals.size }
+
+        // 如果全部标记都越界，仍返回每段译文；不能把它静默当成原文的第 1 段。
+        if (legal.isEmpty()) {
+            return marked.filter { it.text.isNotEmpty() }.map {
+                BilingualParagraph(it.marker, it.text, original = null)
             }
         }
 
-        return matches.mapNotNullIndexed { index, match ->
-            val textStart = match.range.last + 1
-            val textEnd = matches.getOrNull(index + 1)?.range?.first ?: translatedContent.length
-            val text = translatedContent.substring(textStart, textEnd).trim()
-            if (text.isEmpty()) return@mapNotNullIndexed null
-            val number = match.groupValues[1].toIntOrNull()
-            BilingualParagraph(
-                marker = number,
-                translatedText = text,
-                original = number?.takeIf { it in 1..originals.size }?.let { originals[it - 1] }
-            )
+        val result = ArrayList<BilingualParagraph>(originals.size + marked.size)
+        val bySourceIndex = legal.groupBy { it.marker!! - 1 }
+        originals.forEachIndexed { sourceIndex, original ->
+            val translations = bySourceIndex[sourceIndex].orEmpty()
+            if (translations.isEmpty()) {
+                // 缺失合法 marker：保留原文，交给 ReadingContent 渲染为未翻译段落。
+                result += BilingualParagraph(
+                    marker = sourceIndex + 1,
+                    translatedText = "",
+                    original = original
+                )
+            } else {
+                translations.forEach { translation ->
+                    result += BilingualParagraph(
+                        marker = translation.marker,
+                        translatedText = translation.text,
+                        original = original
+                    )
+                }
+            }
         }
+
+        // 标记前的散落文本、越界标记和无法绑定的重复内容都保留，但不伪造原文范围。
+        marked.filter { it.text.isNotEmpty() && (it.marker == null || it.marker !in 1..originals.size) }.forEach {
+            result += BilingualParagraph(it.marker, it.text, original = null)
+        }
+        return result
     }
 
-    /** 兼容旧 UI 的 Pair 结构，保留原文顺序和 [N] 对齐规则。 */
+    /** 兼容旧 UI 的 Pair 结构，实际解析仍由本解析器完成。 */
     fun parseBilingualPairs(
         translatedContent: String,
         originalContent: String
     ): List<Pair<String, String>> = parseBilingualParagraphs(translatedContent, originalContent)
         .map { it.translatedText to it.chineseText }
+
+    private fun pairUnmarked(
+        translatedContent: String,
+        originals: List<ReadingParagraph>
+    ): List<BilingualParagraph> {
+        val translations = parseParagraphs(translatedContent).map { it.text }
+        val count = maxOf(originals.size, translations.size)
+        return (0 until count).map { index ->
+            BilingualParagraph(
+                marker = null,
+                translatedText = translations.getOrNull(index).orEmpty(),
+                original = originals.getOrNull(index)
+            )
+        }
+    }
+
+    private data class MarkedTranslation(val marker: Int?, val text: String)
+
+    private fun linesWithRanges(content: String): List<Pair<Int, Int>> {
+        val result = ArrayList<Pair<Int, Int>>()
+        var lineStart = 0
+        var index = 0
+        while (index < content.length) {
+            val lineEnd = when (content[index]) {
+                '\n', '\r' -> index
+                else -> {
+                    index++
+                    continue
+                }
+            }
+            result += lineStart to lineEnd
+            if (content[index] == '\r' && index + 1 < content.length && content[index + 1] == '\n') {
+                index++
+            }
+            index++
+            lineStart = index
+        }
+        // 保留末尾空行，便于统一判断段落边界；后续 trimRange 会将其移除。
+        result += lineStart to content.length
+        return result
+    }
+
+    private fun groupedByBlankLines(
+        content: String,
+        lines: List<Pair<Int, Int>>
+    ): List<Pair<Int, Int>> {
+        val result = ArrayList<Pair<Int, Int>>()
+        var groupStart: Int? = null
+        var groupEnd = 0
+        lines.forEach { (start, end) ->
+            if (isBlank(content, start, end)) {
+                groupStart?.let { result += it to groupEnd }
+                groupStart = null
+            } else {
+                if (groupStart == null) groupStart = start
+                groupEnd = end
+            }
+        }
+        groupStart?.let { result += it to groupEnd }
+        return result
+    }
+
+    private fun isBlank(content: String, start: Int, end: Int): Boolean =
+        start == end || content.substring(start, end).all(Char::isWhitespace)
 
     private fun trimRange(content: String, start: Int, end: Int): Pair<Int, Int>? {
         var trimmedStart = start
@@ -129,22 +230,5 @@ object ReadingContentParser {
         while (trimmedStart < trimmedEnd && content[trimmedStart].isWhitespace()) trimmedStart++
         while (trimmedEnd > trimmedStart && content[trimmedEnd - 1].isWhitespace()) trimmedEnd--
         return if (trimmedStart < trimmedEnd) trimmedStart to trimmedEnd else null
-    }
-
-    private fun Regex.splitWithRanges(content: String): List<Pair<Int, Int>> {
-        val result = mutableListOf<Pair<Int, Int>>()
-        var start = 0
-        findAll(content).forEach { match ->
-            result += start to match.range.first
-            start = match.range.last + 1
-        }
-        result += start to content.length
-        return result
-    }
-
-    private inline fun <T, R> Iterable<T>.mapNotNullIndexed(transform: (Int, T) -> R?): List<R> {
-        val result = ArrayList<R>()
-        forEachIndexed { index, item -> transform(index, item)?.let(result::add) }
-        return result
     }
 }

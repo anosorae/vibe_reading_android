@@ -82,10 +82,11 @@ class ReaderViewModel(
                 _uiState.update { it.copy(bookTitle = book.title, chapters = chapters) }
                 if (!restoreCompleted && chapters.isNotEmpty()) {
                     val chapter = chapters.firstOrNull { it.id == savedPosition.chapterId } ?: chapters.first()
-                    val offset = if (chapter.id == savedPosition.chapterId) {
-                        savedPosition.offset.coerceIn(0, chapter.content.length)
-                    } else 0
-                    val position = ReadingPosition(chapter.id, offset)
+                    val position = if (chapter.id == savedPosition.chapterId) {
+                        savedPosition.normalized(chapter.content.length).copy(chapterId = chapter.id)
+                    } else {
+                        ReadingPosition(chapter.id, 0)
+                    }
                     restoreCompleted = true
                     _uiState.update {
                         it.copy(
@@ -143,7 +144,7 @@ class ReaderViewModel(
     /** 用户主动跳转；分页位置由当前排版器根据 offset 派生。 */
     fun navigateTo(chapterId: Long, offset: Int = 0, persist: Boolean = true) {
         viewModelScope.launch {
-            val chapter = chapterRepo.getChapterById(chapterId) ?: return@launch
+            val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return@launch
             val position = ReadingPosition(chapterId, offset.coerceIn(0, chapter.content.length))
             _uiState.update {
                 it.copy(
@@ -381,6 +382,10 @@ class ReaderViewModel(
     private fun isCurrentTranslation(generation: Long, chapterId: Long): Boolean =
         generation == translationGeneration && _uiState.value.activeChapterId == chapterId
 
+    /** 任务仍拥有该章节的写权限；切换阅读章节不应取消合法后台翻译。 */
+    private fun ownsTranslation(generation: Long, chapterId: Long): Boolean =
+        generation == translationGeneration && translationChapterId == chapterId
+
     private suspend fun cancelTranslation(restoreStatus: Boolean = true) {
         val oldChapterId = translationChapterId
         val oldJob = translateJob
@@ -389,7 +394,7 @@ class ReaderViewModel(
         translationChapterId = null
         oldJob?.cancelAndJoin()
         if (restoreStatus && oldChapterId != null) {
-            chapterRepo.updateStatus(oldChapterId, Chapter.STATUS_PENDING)
+            chapterRepo.updateStatus(bookId, oldChapterId, Chapter.STATUS_PENDING)
         }
     }
 
@@ -411,7 +416,7 @@ class ReaderViewModel(
                 if (isCurrentTranslation(generation, chapterId)) {
                     _uiState.update { it.copy(translationPhase = TranslationPhase.PREPARING, errorMessage = null) }
                 }
-                val chapter = chapterRepo.getChapterById(chapterId) ?: return@launch
+                val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return@launch
                 val settings = _uiState.value.llmSettings
 
                 if (settings.apiKey.isBlank()) {
@@ -423,14 +428,14 @@ class ReaderViewModel(
 
                 if (chapter.content.length > settings.chapterMaxChars) {
                     val msg = "章节过长 (${chapter.content.length} 字符)"
-                    chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_TOO_LONG, msg)
+                    chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_TOO_LONG, msg)
                     if (isCurrentTranslation(generation, chapterId)) {
                         _uiState.update { it.copy(translationPhase = TranslationPhase.FAILED, errorMessage = msg) }
                     }
                     return@launch
                 }
 
-                chapterRepo.updateStatus(chapterId, Chapter.STATUS_IN_PROGRESS)
+                chapterRepo.updateStatus(bookId, chapterId, Chapter.STATUS_IN_PROGRESS)
                 markedInProgress = true
                 if (isCurrentTranslation(generation, chapterId)) {
                     _uiState.update {
@@ -475,8 +480,8 @@ class ReaderViewModel(
                         }
                         is TranslationEvent.Done -> {
                             terminalEvent = true
-                            chapterRepo.updateTranslation(chapterId, event.text, Chapter.STATUS_DONE)
-                            chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_DONE, null)
+                            if (!ownsTranslation(generation, chapterId)) return@collect
+                            chapterRepo.updateTranslation(bookId, chapterId, event.text, Chapter.STATUS_DONE)
                             val doneCount = chapterRepo.getDoneCount(bookId)
                             bookRepo.updateTranslatedCount(bookId, doneCount)
                             if (isCurrent) _uiState.update {
@@ -490,7 +495,8 @@ class ReaderViewModel(
                         }
                         is TranslationEvent.Error -> {
                             terminalEvent = true
-                            chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_FAILED, event.reason)
+                            if (!ownsTranslation(generation, chapterId)) return@collect
+                            chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_FAILED, event.reason)
                             if (isCurrent) _uiState.update {
                                 it.copy(
                                     isStreaming = false,
@@ -505,7 +511,9 @@ class ReaderViewModel(
                 }
                 if (!terminalEvent) {
                     val reason = "翻译流未正常结束"
-                    chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_FAILED, reason)
+                    if (ownsTranslation(generation, chapterId)) {
+                        chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_FAILED, reason)
+                    }
                     if (isCurrentTranslation(generation, chapterId)) {
                         _uiState.update {
                             it.copy(isStreaming = false, translationPhase = TranslationPhase.FAILED, errorMessage = reason)
@@ -514,7 +522,9 @@ class ReaderViewModel(
                 }
             } catch (e: CancellationException) {
                 if (generation == translationGeneration && markedInProgress) {
-                    chapterRepo.updateStatus(chapterId, Chapter.STATUS_PENDING)
+                    if (ownsTranslation(generation, chapterId)) {
+                        chapterRepo.updateStatus(bookId, chapterId, Chapter.STATUS_PENDING)
+                    }
                     if (_uiState.value.activeChapterId == chapterId) {
                         _uiState.update {
                             it.copy(isStreaming = false, translationPhase = TranslationPhase.CANCELLED, thinkingText = "", streamingCharCount = 0)
@@ -525,7 +535,9 @@ class ReaderViewModel(
             } catch (e: Exception) {
                 if (markedInProgress) {
                     val reason = e.message ?: "翻译失败"
-                    chapterRepo.updateStatusWithError(chapterId, Chapter.STATUS_FAILED, reason)
+                    if (ownsTranslation(generation, chapterId)) {
+                        chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_FAILED, reason)
+                    }
                     if (isCurrentTranslation(generation, chapterId)) {
                         _uiState.update {
                             it.copy(isStreaming = false, translationPhase = TranslationPhase.FAILED, streamingCharCount = 0, errorMessage = reason)

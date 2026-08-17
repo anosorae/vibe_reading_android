@@ -11,17 +11,17 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     fun getChaptersByBook(bookId: Long): Flow<List<Chapter>> =
         chapterDao.getChaptersByBook(bookId).map { list -> list.map { it.toDomain() } }
 
-    suspend fun getChapterById(id: Long): Chapter? =
-        chapterDao.getChapterById(id)?.toDomain()
+    suspend fun getChapterById(bookId: Long, chapterId: Long): Chapter? =
+        chapterDao.getChapterById(bookId, chapterId)?.toDomain()
 
-    fun getChapterByIdFlow(id: Long): Flow<Chapter?> =
-        chapterDao.getChapterByIdFlow(id).map { it?.toDomain() }
+    fun getChapterByIdFlow(bookId: Long, chapterId: Long): Flow<Chapter?> =
+        chapterDao.getChapterByIdFlow(bookId, chapterId).map { it?.toDomain() }
 
     suspend fun getChaptersByBookList(bookId: Long): List<Chapter> =
         chapterDao.getChaptersByBookList(bookId).map { it.toDomain() }
 
     suspend fun getRecentDoneChapters(bookId: Long, limit: Int): List<Chapter> =
-        chapterDao.getRecentDoneChapters(bookId, limit).map { it.toDomain() }
+        chapterDao.getRecentDoneChapters(bookId, Chapter.STATUS_DONE, limit).map { it.toDomain() }
 
     suspend fun insertAll(chapters: List<Chapter>) =
         chapterDao.insertAll(chapters.map { it.toEntity() })
@@ -29,23 +29,23 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     suspend fun update(chapter: Chapter) =
         chapterDao.update(chapter.toEntity())
 
-    suspend fun updateStatus(id: Long, status: Int) =
-        chapterDao.updateStatus(id, status)
+    suspend fun updateStatus(bookId: Long, chapterId: Long, status: Int): Int =
+        chapterDao.updateStatus(bookId, chapterId, status)
 
-    suspend fun updateStatusWithError(id: Long, status: Int, errorMessage: String?) =
-        chapterDao.updateStatusWithError(id, status, errorMessage)
+    suspend fun updateStatusWithError(bookId: Long, chapterId: Long, status: Int, errorMessage: String?): Int =
+        chapterDao.updateStatusWithError(bookId, chapterId, status, errorMessage)
 
-    suspend fun updateTranslation(id: Long, content: String, status: Int) =
-        chapterDao.updateTranslation(id, content, status)
+    suspend fun updateTranslation(bookId: Long, chapterId: Long, content: String, status: Int): Int =
+        chapterDao.updateTranslation(bookId, chapterId, content, status)
 
-    suspend fun resetChapter(id: Long) =
-        chapterDao.resetChapter(id)
+    suspend fun resetChapter(bookId: Long, chapterId: Long): Int =
+        chapterDao.resetChapter(bookId, chapterId)
 
     suspend fun getDoneCount(bookId: Long): Int =
         chapterDao.getDoneCount(bookId)
 
     fun hasInProgress(bookId: Long): Flow<Boolean> =
-        chapterDao.hasInProgress(bookId)
+        chapterDao.hasInProgress(bookId, Chapter.STATUS_IN_PROGRESS)
 
     private fun ChapterEntity.toDomain() = Chapter(
         id = id, bookId = bookId, title = title, section = section,

@@ -12,7 +12,7 @@ import com.vibereading.app.data.local.entity.ChapterEntity
 @Database(
     entities = [BookEntity::class, ChapterEntity::class],
     version = 5,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
@@ -81,7 +81,6 @@ abstract class AppDatabase : RoomDatabase() {
                     "vibe_reading"
                 )
                     .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
-                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

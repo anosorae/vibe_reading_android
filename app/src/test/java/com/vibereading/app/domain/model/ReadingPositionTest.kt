@@ -18,4 +18,16 @@ class ReadingPositionTest {
             ReadingPosition(chapterId = 1L, offset = -1)
         }
     }
+
+    @Test
+    fun `position without chapter can only be beginning`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ReadingPosition(chapterId = null, offset = 1)
+        }
+    }
+
+    @Test
+    fun `normalized clamps to chapter length`() {
+        assertEquals(ReadingPosition(1L, 4), ReadingPosition(1L, 20).normalized(4))
+    }
 }

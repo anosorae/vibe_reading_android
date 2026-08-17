@@ -12,7 +12,13 @@ data class ReadingPosition(
 ) {
     init {
         require(offset >= 0) { "阅读位置 offset 不能为负数" }
+        require(chapterId != null || offset == 0) {
+            "没有章节的阅读位置只能使用 offset=0"
+        }
     }
+
+    fun normalized(contentLength: Int): ReadingPosition =
+        copy(offset = offset.coerceIn(0, contentLength.coerceAtLeast(0)))
 
     companion object {
         val Beginning = ReadingPosition(chapterId = null, offset = 0)

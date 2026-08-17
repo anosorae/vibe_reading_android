@@ -156,9 +156,11 @@ data class TextPage(
     /** 本页覆盖的原文范围（标题页或空页为 null）。 */
     val sourceStartOffset: Int? = units
         .filterIsInstance<PageUnit.Para>()
+        .filter { it.sourceStartOffset >= 0 && it.sourceEndOffset >= it.sourceStartOffset }
         .minOfOrNull { it.sourceStartOffset },
     val sourceEndOffset: Int? = units
         .filterIsInstance<PageUnit.Para>()
+        .filter { it.sourceStartOffset >= 0 && it.sourceEndOffset >= it.sourceStartOffset }
         .maxOfOrNull { it.sourceEndOffset }
 )
 
@@ -272,12 +274,13 @@ class ChapterPaginator(
                                 pos++
                             }
                         } else if (h > contentHeightPx) {
-                            // 极端：单行超高（防御）——截断避免死循环
-                            val trunc = text.take(200)
-                            val tl = measureLayout(trunc, style.body)
+                            // 极端：单行超高（防御）。单行无法按行切分时允许本页溢出，
+                            // 但必须保留完整 continuation，不能用固定长度截断正文。
+                            val continuation = text
+                            val tl = measureLayout(continuation, style.body)
                             if (units.isNotEmpty()) pageDone()
                             units += PageUnit.Para(
-                                item.chapterId, item.paraIndex, trunc, null,
+                                item.chapterId, item.paraIndex, continuation, null,
                                 lineCount = tl.lineCount, mainLayout = tl,
                                 sourceStartOffset = item.sourceStartOffset,
                                 sourceEndOffset = item.sourceEndOffset

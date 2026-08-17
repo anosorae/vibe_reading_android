@@ -107,14 +107,17 @@ class BookWindow(
     fun indexOfOffset(chapterId: Long, sourceOffset: Int): Int? =
         indexOf(chapterId, sourceOffset.toLong())
 
-    /** 返回窗口页对应的章节原文范围；页不存在或未排版时返回 null。 */
+    /**
+     * 返回窗口页对应的章节原文范围（start inclusive，end exclusive）。
+     * 页不存在或未排版时返回 null。
+     */
     fun offsetOfPage(index: Int): IntRange? {
         val wp = windowPages.getOrNull(index) ?: return null
         val page = synchronized(lock) { paginators[wp.chapterId]?.pages?.getOrNull(wp.pageInChapter) }
             ?: return null
-        val start = page.sourceStartOffset ?: return null
-        val end = page.sourceEndOffset ?: start
-        return start..end
+        val start = page.sourceStartOffset?.takeIf { it >= 0 } ?: return null
+        val end = page.sourceEndOffset?.takeIf { it >= start } ?: return null
+        return start until end
     }
 
     /** 某章已排版时的页数（未排版返回 0）。 */

@@ -206,7 +206,7 @@ fun ReaderScreen(
 
     // 分页模式「程序化跳章」目标（目录/上下章/窗口边界续翻）；「当前章重定位」也走这里
     var pagerJumpTarget by remember { mutableStateOf<Long?>(null) }
-    var pagerJumpPage by remember { mutableIntStateOf(0) }
+    var pagerJumpOffset by remember { mutableIntStateOf(0) }
     // 首次恢复必须在窗口可按 sourceOffset 定位后才放行位置追踪
     var initialSeekDone by remember { mutableStateOf(false) }
     // 窗口滑动期间抑制「翻页同步章」，避免 recenter 滚动与跨章同步互相打架
@@ -221,7 +221,7 @@ fun ReaderScreen(
         val target = pagerJumpTarget ?: state.activeChapterId
         if (target == null) return@LaunchedEffect
         val sourceOffset = when {
-            isProgrammatic -> 0
+            isProgrammatic -> pagerJumpOffset
             !initialSeekDone -> state.position?.offset ?: 0
             else -> window.offsetOfPage(pagerState.currentPage)?.first ?: (state.position?.offset ?: 0)
         }
@@ -406,7 +406,7 @@ fun ReaderScreen(
             val targetOffset = if (next >= window.pageCount) 0
             else state.chapters.firstOrNull { it.id == nid }?.content?.length ?: 0
             pagerJumpTarget = nid
-            pagerJumpPage = 0
+            pagerJumpOffset = targetOffset
             vm.navigateTo(nid, targetOffset)
             return
         }
@@ -424,7 +424,9 @@ fun ReaderScreen(
     }
 
     // 滚动模式跨章滚动状态
-    val scrollChunks = remember(state.chapters, state.mode) { buildScrollChunks(state.chapters) }
+    val scrollChunks = remember(state.chapters, state.mode, pageStyle.titleMode) {
+        buildScrollChunks(state.chapters, pageStyle.titleMode)
+    }
     val scrollState = rememberLazyListState()
     // 程序化跳章标记（目录/上下章按钮设置，滚动跟踪不响应）
     var pendingJumpChapter by remember { mutableStateOf<Long?>(null) }
@@ -472,10 +474,11 @@ fun ReaderScreen(
     fun jumpToChapter(id: Long) {
         if (isPagerMode) {
             pagerJumpTarget = id
-            pagerJumpPage = 0
+            pagerJumpOffset = 0
         } else {
             pendingJumpChapter = id
         }
+        pagerJumpOffset = 0
         vm.navigateTo(id, 0)
     }
 
@@ -506,7 +509,6 @@ fun ReaderScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            kotlinx.coroutines.MainScope().launch { vm.flushProgress() }
         }
     }
 
@@ -1075,10 +1077,15 @@ private sealed interface ScrollItem {
     }
 }
 
-private fun buildScrollChunks(chapters: List<Chapter>): List<ScrollItem> = buildList {
+private fun buildScrollChunks(
+    chapters: List<Chapter>,
+    titleMode: Int
+): List<ScrollItem> = buildList {
     chapters.forEach { chapter ->
         val content = com.vibereading.app.ui.reader.content.ReadingContent.fromChapter(chapter)
-        add(ScrollItem.Title(content.chapterId, content.section, content.title, content.status, content.errorMessage))
+        if (titleMode != ReadingSettings.TITLE_MODE_HIDDEN) {
+            add(ScrollItem.Title(content.chapterId, content.section, content.title, content.status, content.errorMessage))
+        }
         content.paragraphs.forEach { add(ScrollItem.Paragraph(content.chapterId, it)) }
     }
 }
@@ -1090,7 +1097,16 @@ private fun List<ScrollItem>.indexInChunks(chapterId: Long?, offset: Int = 0): I
     if (chapterId == null) return null
     val candidates = indices.filter { get(it).chapterId == chapterId }
     if (candidates.isEmpty()) return null
-    return candidates.firstOrNull { get(it).sourceStartOffset >= offset } ?: candidates.last()
+    val containing = candidates.firstOrNull { index ->
+        val item = get(index)
+        item is ScrollItem.Paragraph &&
+            item.paragraph.sourceStartOffset <= offset &&
+            offset < item.paragraph.sourceEndOffset
+    }
+    return containing
+        ?: candidates.firstOrNull { get(it).sourceStartOffset > offset }
+        ?: candidates.lastOrNull { get(it) is ScrollItem.Paragraph }
+        ?: candidates.last()
 }
 
 /** 章节号正则：提取「第N章/回/节/卷」中的数字。 */

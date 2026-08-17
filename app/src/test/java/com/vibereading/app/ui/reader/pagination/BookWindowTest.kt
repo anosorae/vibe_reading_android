@@ -116,6 +116,41 @@ class BookWindowTest {
     }
 
     @Test
+    fun offsetOfPage_returnsHalfOpenSourceRange() {
+        val content = "唯一段落"
+        val chapter = Chapter(
+            id = 99L,
+            bookId = 1,
+            title = "偏移测试",
+            chapterIndex = 0,
+            content = content
+        )
+        val w = BookWindow(
+            chapters = listOf(chapter),
+            style = PageStyle(
+                body = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp),
+                cn = TextStyle(fontFamily = FontFamily.Default, fontSize = 14.sp, lineHeight = 21.sp),
+                title = TextStyle(fontFamily = FontFamily.Default, fontSize = 20.sp, lineHeight = 28.sp),
+                paragraphSpacingPx = 10f
+            ),
+            mode = "zh",
+            contentWidthPx = 400f,
+            contentHeightPx = 600f,
+            measurer = measurer,
+            backgroundMeasurer = { measurer }
+        )
+        w.recenterSync(99L)
+
+        val firstContentPage = w.indexOf(99L, 0)
+        assertNotNull("正文页应在窗口内", firstContentPage)
+        val range = w.offsetOfPage(firstContentPage!!)
+        assertNotNull("正文页应有原文范围", range)
+        assertEquals("范围起点应包含", 0, range!!.first)
+        assertEquals("半开范围末端不应包含", content.length - 1, range.last)
+        assertTrue("半开范围不应包含 end", content.length !in range)
+    }
+
+    @Test
     fun enWindow_bilingualAtomicHoldsAcrossWindow() {
         val cnChapters = chapters.mapIndexed { i, ch ->
             ch.copy(

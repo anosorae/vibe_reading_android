@@ -80,6 +80,27 @@ class ChapterPaginatorTest {
     }
 
     @Test
+    fun zh_singleLineTooTall_keepsCompleteContinuation() {
+        // 单行文本本身高于页面时无法按行切分，但正文仍必须完整保留。
+        val completeText = "单行超高内容".repeat(40)
+        val tallBody = body.copy(fontSize = 100.sp, lineHeight = 100.sp)
+        val p = ChapterPaginator(
+            chapterId = 1L,
+            items = listOf(FlowItem.Para(1L, 0, completeText, null)),
+            style = style().copy(body = tallBody, paragraphSpacingPx = 0f),
+            mode = "zh",
+            contentWidthPx = 100_000f,
+            contentHeightPx = 50f,
+            measurer = measurer
+        )
+
+        val rendered = p.pages.flatMap { page ->
+            page.units.filterIsInstance<PageUnit.Para>().map { it.cnText }
+        }.joinToString("")
+        assertEquals("单行超高分支不应截断 continuation", completeText, rendered)
+    }
+
+    @Test
     fun zh_eachPage_fitsContentHeight() {
         val paras = (0 until 30).joinToString("\n\n") { "段落 $it 的内容，包含足够多的文字来确保每段都有多行。" }
         val p = ChapterPaginator(

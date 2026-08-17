@@ -23,9 +23,9 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.ui.reader.ReaderPalette
+import com.vibereading.app.domain.parser.ReadingContentParser
 import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.content.ReadingParagraph
-import com.vibereading.app.ui.reader.content.sourceParagraphs
 import com.vibereading.app.ui.reader.pagination.PageStyle
 import com.vibereading.app.ui.reader.pagination.ReaderMetrics
 
@@ -161,12 +161,10 @@ private fun BoxScope.SourceBubble(
 }
 
 /**
- * 统一段落拆分：优先按空行（\n\n）分段，若无空行则按单换行（\n）分段。
- * TXT 小说常见格式：每行一段（仅 \n），部分文件用空行分段（\n\n）。
- * 此函数需与 LlmApiService.buildUserPrompt 使用相同逻辑，保证 [N] 标记与段落索引对齐。
+ * 旧 UI parser 的兼容入口。真正的分段与 marker 配对只由 domain parser 完成，
+ * 这样 LLM prompt、滚动内容和分页内容共享完全相同的 CRLF/CR/空白规则。
  */
-fun splitParagraphs(content: String): List<String> =
-    sourceParagraphs(content).map { it.text }
+fun splitParagraphs(content: String): List<String> = ReadingContentParser.splitParagraphs(content)
 
 /** 统一章节内容构造入口；分页和滚动可共享同一段落范围数据。 */
 fun readingContent(chapter: Chapter): ReadingContent = ReadingContent.fromChapter(chapter)
@@ -181,68 +179,11 @@ data class ReadingScrollItem(
 fun ReadingContent.scrollItems(): List<ReadingScrollItem> =
     paragraphs.map { ReadingScrollItem(it) }
 
-/**
- * Parse [N] markers from translated text into paired paragraphs.
- * Returns list of (englishText, chineseText) pairs.
- */
+/** 保持旧 UI Pair API 可编译，但不再维护第二套解析实现。 */
 fun parseBilingualParagraphs(
     translatedContent: String,
     originalContent: String
-): List<Pair<String, String>> {
-    val originalParagraphs = splitParagraphs(originalContent)
-
-    // Split translation by [N] markers
-    val markerRegex = Regex("""\[(\d+)]\s*""")
-    val englishParts = translatedContent.split(markerRegex).filter { it.isNotBlank() }
-
-    // After split by [N], we get alternating: marker-number, text, marker-number, text...
-    val pairs = mutableListOf<Pair<String, String>>()
-    var i = 0
-    // 独立计数器：跟踪非标记文本块对应原文的索引（避免 pairs.size 因标记块偏移而漂移）
-    var nonMarkerIdx = 0
-    while (i < englishParts.size) {
-        val part = englishParts[i].trim()
-        if (part.all { it.isDigit() } && part.isNotEmpty()) {
-            // This is a marker number [N]
-            val num = part.toIntOrNull() ?: 0
-            i++
-            if (i < englishParts.size) {
-                val enText = englishParts[i].trim()
-                val cnText = if (num in 1..originalParagraphs.size) {
-                    originalParagraphs[num - 1]
-                } else ""
-                pairs.add(enText to cnText)
-            }
-            // 标记块不推进 nonMarkerIdx
-        } else if (part.isNotEmpty()) {
-            // No marker — treat as single block, 用独立计数器对齐原文
-            val cnText = originalParagraphs.getOrElse(nonMarkerIdx) { "" }
-            pairs.add(part to cnText)
-            nonMarkerIdx++
-        }
-        i++
-    }
-
-    // Fallback: if no [N] markers found, split by paragraphs
-    if (pairs.isEmpty()) {
-        val enParagraphs = splitParagraphs(translatedContent)
-        enParagraphs.forEachIndexed { idx, en ->
-            val cn = originalParagraphs.getOrElse(idx) { "" }
-            pairs.add(en to cn)
-        }
-    }
-
-    // 兜底：若标记对齐只产生 1 对但原文有多个段落，
-    // 说明翻译用的是旧 prompt（split("\n\n") 把整章当一段），
-    // 改用 splitParagraphs 双端按行对齐
-    if (pairs.size == 1 && originalParagraphs.size > 1) {
-        pairs.clear()
-        val enParagraphs = splitParagraphs(translatedContent)
-        val count = minOf(enParagraphs.size, originalParagraphs.size)
-        for (idx in 0 until count) {
-            pairs.add(enParagraphs[idx] to originalParagraphs[idx])
-        }
-    }
-
-    return pairs
-}
+): List<Pair<String, String>> = ReadingContentParser.parseBilingualPairs(
+    translatedContent,
+    originalContent
+)

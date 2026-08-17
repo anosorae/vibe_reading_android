@@ -7,6 +7,23 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// ── 从 git tag 推导版本号：tag v1.2.3 → versionName "1.2.3", versionCode 10203 ──
+fun gitVersionName(): String {
+    val tag = providers.exec {
+        commandLine("git", "describe", "--tags", "--abbrev=0")
+    }.standardOutput.asText.get().trim().removePrefix("v")
+    return if (tag.isNotEmpty()) tag else "0.0.0-dev"
+}
+
+fun gitVersionCode(): Int {
+    val name = gitVersionName()
+    val parts = name.split(".")
+    val major = parts.getOrNull(0)?.toIntOrNull() ?: 0
+    val minor = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    val patch = parts.getOrNull(2)?.toIntOrNull() ?: 0
+    return major * 10000 + minor * 100 + patch
+}
+
 // ── 从 local.properties 读取调试用 LLM 默认配置（已 gitignore，不入库） ──
 val localProps = Properties()
 val localPropsFile = rootProject.file("local.properties")
@@ -29,8 +46,8 @@ android {
         applicationId = "com.vibereading.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = gitVersionCode()
+        versionName = gitVersionName()
 
         // 调试用 LLM 默认配置（从 local.properties 注入，DataStore 无值时回退）
         buildConfigField("String", "DEBUG_LLM_API_BASE", "\"$debugLlmApiBase\"")

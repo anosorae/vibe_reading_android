@@ -1,61 +1,77 @@
 # CONTEXT.md — Vibe Reading 领域术语表
 
-本文件只记录领域词汇（与实现无关）。当前为单 context（整个应用），无 CONTEXT-MAP.md。关键实现决策见 `docs/ADR-001-window-layout-model.md`。
+本文件记录 VibeReading 的领域词汇、用户可见行为和跨模块边界。实现细节与架构约束见 **`AGENTS.md`**；分页窗口的历史决策见 **`docs/ADR-001-window-layout-model.md`**。修改阅读逻辑前必须同时阅读这三处文档。
 
 ## 术语
 
 | 术语 | 定义 | 反义/相关 |
 |---|---|---|
-| **书籍 (Book)** | 一次 TXT 导入形成的阅读单元，含若干章节 | 章节 |
-| **章节 (Chapter)** | 书籍的最小内容单元，有原文与英译两种内容 | 书籍 |
-| **双语段落 (Bilingual Paragraph)** | 章节中 EN↔CN 一一对应的最小展示单元；英文段尾部有原文气泡，点击弹窗查看中文原文 | 单语模式 |
-| **原文气泡 (Source Bubble)** | 英文段尾部的半透明色块（18×6dp），点击后弹窗显示对应中文原文；仅 `pairHead` 首片段显示 | 弹窗 |
-| **阅读模式 (Reading Mode)** | 阅读器的展示模式：`中文`（仅原文）或 `英文`（英译为主，点击气泡弹窗查看原文） | — |
-| **翻页类型 (Page Flip Mode)** | 章节内容的翻页方式：`上下`（连续滚动，跨章）、`平移`（水平分页滑动）、`覆盖`（新页覆盖滑入）、`无动画`（瞬时切换）、`仿真`（卷页动画，拖拽跟手 + 点按自动卷页） | — |
-| **整页排版 (Page Pagination)** | 按屏幕高度把「章节标题 + 段落」流排成一页页；**每章全量排版常驻**，当前章±1 组成章窗口；zh 段落可跨页，en 双语对原子化不可拆；原文气泡与弹窗为视觉叠加层，不参与排版测量 | 逐段翻页 |
-| **章窗口 (Chapter Window)** | 分页模式下当前章±1 的三章排版窗口；索引空间 = 窗口内章节页面的**扁平列表**（非全局页索引）；跨章续翻在窗口内自然进行，目录/滑块远跳 = 重建窗口 O(1) | 逐章加载 |
-| **章内页 (Page in Chapter)** | 章节内的页索引；分页模式进度持久化粒度（`books.lastReadPage`） | 全局页索引 |
-| **底部对齐 (Bottom Justify)** | 非末页把剩余高度均匀分到各行使末行沉底；**末页豁免**（文字少时避免行距被拉大，留白留页底） | 顶部对齐 |
-| **首行缩进 (First-line Indent)** | 段落首行缩进（em，默认 2em ≈ 两全角空格） | 顶格 |
-| **两端对齐 (Justify)** | 段落左右两端对齐（默认开，对齐 Legado textFullJustify） | 左对齐 |
-| **页边距 (Page Margin)** | 阅读内容区与屏幕边缘的留白（左右/上下），分页与滚动模式共用同一设置；排版/渲染/手势均先扣除系统栏再留用户边距 | — |
-| **内容区像素下取整 (Content Area Floor Alignment)** | 排版内容区宽高用 `floor()` 取整对齐 Compose 整像素布局边界；dp→px 转换可能带小数，排版区若比渲染区多零点几像素会导致底行被裁剪 | — |
-| **末段段距消除 (Last Paragraph Spacing Elimination)** | 排版器 `buildPage` 的 `realUsed = used - paragraphSpacingPx`（末页豁免时末段不计段距），渲染层与卷页位图需同步：末段不渲染 `paragraphSpacingPx`，否则渲染高度溢出内容区底行被裁剪 | 段距 |
-| **字间距 (Letter Spacing)** | 字符间距（em，默认 0） | — |
-| **自定义字体 (Custom Font)** | SAF 导入 TTF/OTF 持久化为 content:// URI；与「系统字体」二选一 | 系统字体 |
-| **边到边 (Edge-to-Edge)** | 应用启用边到边显示；排版内容区高度 = 屏幕高度 − 系统栏（状态栏+导航栏）− 用户页边距；渲染层用 `.statusBarsPadding().navigationBarsPadding()` 扣除系统栏后再留用户边距；仿真手势坐标也需减去 statusBar 偏移 | 系统栏 |
-| **夜间模式 (Night Mode)** | 阅读背景在当前配色与深色(DarkNight)之间快捷翻转；状态独立于背景色设置 | 背景色 |
-| **背景色 (Background Preset)** | 阅读器的 5 种背景预设（暖白/米色/青绿/灰米/深夜），夜间模式关闭时生效 | 夜间模式 |
-| **主题模式 (Theme Mode)** | 全局主题：`跟随系统`/`浅色`/`深色` × 配色 `原木`/`青简`；阅读器页面背景独立于此 | 背景色 |
-| **书籍封面 (Book Cover)** | 仿 Legado 失败回退的默认封面：按书名 hash 选渐变底色 + 竖排书名 + 书脊高光 + 圆角 | 书籍卡片 |
-| **书架布局 (Bookshelf Layout)** | 书架呈现方式：`列表` 或 `3列网格`，工具栏切换并持久化 | 书籍卡片 |
-| **书架排序 (Bookshelf Sort)** | 书架排序方式：`最近阅读`/`书名`/`上传时间`，下拉切换并持久化 | 书籍卡片 |
-| **章节滑块 (Chapter Slider)** | 阅读器底部栏控件：显示「第X章/共N章」并可拖动跨章跳转；拖动实时显示目标章名，松手才导航 | 上一章/下一章 |
-| **单手模式 (One-hand Mode)** | 单手阅读辅助：开启后分页模式下点击左右 1/3 均翻**下一页**（原左 1/3 翻上一页）；滚动模式无「页」概念不生效 | 三段点按 |
-| **长按操作菜单 (Long-press Action Menu)** | 书架上长按书籍弹出的操作列表：`开始阅读` / `删除`（二次确认） | 书籍卡片 |
-| **书籍卡片 (Book Row / Grid Card)** | 书架列表行或网格卡片：封面 + 书名 + 元数据 + 阅读进度条；点击=打开，长按=操作菜单 | 长按操作菜单 |
-| **章节状态 (Chapter Status)** | 0=待翻译 1=翻译中 2=已翻译 -1=失败 3=过长；是 Room 持久化的粗粒度状态 | 翻译阶段 |
-| **翻译阶段 (Translation Phase)** | 一次翻译任务的运行时状态：准备翻译、等待模型响应、模型思考中、正式回复流式输出、失败、取消；由 `TranslationPhase` 表示，不写入 Chapter.status | 章节状态 |
-| **思考过程 (Thinking / Reasoning)** | 模型返回的 `reasoning_content`、`reasoning` 或 `thinking` 增量；仅在思考模式开启时展示，存于 `ReaderUiState.thinkingText`，不进入正式译文 | 正式回复 |
-| **正式回复 (Final Content)** | SSE `delta.content` 增量拼接形成的最终译文；存于 `streamingText`/`Done.text`，与思考过程严格分离 | 思考过程 |
-| **流式翻译状态栏 (Streaming Status Bar)** | 翻译面板顶部固定的阶段/字符数提示；思考过程与正式回复在其下方独立滚动，内容追加时自动滚底 | 流式内容区 |
-| **输出长度截断 (Length Truncation)** | SSE `choices[].finish_reason = "length"` 表示模型达到输出上限；即使收到 `[DONE]` 也不得标记章节为已翻译，必须进入失败并提示译文未完整生成 | 正常停止 |
-| **语义色板 (Reader Palette)** | 阅读器亮/暗配色的一处定义（`ReaderPalette.of(isDark)`）：正文/标题/气泡/弹窗文字色集中，组件共用，避免亮暗不一致 | 分散的三元色 |
-| **阅读页几何 (Reader Page Geometry)** | 「内容区 = 屏幕 − 系统栏 − 用户边距」的集中计算（`ReaderPageGeometry.of(...)`），排版/渲染/手势三处共用同一口径 | 各处手算 |
-| **排版共享常量 (Reader Metrics)** | 标题顶距/卷名间距/双语 padding/气泡尺寸等 dp 常量的单一来源（`ReaderMetrics`），排版器（px）、卷页位图（px）、渲染组件（dp）三处引用 | 魔法数散布 |
-| **章节状态颜色 (Chapter Status Color)** | 章节状态→颜色映射的单一函数（`chapterStatusColor`），顶栏圆点/目录/徽章共用 | 各处 when 重复 |
+| **书籍 (Book)** | 一次 TXT 导入形成的阅读单元，含若干章节和书架元数据 | 章节 |
+| **章节 (Chapter)** | 书籍的最小内容单元，有原文、译文、翻译状态和失败原因 | 书籍 |
+| **原文偏移 (Source Offset)** | 章节原文字符串中的 UTF-16 字符偏移，使用半开区间坐标；是跨重排、跨阅读模式恢复位置的稳定锚点 | 运行时页码 |
+| **阅读位置 (Reading Position)** | `chapterId + sourceOffset`；唯一持久化的阅读进度。章节不存在时回退到首章 offset=0 | 页码 |
+| **运行时页码 (Derived Page Index)** | 当前字体、字号、页边距、屏幕尺寸、阅读模式和内容排版下，由 `sourceOffset` 动态反查得到的章内页索引；不持久化 | 原文偏移 |
+| **原文段落 (Source Paragraph)** | 章节原文中的一段文字，带 `startOffset/endOffset` 精确范围；展示文本可清理空白，但不能改变范围 | 双语段落 |
+| **双语段落 (Bilingual Paragraph)** | 一个英文译文与对应中文原文段落的稳定配对；英文段尾可显示原文气泡 | 单语段落 |
+| **原文气泡 (Source Bubble)** | 英文段尾的半透明色块（18×6dp），点击后弹窗显示对应中文原文；视觉叠加层，不参与排版测量 | 弹窗 |
+| **统一章节内容 (Reading Content)** | 分页和滚动共同消费的章节标题、卷名、原文段落、译文和原文范围结构；由 `ReadingContent` 表示 | 分叉渲染数据 |
+| **统一阅读项 (Reading Item)** | 章节标题项或带原文范围的段落项；滚动列表按项定位，分页器按项排版为页 | 整章嵌套内容 |
+| **阅读模式 (Reading Mode)** | `zh`（中文原文）或 `en`（英文译文为主，点击气泡查看中文原文） | — |
+| **翻页类型 (Page Flip Mode)** | `scroll` 上下连续滚动、`pager` 平移、`cover` 覆盖、`no_anim` 无动画、`simulation` 仿真卷页 | — |
+| **整页排版 (Page Pagination)** | 按当前页面几何把统一章节内容流排成页；标题和段落来自同一内容模型，页只是运行时布局结果 | 连续滚动 |
+| **章窗口 (Chapter Window)** | 分页模式下当前章及前后邻章的排版窗口；索引是窗口内扁平页列表，不是全书全局页号 | 全书一次性排版 |
+| **偏移到页映射 (Offset-to-Page Mapping)** | `ChapterPaginator.pageForOffset()` / `BookWindow.indexOf(chapterId, sourceOffset)` 根据当前排版把稳定原文位置映射到运行时页 | 固定页码恢复 |
+| **底部对齐 (Bottom Justify)** | 非末页把剩余高度分配到各行使末行沉底；末页豁免，避免短页行距被拉大 | 顶部对齐 |
+| **首行缩进 (First-line Indent)** | 段落首行缩进（em，默认 2em 约等于两全角空格） | 顶格 |
+| **两端对齐 (Justify)** | 段落左右两端对齐（默认开启，接近 Legado `textFullJustify`） | 左对齐 |
+| **页边距 (Page Margin)** | 内容区与屏幕边缘的用户留白；分页、滚动和五种翻页类型共用 | — |
+| **自定义字体 (Custom Font)** | 通过 SAF 导入 TTF/OTF，持久化 `content://` URI 并取得持久权限 | 系统字体 |
+| **边到边 (Edge-to-Edge)** | 内容延伸到系统栏区域；排版、渲染、滚动 padding 和仿真手势统一扣除状态栏/导航栏 | 系统栏 |
+| **夜间模式 (Night Mode)** | 阅读背景在当前预设与深夜背景之间的快捷切换，独立于全局主题和背景设置 | 背景预设 |
+| **背景色 (Background Preset)** | 阅读器背景预设：暖白、米色、青绿、灰米、深夜；不等同于全局主题 | 夜间模式 |
+| **主题模式 (Theme Mode)** | 全局主题：跟随系统/浅色/深色 × 原木/青简；阅读页面配色独立控制 | 阅读背景 |
+| **章节滑块 (Chapter Slider)** | 阅读器底部控件，显示章节位置并支持拖动跨章跳转；跳转到目标章节原文起点 | 上一章/下一章 |
+| **单手模式 (One-hand Mode)** | 分页类模式开启后左右两侧均翻下一页；滚动模式没有页概念，不生效 | 三段点按 |
+| **章节状态 (Chapter Status)** | `0=待翻译 1=翻译中 2=已翻译 -1=失败 3=过长`；Room 持久化的粗粒度状态 | 翻译阶段 |
+| **翻译阶段 (Translation Phase)** | 一次翻译任务的运行时阶段：准备、等待首 token、思考、流式输出、失败、取消；不写入 `Chapter.status` | 章节状态 |
+| **思考过程 (Thinking / Reasoning)** | SSE 中的 `reasoning_content`、`reasoning` 或 `thinking` 增量；只在开启思考模式时展示，不混入正式译文 | 正式回复 |
+| **正式回复 (Final Content)** | SSE `delta.content` 按顺序拼接形成的正式译文；`Done.text` 才能持久化 | 思考过程 |
+| **流式翻译状态栏 (Streaming Status Bar)** | 翻译面板顶部固定显示阶段和字符数；思考内容与正式回复在下方独立滚动 | 流式内容区 |
+| **输出长度截断 (Length Truncation)** | `finish_reason="length"` 表示模型未完整生成；即使收到 `[DONE]` 也必须失败，不能保存为已翻译 | 正常停止 |
+
+## 共享实现概念
+
+| 概念 | 单一数据源 |
+|---|---|
+| 阅读位置 | `ReadingPosition` + `Book.lastReadChapterId/lastReadOffset` |
+| 原文和翻译段落范围 | `ReadingContentParser`、UI 层 `ReadingContent.fromChapter()`；两者必须遵守相同的空行/逐行分段规则 |
+| 统一章节标题和正文视觉 | `ReadingContentRenderer`、`PageStyle`、`ReaderMetrics` |
+| 双语段落和原文气泡 | `BilingualParagraph` |
+| 阅读器亮暗语义色 | `ReaderPalette.of(isDark)` |
+| 页面几何 | `ReaderPageGeometry.of(...)` |
+| 章节状态颜色 | `chapterStatusColor(status)` |
+| 排版共享常量 | `ReaderMetrics` |
 
 ## 关键边界（决策摘要）
 
-- 阅读设置（字体、字号、间距、翻页类型、背景）以**阅读器内的设置面板为唯一入口**；面板按 Legado `ReadStyleDialog` 的信息密度组织：翻页类型一行、字体（系统字体 / 自定义导入）、字号/行距/段距滑块、背景色一行，**页边距 / 字间距 / 首行缩进 / 两端对齐收进「高级选项」折叠组**（默认收起）。字体仅「系统字体 + 自定义字体导入」二选一（衬线/无衬线/等宽三系统字体选择已移除，`fontFamily` 键保留但不再暴露 UI）。
-- 翻页类型与点按交互耦合：分页类模式（平移/覆盖/无动画/仿真）左右 1/3 点按翻**页**（跨章自动续翻），中间 1/3 开关菜单；`上下`滚动模式三段点按翻**章**。**单手模式**开启后分页模式左 1/3 也翻下一页（仿真模式单击同）；滚动模式左右 1/3 不响应。**仿真模式另有拖拽卷页手势（跟手）**：拖拽越过阈值翻页、否则回弹停在当前页。
-- **章窗口模型**（ADR-001）：分页模式每章全量排版常驻，窗口 = 当前章±1；分页器索引空间 = 窗口内章页扁平列表（**放弃全局页索引**，跨章滑动在窗口内自然进行）；目录/章节滑块远跳 = 重建窗口 O(1)；进度持久化为「章 + 章内页」。
-- **整页排版**：真实页宽测量（修复旧实现无约束测量导致「所见≠所排」）；zh 段落按行跨页切段（切段不丢字）；en 双语对原子化不可拆（单对超高按行切分、首片段 `pairHead` 可显示原文气泡，不丢内容）；**底部对齐**按页分配 slack 使末行沉底、**末页豁免**；`TextLayoutResult` 挂载页单元（渲染层与卷页位图共用）；**原文气泡与弹窗为视觉叠加层，不参与排版测量，不影响分页**；**末段段距消除**（渲染层同步 `buildPage` 的 `realUsed = used - paragraphSpacingPx`，末段不渲染段距）；**`PageRenderer` 用自定义 `Layout`（无界高度测量）替代 `Column`**，允许内容微溢至 Box padding 区域，避免 Column 截断末行。
-- **样式/模式/边距变更即重建窗口**：换字号/字距/边距/切换中英模式/切换翻页类型时，窗口重建并恢复到「章 + 章内页」，不跳回第 0 页。
-- 目录在阅读器中的**唯一入口**是底部栏中央；顶栏不再有目录按钮。
-- 全局主题的 dark/light 由 `ThemeSettings`（跟随系统/浅色/深色 × 原木/青简）决定；阅读器页面背景/文字色由 `ReadingSettings` + `ReaderBgPresets` 独立控制。
-- **LLM 流式翻译**：请求通过 SSE 持续读取并按顺序拼接全部 `delta.content`，直到 `[DONE]`；`reasoning_content`/`reasoning`/`thinking` 仅在思考模式开启时作为 `Thinking` 事件展示，不得混入 `content`。状态栏固定在翻译面板顶部，思考过程与正式回复在下方独立滚动；流式内容区不设固定行数或省略号截断。`finish_reason="length"` 视为未完成输出，进入失败状态而不是保存为已翻译。
-- 仿真卷页：Canvas 卷页几何来自 Legado `SimulationPageDelegate` 移植（`PageCurl`）；页面快照位图用 `StaticLayout` + **真实 px 字号**绘制（与真实页视觉一致，旧实现把 sp 数值当 px 导致位图小字重叠）；手势 = 拖拽跟手 + 点按自动卷页（360ms）；**边到边模式下手势坐标需减去 statusBar 偏移**，内容区高度也扣除系统栏。
-- **边到边模式**：排版内容区 = 屏幕 − 系统栏 − 用户边距（`contentHeightPx = floor(screen - statusBar - navBar - paddingV*2)`）；渲染层 `PageRenderer`/`CurlOverlay` 用 `.statusBarsPadding().navigationBarsPadding()` + 用户边距；滚动模式 `LazyColumn` 的 `contentPadding` = 系统栏 + 用户边距；**仿真手势坐标 `downY/focusY` 需减去 statusBar**；排版/渲染/手势三处系统栏扣除必须一致，否则内容区错位导致底行被裁或手势偏移。
-- 滚动模式（`FLIP_SCROLL`）与分页模式**共享同一 `PageStyle`**（行高/字号/缩进/字距/两端对齐一致），边距也共用 `paddingH/paddingV`；滚动模式不参与行级排版与章窗口（LazyColumn + Text 结构）。
-- **高内聚低耦合（单一数据源）**：阅读器配色/几何/常量/状态映射各自只有一处定义（`ReaderPalette` / `ReaderPageGeometry` / `ReaderMetrics` / `chapterStatusColor`），样式构造统一走 `PageStyle.of(readingSettings, density)`；滚动与分页共用单一 `BilingualParagraph`。新增同类需求先查共享文件，不另起炉灶硬编码。
+- **进度只保存章节 + 原文 offset**：页码会随字体、字号、边距、屏幕、翻译内容和排版模式变化，不能作为持久化数据。切换五种翻页类型、中文/英文模式或阅读样式后，必须按同一 `ReadingPosition` 重新定位。
+- **初始化恢复只执行一次**：ViewModel 先取得 Book 进度快照，再等待首个有效章节列表；恢复不应调用会把默认位置写回数据库的普通导航路径。后续章节 Flow 更新只能刷新当前章节，不能重复恢复。
+- **位置写入统一且有序**：分页当前页和滚动可见项都转换为 `ReadingPosition`，通过统一进度写入入口保存；快速翻页、跨章和退出不能让旧异步写覆盖新位置。页面 `ON_STOP`、销毁和返回导航前执行 `flushProgress()`。
+- **五种翻页类型只改变移动方式**：`scroll` 使用统一内容项的 LazyColumn；其他四种使用同一 `BookWindow` 页列表，分别应用平移、覆盖、无动画或仿真卷页。标题、段落、双语结构、样式和原文范围不能在容器之间另起一套。
+- **统一内容模型**：章节标题、卷名、段落、译文和原文范围由 `ReadingContent` 提供。禁止在滚动模式、分页模式或翻译 prompt 中各自用 `split("\n\n")` 重新拆分并建立不同索引。
+- **分页窗口**：当前章 ±1 章全量排版常驻，窗口页索引是扁平运行时索引；目录/章节滑块远跳重建窗口 O(1)，但恢复依据始终是 `chapterId + sourceOffset`。
+- **双语原子性**：英文双语对默认不可拆；单对超高时按英文行切分，所有片段仍绑定同一个中文原文范围，只有首片段显示 `pairHead` 原文气泡。
+- **视觉叠加不参与排版**：原文气泡、Popup、状态提示等不能进入文本测量或改变分页；末段不渲染段距，排版器和真实页面/卷页位图必须保持同一高度口径。
+- **设置入口**：字体、字号、行距、段距、翻页类型、背景和高级排版参数的唯一入口是阅读器设置面板。高级选项包括页边距、字间距、首行缩进、两端对齐。
+- **边到边一致性**：排版几何、PageRenderer、滚动 content padding、卷页覆盖层和仿真手势必须使用同一系统栏扣除公式；内容区宽高按整像素对齐。
+- **目录入口**：阅读器目录唯一入口在底部栏中央，顶栏不放目录按钮。
+- **主题独立性**：全局 `ThemeSettings` 的 dark/light 与配色只控制应用主题；阅读器页面背景、正文和气泡颜色由阅读设置及 `ReaderPalette` 控制。
+- **翻译流可靠性**：持续拼接所有 `content` chunk 直到 `[DONE]`；思考字段单独生成 `Thinking`；网络、解析、取消和长度截断不得静默保存为成功译文。
+
+## 交互规则
+
+- 分页类模式（平移/覆盖/无动画/仿真）左右 1/3 点按翻运行时页，中间 1/3 开关工具栏；窗口边界自动跨章。
+- 滚动模式上下连续滚动，章节和段落项共享原文 offset；左右 1/3 不翻页，中间 1/3 开关工具栏。
+- 仿真模式支持拖拽跟手、超过阈值完成翻页、未超过阈值回弹，以及点按自动卷页。
+- 章节滑块和目录跳转到目标章节起点；下一章从 offset=0，上一章按 Legado 语义定位到目标章节末尾。
+- 夜间模式只翻转阅读配色，不修改用户选择的背景预设。

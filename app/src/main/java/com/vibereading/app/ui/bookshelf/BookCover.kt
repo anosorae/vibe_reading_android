@@ -2,8 +2,10 @@ package com.vibereading.app.ui.bookshelf
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -22,8 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.text.style.TextAlign
 
 /**
- * 仿 Legado 失败封面回退的默认封面：
- * 按书名 hash 从色板选一组渐变色 → 竖排书名 → 书脊高光 + 圆角 + 阴影。
+ * 默认封面：按书名 hash 从色板选一组渐变色 → 横排书名 → 书脊高光 + 圆角 + 阴影。
  */
 @Composable
 fun BookCover(
@@ -50,7 +51,7 @@ fun BookCover(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .width(6.dp)
-                .height(90.dp)
+                .fillMaxHeight(0.5f)
                 .background(Color.White.copy(alpha = 0.18f))
         )
         // 顶/底暗角，增强立体感
@@ -67,34 +68,20 @@ fun BookCover(
                     )
                 )
         )
-        // 竖排书名：按 2 字一行自上而下排布
-        VerticalTitle(
-            title = title,
-            textColor = Color.White,
-            modifier = Modifier.align(Alignment.Center)
+        // 横排书名：居中、超长省略
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         )
     }
-}
-
-/** 竖排书名：每 2 字一行，居中、超长省略。 */
-@Composable
-private fun VerticalTitle(
-    title: String,
-    textColor: Color,
-    modifier: Modifier = Modifier
-) {
-    val lines = title.chunked(2)
-    Text(
-        text = lines.joinToString("\n"),
-        color = textColor,
-        fontSize = 15.sp,
-        lineHeight = 19.sp,
-        fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center,
-        maxLines = 5,
-        overflow = TextOverflow.Ellipsis,
-        modifier = modifier
-    )
 }
 
 /** 封面渐变色板：暖棕 / 冷绿 / 蓝灰 / 墨青 / 酒红 等低饱和组合。 */

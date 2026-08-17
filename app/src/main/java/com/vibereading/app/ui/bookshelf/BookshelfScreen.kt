@@ -32,11 +32,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.AppAccent
@@ -205,20 +205,37 @@ fun BookshelfScreen(
                             )
                         }
                     } else if (state.layout == "grid") {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            items(state.filteredItems, key = { it.book.id }) { item ->
-                                BookGridCard(
-                                    item = item,
-                                    accentColor = accentColor,
-                                    onClick = { onOpenBook(item.book.id) },
-                                    onLongClick = { menuBook = item }
-                                )
+                        val gridHorizontalPadding = 16.dp
+                        val gridVerticalPadding = 6.dp
+                        val horizontalSpacing = 14.dp
+                        val textAreaHeight = 34.dp
+                        val rows = 3
+
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                            val availH = maxHeight - gridVerticalPadding * 2
+                            val verticalSpacing = 20.dp
+                            val cardHeight = (availH - verticalSpacing * (rows - 1)) / rows
+                            val coverHeight = cardHeight - textAreaHeight
+
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(
+                                    horizontal = gridHorizontalPadding,
+                                    vertical = gridVerticalPadding
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
+                                verticalArrangement = Arrangement.spacedBy(verticalSpacing)
+                            ) {
+                                items(state.filteredItems, key = { it.book.id }) { item ->
+                                    BookGridCard(
+                                        item = item,
+                                        accentColor = accentColor,
+                                        onClick = { onOpenBook(item.book.id) },
+                                        onLongClick = { menuBook = item },
+                                        coverHeight = coverHeight
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -457,19 +474,19 @@ private fun BookRow(
                 )
             }
 
-            // 第 3 行：章数 + 已译 + 翻译状态
+            // 第 3 行：章数 + 已译
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "${book.totalChapters}章",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.outline
+                    "共 ${book.totalChapters} 章",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 if (item.translatedCount > 0) {
-                    Text(" · ", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                    Text(" · ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        "已译${item.translatedCount}",
-                        fontSize = 11.sp,
+                        "已译 ${item.translatedCount}",
+                        fontSize = 12.sp,
                         color = VibeColors.Sage
                     )
                 }
@@ -478,14 +495,15 @@ private fun BookRow(
     }
 }
 
-// ── 网格卡片：封面 + 底部渐变叠加书名 + 角标（仿 Legado grid） ──
+// ── 网格卡片：封面 + 右上角角标 + 封面下方书名和进度 ──
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookGridCard(
     item: BookShelfItem,
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    coverHeight: Dp = 160.dp
 ) {
     val book = item.book
 
@@ -493,45 +511,17 @@ private fun BookGridCard(
         modifier = Modifier
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
-        // 封面区域：封面 + 底部渐变叠加书名 + 右上角翻译角标
+        // 封面区域：封面 + 右上角翻译角标
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(3f / 4f)
+                .height(coverHeight)
                 .clip(RoundedCornerShape(8.dp))
         ) {
             BookCover(
                 title = book.title,
                 modifier = Modifier.fillMaxSize()
             )
-
-            // 底部渐变遮罩 + 书名
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.55f)
-                            )
-                        )
-                    )
-            ) {
-                Text(
-                    book.title,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                )
-            }
 
             // 右上角：已译/总章 角标
             if (item.translatedCount > 0) {
@@ -548,6 +538,32 @@ private fun BookGridCard(
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                     )
                 }
+            }
+        }
+
+        // 封面下方：书名 + 阅读进度（水平 padding 补偿封面阴影的视觉偏移）
+        Column(
+            modifier = Modifier.padding(start = 2.dp, top = 4.dp, end = 2.dp)
+        ) {
+            Text(
+                book.title,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            val readChapters = if (book.totalChapters > 0 && item.progress > 0f) {
+                (item.progress * book.totalChapters).toInt()
+            } else 0
+            if (readChapters > 0) {
+                Text(
+                    "已读${readChapters}/${book.totalChapters}章",
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

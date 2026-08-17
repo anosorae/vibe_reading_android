@@ -26,12 +26,66 @@
 
 ## 构建
 
+### 环境要求
+
+- **JDK 17**（必须；Android Studio 自带的 JBR/JDK 25 不适配当前 Gradle 配置）
+- **Android SDK**：compileSdk 35，minSdk 26
+- **Git**：版本号从 git tag 自动推导，确保仓库有 tag（如 `v0.1.6`）
+
+### Debug 构建
+
 ```bash
-# 需要 JDK 17
 ./gradlew.bat :app:assembleDebug
 ```
 
-Debug APK 输出：`app/build/outputs/apk/debug/app-debug.apk`
+Debug APK 输出：`app/build/outputs/apk/debug/app-x86_64-debug.apk`（按设备 ABI 选择）
+
+### Release 构建
+
+Release APK 需要签名。签名信息优先从环境变量读取（CI），其次从 `local.properties` 读取（本地）。
+
+**1. 生成签名密钥（首次）**
+
+```bash
+keytool -genkey -v -keystore release.keystore -alias vibereading \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+将生成的 `release.keystore` 放到项目根目录。
+
+**2. 配置签名信息**
+
+在项目根目录 `local.properties`（已 gitignore）中添加：
+
+```properties
+keystore.path=release.keystore
+keystore.password=你的密钥库密码
+key.alias=vibereading
+key.password=你的密钥密码
+```
+
+**3. 打版本 tag**
+
+```bash
+git tag v1.2.3
+```
+
+tag 格式为 `v` + 语义版本号。构建时会自动将 `v1.2.3` 转为 `versionName = "1.2.3"`、`versionCode = 10203`。无 tag 时回退为 `0.0.0-dev`。
+
+**4. 构建 Release APK**
+
+```bash
+./gradlew.bat :app:assembleRelease
+```
+
+输出按架构拆分（开启 ProGuard 混淆）：
+
+```
+app/build/outputs/apk/release/app-arm64-v8a-release.apk
+app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+app/build/outputs/apk/release/app-x86_64-release.apk
+app/build/outputs/apk/release/app-universal-release.apk
+```
 
 ## 单测
 

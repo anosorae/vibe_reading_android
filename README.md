@@ -13,6 +13,15 @@
 - **书架管理** — 列表/网格布局，按最近阅读/书名/上传时间排序，搜索
 - **主题系统** — 跟随系统/浅色/深色 × 原木/青简强调色
 
+## 截图
+
+<p align="center">
+  <img src="docs/screenshots/bookshelf.png" width="24%" alt="书架" />
+  <img src="docs/screenshots/reader-zh.png" width="24%" alt="阅读器 · 中文模式" />
+  <img src="docs/screenshots/reader-toolbar.png" width="24%" alt="阅读器 · 工具栏" />
+  <img src="docs/screenshots/settings.png" width="24%" alt="设置" />
+</p>
+
 ## 技术栈
 
 | 层 | 技术 |

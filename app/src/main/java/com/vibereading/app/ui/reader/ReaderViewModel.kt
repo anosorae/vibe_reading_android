@@ -64,6 +64,14 @@ class ReaderViewModel(
     private var pendingPosition: ReadingPosition? = null
     private var restoreCompleted = false
 
+    // ── LLM 编辑字段（必须在 init 之前声明，因为 llmSettings.collect 会写这些字段） ──
+    private val _editApiKey = MutableStateFlow("")
+    private val _editApiBase = MutableStateFlow("")
+    private val _editModel = MutableStateFlow("")
+    val editApiKey: StateFlow<String> = _editApiKey.asStateFlow()
+    val editApiBase: StateFlow<String> = _editApiBase.asStateFlow()
+    val editModel: StateFlow<String> = _editModel.asStateFlow()
+
     init {
         viewModelScope.launch {
             val book = bookRepo.getBookByIdOnce(bookId) ?: return@launch
@@ -275,13 +283,6 @@ class ReaderViewModel(
     }
 
     // ── LLM settings (翻译设置面板) ──
-
-    private val _editApiKey = MutableStateFlow("")
-    private val _editApiBase = MutableStateFlow("")
-    private val _editModel = MutableStateFlow("")
-    val editApiKey: StateFlow<String> = _editApiKey.asStateFlow()
-    val editApiBase: StateFlow<String> = _editApiBase.asStateFlow()
-    val editModel: StateFlow<String> = _editModel.asStateFlow()
 
     /** 打开面板时从最新持久化值填充；已有草稿则保持不变。 */
     fun initLlmEditFields() {

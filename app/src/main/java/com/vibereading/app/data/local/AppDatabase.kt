@@ -11,7 +11,7 @@ import com.vibereading.app.data.local.entity.ChapterEntity
 
 @Database(
     entities = [BookEntity::class, ChapterEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -73,6 +73,42 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5→v6：已翻译章节数改为实时派生，移除 books.translatedChapters 冗余列；
+         * 同时为 chapters 增加 translationRunId，用于翻译任务的数据库级 stale 防护。
+         */
+        val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("PRAGMA foreign_keys=OFF")
+                db.execSQL("""
+                    CREATE TABLE books_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        filePath TEXT NOT NULL,
+                        totalChapters INTEGER NOT NULL,
+                        lastReadChapterId INTEGER,
+                        lastReadOffset INTEGER NOT NULL DEFAULT 0,
+                        lastReadAt INTEGER NOT NULL,
+                        createdAt INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO books_new (
+                        id, title, filePath, totalChapters,
+                        lastReadChapterId, lastReadOffset, lastReadAt, createdAt
+                    )
+                    SELECT id, title, filePath, totalChapters,
+                        lastReadChapterId, lastReadOffset, lastReadAt, createdAt
+                    FROM books
+                """.trimIndent())
+                db.execSQL("DROP TABLE books")
+                db.execSQL("ALTER TABLE books_new RENAME TO books")
+                db.execSQL("CREATE INDEX index_books_lastReadChapterId ON books(lastReadChapterId)")
+                db.execSQL("ALTER TABLE chapters ADD COLUMN translationRunId INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("PRAGMA foreign_keys=ON")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -80,7 +116,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "vibe_reading"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                 INSTANCE = instance
                 instance

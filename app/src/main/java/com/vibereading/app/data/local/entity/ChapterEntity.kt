@@ -21,5 +21,7 @@ data class ChapterEntity(
     val content: String = "",
     val translatedContent: String? = null,
     val status: Int = 0,  // 0=pending, 1=in_progress, 2=done, -1=failed, 3=too_long
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // 翻译任务代际标识：写入译文/错误/取消时按 runId 匹配，旧任务不能污染新任务
+    val translationRunId: Long = 0
 )

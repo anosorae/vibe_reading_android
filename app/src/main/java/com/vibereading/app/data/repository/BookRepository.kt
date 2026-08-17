@@ -13,7 +13,7 @@ class BookRepository(private val bookDao: BookDao) {
     fun getAllBooks(): Flow<List<Book>> =
         bookDao.getAllBooks().map { list -> list.map { it.toDomain() } }
 
-    /** 书架条目流（含最后阅读章节标题 + 进度比例）。排序在 ViewModel 内做。 */
+    /** 书架条目流（含派生译文数 + 最后阅读章节标题 + 进度比例）。排序在 ViewModel 内做。 */
     fun getShelfItems(): Flow<List<BookShelfItem>> =
         bookDao.getBooksWithProgress().map { list ->
             list.map { it.toShelfItem() }
@@ -38,25 +38,23 @@ class BookRepository(private val bookDao: BookDao) {
     suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int): Boolean =
         bookDao.updateLastReadProgress(bookId, chapterId, offset.coerceAtLeast(0), System.currentTimeMillis()) > 0
 
-    suspend fun updateTranslatedCount(bookId: Long, count: Int) =
-        bookDao.updateTranslatedCount(bookId, count)
-
     private fun BookEntity.toDomain() = Book(
         id = id, title = title, filePath = filePath,
-        totalChapters = totalChapters, translatedChapters = translatedChapters,
+        totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
         lastReadAt = lastReadAt, createdAt = createdAt
     )
 
     private fun Book.toEntity() = BookEntity(
         id = id, title = title, filePath = filePath,
-        totalChapters = totalChapters, translatedChapters = translatedChapters,
+        totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
         lastReadAt = lastReadAt, createdAt = createdAt
     )
 
     private fun BookWithProgress.toShelfItem() = BookShelfItem(
         book = book.toDomain(),
+        translatedCount = translatedCount,
         lastReadChapterTitle = lastReadChapter?.title,
         progress = if (book.totalChapters > 0 && lastReadChapter != null) {
             (lastReadChapter.chapterIndex + 1).toFloat() / book.totalChapters

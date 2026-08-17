@@ -4,69 +4,42 @@ import android.app.Activity
 import android.graphics.Bitmap
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
-import com.vibereading.app.ui.reader.components.BilingualParagraph
-import com.vibereading.app.ui.reader.components.ReadingChapterTitle
-import com.vibereading.app.ui.reader.components.ReadingParagraphItem
-import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.PageInfoOverlays
 import com.vibereading.app.ui.reader.components.LlmSettingsSheet
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
-import com.vibereading.app.ui.reader.components.parseBilingualParagraphs
-import com.vibereading.app.ui.reader.components.splitParagraphs
 import com.vibereading.app.ui.reader.pagination.*
 import com.vibereading.app.ui.theme.ReaderBgPresets
-import com.vibereading.app.ui.theme.VibeColors
-import com.vibereading.app.ui.theme.VibeDarkColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -783,69 +756,29 @@ fun ReaderScreen(
             )
         }
 
-        // ── Top toolbar (no catalog button — directory lives in the bottom bar) ──
+        // ── 顶栏（无目录按钮 — 目录在底部栏） ──
         AnimatedVisibility(
             visible = state.toolbarVisible,
             enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            Surface(
-                color = bgColor.copy(alpha = 0.95f),
-                shadowElevation = 4.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = {
-                        flushScope.launch {
-                            vm.flushProgress()
-                            onBack()
-                        }
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
+            ReaderTopToolbar(
+                bookTitle = state.bookTitle,
+                mode = state.mode,
+                activeChapterStatus = state.activeChapter?.status,
+                barColor = bgColor,
+                onBack = {
+                    flushScope.launch {
+                        vm.flushProgress()
+                        onBack()
                     }
-                    Text(
-                        state.bookTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                    )
-                    // Mode toggle + 翻译状态小圆点（与目录同款）
-                    Row(
-                        modifier = Modifier
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(2.dp)
-                    ) {
-                        ModeButton("中文", state.mode == "zh", onClick = { vm.switchMode("zh") })
-                        ModeButton("英文", state.mode == "en", onClick = { vm.switchMode("en") })
-                    }
-                    // 当前章翻译状态小圆点（颜色与目录一致）
-                    val activeStatus = state.activeChapter?.status
-                    if (activeStatus != null) {
-                        val dotColor = chapterStatusColor(activeStatus)
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(dotColor)
-                        )
-                    }
-                }
-            }
+                },
+                onToggleMode = { vm.switchMode(it) }
+            )
         }
 
-        // ── Bottom bar: two rows ──
+        // ── 底栏：两行（章节滑动 + 操作） ──
         AnimatedVisibility(
             visible = state.toolbarVisible,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -856,7 +789,7 @@ fun ReaderScreen(
                     bottomBarHeightDp = with(density) { coords.size.height.toDp() }.value
                 }
         ) {
-            BottomControlBar(
+            ReaderBottomBar(
                 chapters = state.chapters,
                 activeChapterId = state.activeChapterId,
                 accentColor = accentColor,
@@ -882,121 +815,14 @@ fun ReaderScreen(
             && activeChapter.status != Chapter.STATUS_DONE
             && !state.catalogVisible && !state.settingsVisible && !state.llmSettingsVisible
         )
-        if (showStatusPanel) {
-            val panelBottomPadding = if (state.toolbarVisible) bottomBarHeightDp.dp + 8.dp
-                else 16.dp + with(density) { navBarPx.toDp() }
-            val panelColor = if (isDark) VibeDarkColors.Surface.copy(alpha = 0.92f) else VibeColors.Parchment.copy(alpha = 0.92f)
-
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = panelBottomPadding)
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .heightIn(max = 320.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = panelColor,
-                shadowElevation = 8.dp
-            ) {
-                if (state.isStreaming) {
-                    // ── 流式翻译进度 ──
-                    val scrollState = rememberScrollState()
-                    LaunchedEffect(state.thinkingText, state.streamingText) {
-                        scrollState.scrollTo(scrollState.maxValue)
-                    }
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(12.dp),
-                                strokeWidth = 1.5.dp,
-                                color = VibeColors.Sage
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            val phaseText = when (state.translationPhase) {
-                                TranslationPhase.PREPARING -> "准备翻译…"
-                                TranslationPhase.WAITING_FIRST_TOKEN -> "等待模型响应…"
-                                TranslationPhase.THINKING -> "模型思考中…"
-                                TranslationPhase.STREAMING -> "翻译中… (${state.streamingCharCount}字)"
-                                TranslationPhase.FAILED -> "翻译失败"
-                                TranslationPhase.CANCELLED -> "翻译已取消"
-                                TranslationPhase.IDLE -> "翻译中…"
-                            }
-                            Text(
-                                phaseText,
-                                fontSize = 12.sp,
-                                color = VibeColors.Sage
-                            )
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant
-                        )
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 260.dp)
-                                .verticalScroll(scrollState)
-                        ) {
-                            if (state.thinkingText.isNotBlank()) {
-                                Text(
-                                    "思考过程",
-                                    fontSize = 11.sp,
-                                    color = if (isDark) VibeColors.Stone else VibeColors.WarmGray
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    state.thinkingText,
-                                    style = pageStyle.body.copy(fontSize = 12.sp),
-                                    color = if (isDark) VibeColors.Stone else VibeColors.WarmGray,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            if (state.thinkingText.isNotBlank() && state.streamingText.isNotBlank()) {
-                                Spacer(Modifier.height(10.dp))
-                            }
-                            if (state.streamingText.isNotBlank()) {
-                                Text(
-                                    "正式回复",
-                                    fontSize = 11.sp,
-                                    color = if (isDark) VibeColors.Cream.copy(alpha = 0.65f) else VibeColors.Charcoal.copy(alpha = 0.6f)
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    state.streamingText,
-                                    style = pageStyle.body.copy(fontSize = 13.sp),
-                                    color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal.copy(alpha = 0.7f),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        }
-                    }
-                } else if (activeChapter != null) {
-                    // ── 非流式章节状态提示 ──
-                    val status = activeChapter.status
-                    val reason = state.errorMessage ?: activeChapter.errorMessage
-                    val (hintText, hintColor) = when (status) {
-                        Chapter.STATUS_FAILED -> ("翻译失败" to VibeColors.RedMuted)
-                        Chapter.STATUS_IN_PROGRESS -> ("翻译中断" to VibeColors.BlueMuted)
-                        Chapter.STATUS_TOO_LONG -> ("章节过长" to VibeColors.Amber)
-                        else -> ("等待翻译" to VibeColors.WarmGray)
-                    }
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(hintText, fontSize = 12.sp, color = hintColor)
-                        if (reason != null && status in setOf(Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG)) {
-                            Text(
-                                reason,
-                                fontSize = 11.sp,
-                                color = hintColor.copy(alpha = 0.7f),
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        TranslationStatusPanel(
+            state = state,
+            pageStyle = pageStyle,
+            isDark = isDark,
+            bottomBarHeightDp = bottomBarHeightDp,
+            navBarPx = navBarPx,
+            visible = showStatusPanel
+        )
     }
 
     // ── Catalog bottom sheet ──
@@ -1043,308 +869,3 @@ fun ReaderScreen(
         )
     }
 }
-
-@Composable
-private fun EmptyReaderHint(isDark: Boolean) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            "没有可阅读的内容",
-            color = if (isDark) VibeColors.Stone else VibeColors.WarmGray
-        )
-    }
-}
-
-// ── 滚动模式：与分页共用 ReadingContent 的扁平内容项 ──
-private sealed interface ScrollItem {
-    val chapterId: Long
-    val sourceStartOffset: Int
-
-    data class Title(
-        override val chapterId: Long,
-        val section: String?,
-        val title: String,
-        val status: Int,
-        val errorMessage: String?
-    ) : ScrollItem {
-        override val sourceStartOffset: Int = 0
-    }
-
-    data class Paragraph(
-        override val chapterId: Long,
-        val paragraph: com.vibereading.app.ui.reader.content.ReadingParagraph
-    ) : ScrollItem {
-        override val sourceStartOffset: Int = paragraph.sourceStartOffset
-    }
-}
-
-private fun buildScrollChunks(
-    chapters: List<Chapter>,
-    titleMode: Int
-): List<ScrollItem> = buildList {
-    chapters.forEach { chapter ->
-        val content = com.vibereading.app.ui.reader.content.ReadingContent.fromChapter(chapter)
-        if (titleMode != ReadingSettings.TITLE_MODE_HIDDEN) {
-            add(ScrollItem.Title(content.chapterId, content.section, content.title, content.status, content.errorMessage))
-        }
-        content.paragraphs.forEach { add(ScrollItem.Paragraph(content.chapterId, it)) }
-    }
-}
-
-private fun chapterIdOfChunkKey(key: String?): Long? =
-    key?.substringAfter('-', "")?.substringBefore('-')?.toLongOrNull()
-
-private fun List<ScrollItem>.indexInChunks(chapterId: Long?, offset: Int = 0): Int? {
-    if (chapterId == null) return null
-    val candidates = indices.filter { get(it).chapterId == chapterId }
-    if (candidates.isEmpty()) return null
-    val containing = candidates.firstOrNull { index ->
-        val item = get(index)
-        item is ScrollItem.Paragraph &&
-            item.paragraph.sourceStartOffset <= offset &&
-            offset < item.paragraph.sourceEndOffset
-    }
-    return containing
-        ?: candidates.firstOrNull { get(it).sourceStartOffset > offset }
-        ?: candidates.lastOrNull { get(it) is ScrollItem.Paragraph }
-        ?: candidates.last()
-}
-
-/** 章节号正则：提取「第N章/回/节/卷」中的数字。 */
-private val chapterNumRegex = Regex("""^第(\d+)[章回节卷]""")
-
-/** 底部栏章节标签：序章/楔子显示原名，其余取标题里的章号（避免把序章算成第1章导致整体偏移）。
- *  internal 供 PageInfoOverlays 页眉复用（同一口径，不另起炉灶）。 */
-internal fun chapterLabel(chapters: List<Chapter>, index: Int): String {
-    if (index !in chapters.indices) return "—"
-    val title = chapters[index].title
-    return when {
-        title == "序章" || title == "楔子" || title.startsWith("序") || title.startsWith("楔") -> "序章"
-        else -> {
-            val num = chapterNumRegex.find(title)?.groupValues?.get(1)
-            if (num != null) "第${num}章" else "第${index + 1}章"
-        }
-    }
-}
-
-@Composable
-private fun ScrollReader(
-    chapters: List<Chapter>,
-    chunks: List<ScrollItem>,
-    scrollState: LazyListState,
-    state: ReaderUiState,
-    pageStyle: PageStyle,
-    palette: ReaderPalette,
-    paddingH: Int,
-    paddingV: Int,
-    statusBarPx: Int,
-    navBarPx: Int,
-    onJumpChapter: (Long) -> Unit
-) {
-    val density = LocalDensity.current
-    val paragraphSpacingDp = with(density) { pageStyle.paragraphSpacingPx.toDp() }
-    // 内容区顶部/底部扣除系统栏高度（用缓存值，沉浸式切换不触发滚动内容跳动）
-    val insetTopDp = with(density) { statusBarPx.toDp() }
-    val insetBottomDp = with(density) { navBarPx.toDp() }
-    LazyColumn(
-        state = scrollState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = paddingH.dp),
-        contentPadding = PaddingValues(
-            top = insetTopDp + paddingV.dp,
-            bottom = insetBottomDp + paddingV.dp
-        )
-    ) {
-        itemsIndexed(chunks, key = { _, item ->
-            when (item) {
-                is ScrollItem.Title -> "title-${item.chapterId}"
-                is ScrollItem.Paragraph -> "para-${item.chapterId}-${item.paragraph.index}"
-            }
-        }) { _, item ->
-            when (item) {
-                is ScrollItem.Title -> ReadingChapterTitle(
-                    section = item.section,
-                    title = item.title,
-                    palette = palette,
-                    pageStyle = pageStyle
-                )
-                is ScrollItem.Paragraph -> ReadingParagraphItem(
-                    paragraph = item.paragraph,
-                    mode = state.mode,
-                    pageStyle = pageStyle,
-                    palette = palette
-                )
-            }
-        }
-    }
-}
-
-
-// ── Bottom control bar: 上一章 | slider | 下一章 / 目录 | 翻译 | 重翻 | 设置 ──
-@Composable
-private fun BottomControlBar(
-    chapters: List<Chapter>,
-    activeChapterId: Long?,
-    accentColor: Color,
-    barColor: Color,
-    isRetryEnabled: Boolean,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    onChapterJump: (Long) -> Unit,
-    onToggleCatalog: () -> Unit,
-    onOpenLlmSettings: () -> Unit,
-    onRetry: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    val chapterIndex = chapters.indexOfFirst { it.id == activeChapterId }.coerceAtLeast(0)
-    var dragging by remember { mutableStateOf(false) }
-    var dragChapter by remember { mutableIntStateOf(chapterIndex) }
-    val sliderValue = if (dragging) dragChapter else chapterIndex
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(
-        color = barColor.copy(alpha = 0.97f),
-        shadowElevation = 4.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-        ) {
-            // Row 1: prev | chapter slider | next
-            // 底部对齐 + Slider 与按钮等高（40dp）：Slider 中心线与按钮中心线精确重合；
-            // 若 Slider 保持 28dp，底边对齐后其中心仍低于按钮中心（视觉错位）
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                TextButton(
-                    onClick = onPrev,
-                    enabled = chapterIndex > 0,
-                    modifier = Modifier.width(76.dp)
-                ) {
-                    Text("上一章", fontSize = 13.sp, color = labelColor)
-                }
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 4.dp)
-                ) {
-                    if (chapters.isNotEmpty()) {
-                        Text(
-                            "${chapterLabel(chapters, sliderValue)} / 共${chapters.size}章",
-                            fontSize = 11.sp,
-                            color = labelColor,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        // Slider 外层 Box 撑高到与 TextButton 容器等高（48dp）：底部对齐后
-                        // Box 中心线 = 按钮容器中心线；Slider 保持 28dp 紧凑高度在 Box 内居中，
-                        // 触摸热区不大面积覆盖（Box 只是透明布局占位，不拦截触摸）
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Slider(
-                                value = sliderValue.toFloat(),
-                                onValueChange = {
-                                    dragging = true
-                                    dragChapter = it.roundToInt().coerceIn(0, chapters.size - 1)
-                                },
-                                onValueChangeFinished = {
-                                    dragging = false
-                                    if (dragChapter != chapterIndex) {
-                                        onChapterJump(chapters[dragChapter].id)
-                                    }
-                                },
-                                valueRange = 0f..(chapters.size - 1).coerceAtLeast(0).toFloat(),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = accentColor,
-                                    activeTrackColor = accentColor
-                                ),
-                                modifier = Modifier.fillMaxWidth().height(28.dp)
-                            )
-                        }
-                    }
-                }
-                TextButton(
-                    onClick = onNext,
-                    enabled = chapterIndex < chapters.size - 1,
-                    modifier = Modifier.width(76.dp)
-                ) {
-                    Text("下一章", fontSize = 13.sp, color = labelColor)
-                }
-            }
-
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-
-            // Row 2: catalog | 翻译 | retry | settings
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BottomAction("目录", Icons.Filled.List, accentColor, onToggleCatalog)
-                BottomAction("翻译", Icons.Filled.Translate, accentColor, onOpenLlmSettings)
-                BottomAction(
-                    "重翻",
-                    Icons.Filled.Refresh,
-                    if (isRetryEnabled) accentColor else labelColor,
-                    onRetry,
-                    enabled = isRetryEnabled
-                )
-                BottomAction("设置", Icons.Filled.Settings, accentColor, onOpenSettings)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BottomAction(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    onClick: () -> Unit,
-    enabled: Boolean = true
-) {
-    val alpha = if (enabled) 1f else 0.35f
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 4.dp)
-    ) {
-        Icon(icon, contentDescription = label, tint = tint.copy(alpha = alpha), modifier = Modifier.size(22.dp))
-        Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, color = tint.copy(alpha = alpha))
-    }
-}
-
-@Composable
-private fun ModeButton(
-    text: String,
-    isActive: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = if (isActive) MaterialTheme.colorScheme.primary else Color.Transparent,
-        tonalElevation = if (isActive) 2.dp else 0.dp
-    ) {
-        Text(
-            text,
-            modifier = Modifier
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 13.sp,
-            fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal
-        )
-    }
-}
-
-

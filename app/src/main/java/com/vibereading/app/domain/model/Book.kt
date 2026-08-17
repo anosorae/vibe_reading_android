@@ -5,7 +5,6 @@ data class Book(
     val title: String,
     val filePath: String = "",
     val totalChapters: Int = 0,
-    val translatedChapters: Int = 0,
     val lastReadChapterId: Long? = null,
     val lastReadOffset: Int = 0,
     val lastReadAt: Long = 0,

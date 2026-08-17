@@ -3,8 +3,7 @@ package com.vibereading.app.ui.reader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.vibereading.app.data.remote.LlmApiService
-import com.vibereading.app.data.remote.TranslationEvent
+import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.SettingsRepository
@@ -12,23 +11,11 @@ import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ReadingSettings
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.vibereading.app.domain.model.ReadingPosition
-
-enum class TranslationPhase {
-    IDLE,
-    PREPARING,
-    WAITING_FIRST_TOKEN,
-    THINKING,
-    STREAMING,
-    FAILED,
-    CANCELLED
-}
 
 data class ReaderUiState(
     val bookTitle: String = "",
@@ -59,16 +46,19 @@ class ReaderViewModel(
     private val bookId: Long,
     private val bookRepo: BookRepository,
     private val chapterRepo: ChapterRepository,
-    private val settingsRepo: SettingsRepository
+    private val settingsRepo: SettingsRepository,
+    private val translationService: TranslationService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
-    private val llmService = LlmApiService()
-    private var translateJob: Job? = null
-    private var translationGeneration = 0L
-    private var translationChapterId: Long? = null
+    private val translationCoordinator = TranslationCoordinator(
+        bookId = bookId,
+        chapterRepo = chapterRepo,
+        translationService = translationService,
+        scope = viewModelScope
+    )
     private var llmEditDirty = false
     private val progressMutex = Mutex()
     private var pendingPosition: ReadingPosition? = null
@@ -106,6 +96,23 @@ class ReaderViewModel(
                     val current = _uiState.value.activeChapterId
                     val updated = chapters.find { it.id == current }
                     if (updated != null) _uiState.update { it.copy(activeChapter = updated) }
+                }
+            }
+        }
+
+        // 翻译协调器状态 → UI 状态（仅应用当前阅读章节的任务状态）
+        viewModelScope.launch {
+            translationCoordinator.state.collect { ts ->
+                _uiState.update { ui ->
+                    val isActive = ts.chapterId == ui.activeChapterId
+                    ui.copy(
+                        streamingText = if (isActive) ts.streamingText else ui.streamingText,
+                        thinkingText = if (isActive) ts.thinkingText else ui.thinkingText,
+                        streamingCharCount = if (isActive) ts.streamingCharCount else ui.streamingCharCount,
+                        isStreaming = if (isActive) ts.isStreaming else ui.isStreaming,
+                        translationPhase = if (isActive) ts.phase else ui.translationPhase,
+                        errorMessage = if (isActive) ts.errorMessage else ui.errorMessage
+                    )
                 }
             }
         }
@@ -345,7 +352,7 @@ class ReaderViewModel(
             try {
                 _uiState.update { it.copy(llmSettings = newSettings) }
                 settingsRepo.saveLlmSettings(newSettings)
-                val result = llmService.testConnection(newSettings)
+                val result = translationService.testConnection(newSettings)
                 _uiState.update {
                     it.copy(
                         llmTestResult = result.getOrNull() ?: result.exceptionOrNull()?.message,
@@ -368,204 +375,22 @@ class ReaderViewModel(
         val settings = _uiState.value.llmSettings
         if (settings.apiKey.isBlank()) return
         when (chapter.status) {
-            Chapter.STATUS_PENDING, Chapter.STATUS_FAILED -> translateChapter(chapterId)
+            Chapter.STATUS_PENDING, Chapter.STATUS_FAILED ->
+                translationCoordinator.translate(chapter, settings)
         }
     }
 
+    /** 用户重译：取消当前任务并恢复旧章节 PENDING 后重新开始。 */
     fun retryTranslation(chapterId: Long) {
+        val chapter = _uiState.value.chapters.find { it.id == chapterId } ?: return
         viewModelScope.launch {
-            cancelTranslation()
-            translateChapter(chapterId)
+            translationCoordinator.cancelAndReset()
+            translationCoordinator.translate(chapter, _uiState.value.llmSettings)
         }
-    }
-
-    private fun isCurrentTranslation(generation: Long, chapterId: Long): Boolean =
-        generation == translationGeneration && _uiState.value.activeChapterId == chapterId
-
-    /** 任务仍拥有该章节的写权限；切换阅读章节不应取消合法后台翻译。 */
-    private fun ownsTranslation(generation: Long, chapterId: Long): Boolean =
-        generation == translationGeneration && translationChapterId == chapterId
-
-    private suspend fun cancelTranslation(restoreStatus: Boolean = true) {
-        val oldChapterId = translationChapterId
-        val oldJob = translateJob
-        translationGeneration++
-        translateJob = null
-        translationChapterId = null
-        oldJob?.cancelAndJoin()
-        if (restoreStatus && oldChapterId != null) {
-            chapterRepo.updateStatus(bookId, oldChapterId, Chapter.STATUS_PENDING)
-        }
-    }
-
-    private fun cancelTranslationImmediately() {
-        translationGeneration++
-        translateJob?.cancel()
-        translateJob = null
-        translationChapterId = null
-    }
-
-    private fun translateChapter(chapterId: Long) {
-        if (translationChapterId == chapterId && translateJob?.isActive == true) return
-        val generation = ++translationGeneration
-        translationChapterId = chapterId
-        translateJob = viewModelScope.launch {
-            var markedInProgress = false
-            var terminalEvent = false
-            try {
-                if (isCurrentTranslation(generation, chapterId)) {
-                    _uiState.update { it.copy(translationPhase = TranslationPhase.PREPARING, errorMessage = null) }
-                }
-                val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return@launch
-                val settings = _uiState.value.llmSettings
-
-                if (settings.apiKey.isBlank()) {
-                    if (isCurrentTranslation(generation, chapterId)) {
-                        _uiState.update { it.copy(translationPhase = TranslationPhase.FAILED, errorMessage = "请先配置 API Key") }
-                    }
-                    return@launch
-                }
-
-                if (chapter.content.length > settings.chapterMaxChars) {
-                    val msg = "章节过长 (${chapter.content.length} 字符)"
-                    chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_TOO_LONG, msg)
-                    if (isCurrentTranslation(generation, chapterId)) {
-                        _uiState.update { it.copy(translationPhase = TranslationPhase.FAILED, errorMessage = msg) }
-                    }
-                    return@launch
-                }
-
-                chapterRepo.updateStatus(bookId, chapterId, Chapter.STATUS_IN_PROGRESS)
-                markedInProgress = true
-                if (isCurrentTranslation(generation, chapterId)) {
-                    _uiState.update {
-                        it.copy(
-                            isStreaming = true,
-                            translationPhase = TranslationPhase.WAITING_FIRST_TOKEN,
-                            streamingText = "",
-                            thinkingText = "",
-                            streamingCharCount = 0,
-                            errorMessage = null
-                        )
-                    }
-                }
-
-                val prevEnglish = if (settings.enableContextBoost) loadContext(chapter, settings) else null
-                llmService.translateStream(
-                    settings = settings,
-                    chapterTitle = chapter.title,
-                    chapterContent = chapter.content,
-                    prevChapterEnglish = prevEnglish
-                ).collect { event ->
-                    val isCurrent = isCurrentTranslation(generation, chapterId)
-                    when (event) {
-                        TranslationEvent.Started -> if (isCurrent) _uiState.update {
-                            it.copy(translationPhase = TranslationPhase.WAITING_FIRST_TOKEN)
-                        }
-                        is TranslationEvent.Thinking -> if (isCurrent) _uiState.update {
-                            it.copy(
-                                translationPhase = TranslationPhase.THINKING,
-                                thinkingText = it.thinkingText + event.text
-                            )
-                        }
-                        is TranslationEvent.Chunk -> if (isCurrent) _uiState.update {
-                            it.copy(
-                                translationPhase = TranslationPhase.STREAMING,
-                                streamingText = it.streamingText + event.text,
-                                streamingCharCount = it.streamingCharCount + event.text.length
-                            )
-                        }
-                        is TranslationEvent.Progress -> if (isCurrent) _uiState.update {
-                            it.copy(streamingCharCount = maxOf(it.streamingCharCount, event.chars))
-                        }
-                        is TranslationEvent.Done -> {
-                            terminalEvent = true
-                            if (!ownsTranslation(generation, chapterId)) return@collect
-                            chapterRepo.updateTranslation(bookId, chapterId, event.text, Chapter.STATUS_DONE)
-                            val doneCount = chapterRepo.getDoneCount(bookId)
-                            bookRepo.updateTranslatedCount(bookId, doneCount)
-                            if (isCurrent) _uiState.update {
-                                it.copy(
-                                    isStreaming = false,
-                                    translationPhase = TranslationPhase.IDLE,
-                                    thinkingText = "",
-                                    streamingCharCount = 0
-                                )
-                            }
-                        }
-                        is TranslationEvent.Error -> {
-                            terminalEvent = true
-                            if (!ownsTranslation(generation, chapterId)) return@collect
-                            chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_FAILED, event.reason)
-                            if (isCurrent) _uiState.update {
-                                it.copy(
-                                    isStreaming = false,
-                                    translationPhase = TranslationPhase.FAILED,
-                                    thinkingText = "",
-                                    streamingCharCount = 0,
-                                    errorMessage = event.reason
-                                )
-                            }
-                        }
-                    }
-                }
-                if (!terminalEvent) {
-                    val reason = "翻译流未正常结束"
-                    if (ownsTranslation(generation, chapterId)) {
-                        chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_FAILED, reason)
-                    }
-                    if (isCurrentTranslation(generation, chapterId)) {
-                        _uiState.update {
-                            it.copy(isStreaming = false, translationPhase = TranslationPhase.FAILED, errorMessage = reason)
-                        }
-                    }
-                }
-            } catch (e: CancellationException) {
-                if (generation == translationGeneration && markedInProgress) {
-                    if (ownsTranslation(generation, chapterId)) {
-                        chapterRepo.updateStatus(bookId, chapterId, Chapter.STATUS_PENDING)
-                    }
-                    if (_uiState.value.activeChapterId == chapterId) {
-                        _uiState.update {
-                            it.copy(isStreaming = false, translationPhase = TranslationPhase.CANCELLED, thinkingText = "", streamingCharCount = 0)
-                        }
-                    }
-                }
-                throw e
-            } catch (e: Exception) {
-                if (markedInProgress) {
-                    val reason = e.message ?: "翻译失败"
-                    if (ownsTranslation(generation, chapterId)) {
-                        chapterRepo.updateStatusWithError(bookId, chapterId, Chapter.STATUS_FAILED, reason)
-                    }
-                    if (isCurrentTranslation(generation, chapterId)) {
-                        _uiState.update {
-                            it.copy(isStreaming = false, translationPhase = TranslationPhase.FAILED, streamingCharCount = 0, errorMessage = reason)
-                        }
-                    }
-                }
-            } finally {
-                if (generation == translationGeneration) {
-                    translationChapterId = null
-                    if (!terminalEvent && _uiState.value.activeChapterId == chapterId) {
-                        _uiState.update { it.copy(isStreaming = false) }
-                    }
-                }
-            }
-        }
-    }
-
-    private suspend fun loadContext(chapter: Chapter, settings: LlmSettings): String? {
-        val budget = settings.contextMaxChars - chapter.content.length
-        if (budget <= 0) return null
-        val prevChapters = chapterRepo.getRecentDoneChapters(bookId, settings.contextChapters)
-        if (prevChapters.isEmpty()) return null
-        val combined = prevChapters.reversed().mapNotNull { it.translatedContent }.joinToString("\n\n")
-        return if (combined.length > budget) llmService.truncateMiddle(combined, budget) else combined
     }
 
     override fun onCleared() {
-        cancelTranslationImmediately()
+        translationCoordinator.cancelImmediately()
         super.onCleared()
     }
 
@@ -573,11 +398,12 @@ class ReaderViewModel(
         private val bookId: Long,
         private val bookRepo: BookRepository,
         private val chapterRepo: ChapterRepository,
-        private val settingsRepo: SettingsRepository
+        private val settingsRepo: SettingsRepository,
+        private val translationService: TranslationService
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return ReaderViewModel(bookId, bookRepo, chapterRepo, settingsRepo) as T
+            return ReaderViewModel(bookId, bookRepo, chapterRepo, settingsRepo, translationService) as T
         }
     }
 }

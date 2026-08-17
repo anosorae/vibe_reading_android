@@ -6,6 +6,7 @@ package com.vibereading.app.domain.model
  */
 data class BookShelfItem(
     val book: Book,
+    val translatedCount: Int = 0,   // 已翻译章节数（由 chapters 表派生，不落库）
     val lastReadChapterTitle: String? = null,
     val progress: Float = 0f // 0..1，基于 totalChapters
 )

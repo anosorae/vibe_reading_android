@@ -148,4 +148,8 @@ dependencies {
     testImplementation("androidx.compose.ui:ui-graphics")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("androidx.room:room-testing:2.6.1")
+    testImplementation("androidx.sqlite:sqlite-framework:2.4.0")
+    testImplementation("androidx.test:runner:1.6.2")
+    testImplementation("androidx.test.ext:junit:1.2.1")
 }

@@ -12,17 +12,20 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - Android 验证优先使用 android-emulator MCP：`android_preflight` → `android_discover_project` → `android_build_and_run` 或 `build_app` + `install_app` + `launch_app`。除非用户明确要求，不主动截图或执行额外 UI 自动化。
 - 单测使用 Robolectric 4.14/NATIVE 真实换行测量；断言结构化结果（offset 范围、切段拼接、双语原子性、页高和位置映射），不要固定易变的像素值。
 - 项目为单模块 `:app`，包名 `com.vibereading.app`，minSdk 26，target/compileSdk 35，Kotlin 2.1.0，Compose BOM 2024.12.01，Gradle 8.11.1。
-- Room schema 通过 KSP 输出到 `app/schemas`；当前数据库版本为 5，实体模型使用 `lastReadOffset`。
+- Room schema 通过 KSP 输出到 `app/schemas`；当前数据库版本为 6，实体模型使用 `lastReadOffset`；`chapters.translationRunId` 提供翻译任务的数据库级 stale 防护；书架「已译章节数」由 chapters 表 DONE 状态实时派生，`books.translatedChapters` 冗余列已移除。
 
 ## 目录结构
 
 - `app/src/main/java/com/vibereading/app/`
-  - `data/` — Room 本地库（`local/entity`、`local/dao`）、`remote/LlmApiService.kt`（SSE 翻译）、`repository/`（Book/Chapter/Settings 仓库）
+  - `data/` — Room 本地库（`local/entity`、`local/dao`）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（Book/Chapter/Settings 仓库）
   - `domain/model/` — 纯 Kotlin 领域模型，包括 `Book`、`Chapter`、`ReadingPosition`、`ReadingSettings`
   - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`；负责保留原文段落的 UTF-16 起止 offset
   - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`、`navigation`、`theme`
-    - `reader/ReaderScreen.kt` — 阅读器容器、五种翻页交互、生命周期 flush、滚动/分页接线
-    - `reader/ReaderViewModel.kt` — 初始化恢复、阅读位置状态、串行进度写入、翻译状态机
+    - `reader/ReaderScreen.kt` — 阅读器容器、五种翻页交互、生命周期 flush、滚动/分页接线（页面协调）
+    - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
+    - `reader/ReaderChrome.kt` — 顶栏/底栏/翻译状态面板/章节标签等 chrome 组件
+    - `reader/ReaderViewModel.kt` — 初始化恢复、阅读位置状态、串行进度写入、翻译协调器接线
+    - `reader/TranslationCoordinator.kt` — 翻译状态机：单任务运行 + `translationRunId` 数据库级 stale 防护
     - `reader/components/ReadingContentRenderer.kt` — 分页与滚动共享的章节标题/正文/双语内容渲染
     - `reader/components/BilingualParagraph.kt` — 英文译文、原文气泡和 Popup
     - `reader/ReaderPalette.kt` — 亮/暗语义色板
@@ -46,7 +49,8 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - 阅读位置统一使用 `ReadingPosition(chapterId, offset)`。`Book.lastReadChapterId` 和 `Book.lastReadOffset` 是持久化恢复数据；页码只能是当前 `BookWindow`/`ChapterPaginator` 的派生状态。
 - 初始恢复必须是一次性、原子、无副作用的：先读取 Book 位置快照，再等待章节列表；不要通过会写库的普通导航函数恢复默认位置。后续章节 Flow 只刷新当前章节。
 - 位置变化统一经过 ViewModel 的进度入口；分页从 `window.offsetOfPage()` 取 offset，滚动从可见 `ScrollItem` 取 offset。写入必须串行，退出前调用 `flushProgress()`。
-- 翻译走 `LlmApiService.translateStream()`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文。
+- 翻译走 `TranslationService` 接口（`LlmApiService` 实现）的 `translateStream()`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文。
+- 翻译状态机集中在 `TranslationCoordinator`（注入 `TranslationService`）：开始翻译时写入 `chapters.translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧任务无法污染新任务。
 
 ## 阅读内容与五种翻页模式
 
@@ -76,10 +80,12 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - 目录只从底部栏中央进入；顶栏不增加目录按钮。
 - 全局主题由 `ThemeSettings` 驱动，阅读器背景/正文颜色由 `ReadingSettings`、`ReaderBgPresets`、`ReaderPalette` 独立控制。
 - SSE 必须持续拼接所有 `content` chunk 直到 `[DONE]`；`finish_reason="length"`、网络异常、解析异常、取消都不能保存为成功译文；流式状态栏正文不得设置固定 `maxLines` 或省略号。
+- 书架「已译章节数」只能从 `chapters` 表 DONE 状态派生（`BookDao.getBooksWithProgress()` 子查询），`books.translatedChapters` 缓存列已移除，禁止恢复。
+- 翻译终态写库必须走 `ChapterRepository.startTranslation/completeTranslation/failTranslation/cancelTranslation`（内部带 `translationRunId` 匹配）；切换阅读章节不应取消合法后台任务，只有开启新任务才替换旧任务。
 
 ## 复用与内聚
 
-- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，章节状态颜色用 `chapterStatusColor`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`。
+- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，章节状态颜色用 `chapterStatusColor`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`。
 - 修改跨组件概念前先搜索其单一数据源；不要在组件内复制常量或重新解析章节文本。
 - 共享 Composable 优先复用 `ReadingChapterTitle`、`ReadingParagraphItem`、`BilingualParagraph`；新增视觉差异应通过参数表达，而不是复制组件。
 

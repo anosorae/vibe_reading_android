@@ -34,6 +34,8 @@
 | **单手模式 (One-hand Mode)** | 分页类模式开启后左右两侧均翻下一页；滚动模式没有页概念，不生效 | 三段点按 |
 | **章节状态 (Chapter Status)** | `0=待翻译 1=翻译中 2=已翻译 -1=失败 3=过长`；Room 持久化的粗粒度状态 | 翻译阶段 |
 | **翻译阶段 (Translation Phase)** | 一次翻译任务的运行时阶段：准备、等待首 token、思考、流式输出、失败、取消；不写入 `Chapter.status` | 章节状态 |
+| **翻译任务代际 (Translation Run)** | 一次翻译任务的自增 `translationRunId`；开始翻译写入 chapters 表，完成/失败/取消必须带同一 runId 才落库，旧任务不能污染新任务 | 内存代际（非持久化） |
+| **已译章节数 (Translated Count)** | 一本书的 DONE 状态章节数，由 chapters 表实时派生（书架展示），不持久化缓存 | 缓存冗余列（已移除） |
 | **思考过程 (Thinking / Reasoning)** | SSE 中的 `reasoning_content`、`reasoning` 或 `thinking` 增量；只在开启思考模式时展示，不混入正式译文 | 正式回复 |
 | **正式回复 (Final Content)** | SSE `delta.content` 按顺序拼接形成的正式译文；`Done.text` 才能持久化 | 思考过程 |
 | **流式翻译状态栏 (Streaming Status Bar)** | 翻译面板顶部固定显示阶段和字符数；思考内容与正式回复在下方独立滚动 | 流式内容区 |
@@ -51,6 +53,8 @@
 | 页面几何 | `ReaderPageGeometry.of(...)` |
 | 章节状态颜色 | `chapterStatusColor(status)` |
 | 排版共享常量 | `ReaderMetrics` |
+| 翻译状态机 | `TranslationCoordinator`（注入 `TranslationService`） |
+| 翻译网络服务 | `TranslationService`（`LlmApiService` 实现） |
 
 ## 关键边界（决策摘要）
 
@@ -67,6 +71,7 @@
 - **目录入口**：阅读器目录唯一入口在底部栏中央，顶栏不放目录按钮。
 - **主题独立性**：全局 `ThemeSettings` 的 dark/light 与配色只控制应用主题；阅读器页面背景、正文和气泡颜色由阅读设置及 `ReaderPalette` 控制。
 - **翻译流可靠性**：持续拼接所有 `content` chunk 直到 `[DONE]`；思考字段单独生成 `Thinking`；网络、解析、取消和长度截断不得静默保存为成功译文。
+- **翻译写入的 stale 防护**：翻译开始、完成、失败、取消都以 `translationRunId` 为数据库级匹配条件（`ChapterDao.*TranslationRun`）；切换阅读章节不取消合法后台任务，新任务替换旧任务时旧任务的迟到写入被拒绝。
 
 ## 交互规则
 

@@ -44,8 +44,8 @@
 
 ### D5 样式/模式变更位置保持（Q6）
 
-- 换字号/字距/边距/切换中英模式导致窗口重建时，记住「当前章 + 章内页」，重建后恢复到该页（不再跳回第 0 页）。
-- 进度持久化升级为「章 + 章内页」（Room v3：`books.lastReadPage`，迁移 `ALTER TABLE`）。
+- 换字号/字距/边距/切换中英模式导致窗口重建时，记住「当前章 + 原文字符 offset」，重建后恢复到该页（不再跳回第 0 页）。
+- 进度持久化为「章 + 原文字符 offset」（Room v6：`books.lastReadChapterId` + `books.lastReadOffset`，UTF-16 半开区间；迁移链 v2→v3→v4→v5→v6，旧 `lastReadPage` 页码无可信字符映射故不转换、归零）。
 
 ### D6 滚动模式统一（Q10=a）
 
@@ -66,5 +66,5 @@
 ## 影响
 
 - `pagination/TextPaginator.kt` 重写为共享类型 + `ChapterPaginator`；新增 `pagination/BookWindow.kt`；`BookPager.kt` 渲染与位图重写；`ReaderScreen.kt` 分页器接线重写。
-- `ReadingSettings` + 7 字段；`Book`/`BookEntity` + `lastReadPage`；Room schema v2→v3。
+- `ReadingSettings` + 7 字段；`Book`/`BookEntity` 阅读进度演进为 `lastReadChapterId` + `lastReadOffset`（原文字符 offset）；Room schema 演进至 v6（含 `translationRunId` 数据库级 stale 防护、`translatedChapters` 冗余列移除改实时派生）。
 - 跨章**滑动**动画保留（窗口内连续），翻页类型切换与远跳为瞬时重排（已接受，见 D1）。

@@ -43,7 +43,7 @@ private data class ChatCompletionChoice(val message: ChatCompletionMessage? = nu
 private data class ChatCompletionMessage(val role: String, val content: String)
 private data class ChatCompletionResponse(val choices: List<ChatCompletionChoice>? = null)
 
-class LlmApiService {
+class LlmApiService : TranslationService {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -102,17 +102,17 @@ class LlmApiService {
         return sb.toString()
     }
 
-    fun truncateMiddle(text: String, maxLen: Int): String {
+    override fun truncateMiddle(text: String, maxLen: Int): String {
         if (text.length <= maxLen) return text
         val half = maxLen / 2
         return text.take(half) + "\n[... middle truncated ...]\n" + text.takeLast(half)
     }
 
-    fun translateStream(
+    override fun translateStream(
         settings: LlmSettings,
         chapterTitle: String,
         chapterContent: String,
-        prevChapterEnglish: String? = null
+        prevChapterEnglish: String?
     ): Flow<TranslationEvent> = flow {
         var call: okhttp3.Call? = null
         var sawDone = false
@@ -206,7 +206,7 @@ class LlmApiService {
         }
     }.flowOn(Dispatchers.IO)
 
-    suspend fun testConnection(settings: LlmSettings): Result<String> = withContext(Dispatchers.IO) {
+    override suspend fun testConnection(settings: LlmSettings): Result<String> = withContext(Dispatchers.IO) {
         try {
             val requestMap = mapOf(
                 "model" to settings.model,

@@ -29,23 +29,29 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     suspend fun update(chapter: Chapter) =
         chapterDao.update(chapter.toEntity())
 
-    suspend fun updateStatus(bookId: Long, chapterId: Long, status: Int): Int =
-        chapterDao.updateStatus(bookId, chapterId, status)
+    /** 开始翻译任务并登记 runId；返回是否成功开始。 */
+    suspend fun startTranslation(bookId: Long, chapterId: Long, runId: Long): Boolean =
+        chapterDao.startTranslationRun(bookId, chapterId, runId, Chapter.STATUS_IN_PROGRESS) > 0
 
-    suspend fun updateStatusWithError(bookId: Long, chapterId: Long, status: Int, errorMessage: String?): Int =
-        chapterDao.updateStatusWithError(bookId, chapterId, status, errorMessage)
+    /** 完成翻译（runId 匹配才生效）；返回 false 表示任务已失效。 */
+    suspend fun completeTranslation(bookId: Long, chapterId: Long, runId: Long, content: String): Boolean =
+        chapterDao.completeTranslationRun(bookId, chapterId, runId, content, Chapter.STATUS_DONE) > 0
 
-    suspend fun updateTranslation(bookId: Long, chapterId: Long, content: String, status: Int): Int =
-        chapterDao.updateTranslation(bookId, chapterId, content, status)
+    /** 翻译失败（runId 匹配才生效）；返回 false 表示任务已失效。 */
+    suspend fun failTranslation(bookId: Long, chapterId: Long, runId: Long, errorMessage: String?): Boolean =
+        chapterDao.failTranslationRun(bookId, chapterId, runId, Chapter.STATUS_FAILED, errorMessage) > 0
 
+    /** 取消翻译并恢复 PENDING（runId 匹配才生效）；返回 false 表示任务已失效。 */
+    suspend fun cancelTranslation(bookId: Long, chapterId: Long, runId: Long): Boolean =
+        chapterDao.cancelTranslationRun(bookId, chapterId, runId, Chapter.STATUS_PENDING) > 0
+
+    /** 标记章节过长（一次性判定，不涉及 run）。 */
+    suspend fun markTooLong(bookId: Long, chapterId: Long, errorMessage: String): Int =
+        chapterDao.updateStatusWithError(bookId, chapterId, Chapter.STATUS_TOO_LONG, errorMessage)
+
+    /** 用户重置翻译：无条件清译文、错误和 runId。 */
     suspend fun resetChapter(bookId: Long, chapterId: Long): Int =
         chapterDao.resetChapter(bookId, chapterId)
-
-    suspend fun getDoneCount(bookId: Long): Int =
-        chapterDao.getDoneCount(bookId)
-
-    fun hasInProgress(bookId: Long): Flow<Boolean> =
-        chapterDao.hasInProgress(bookId, Chapter.STATUS_IN_PROGRESS)
 
     private fun ChapterEntity.toDomain() = Chapter(
         id = id, bookId = bookId, title = title, section = section,

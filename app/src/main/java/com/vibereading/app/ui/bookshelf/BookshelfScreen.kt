@@ -274,7 +274,7 @@ fun BookshelfScreen(
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
                 )
                 Text(
-                    "${item.book.totalChapters}章 · 已译${item.book.translatedChapters}",
+                    "${item.book.totalChapters}章 · 已译${item.translatedCount}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp)
@@ -422,7 +422,7 @@ private fun BookRow(
                 )
                 Text(" · ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 Text(
-                    "已译${book.translatedChapters}",
+                    "已译${item.translatedCount}",
                     style = MaterialTheme.typography.labelSmall,
                     color = VibeColors.Sage
                 )

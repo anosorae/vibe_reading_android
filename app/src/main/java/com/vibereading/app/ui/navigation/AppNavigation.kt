@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.SettingsRepository
@@ -34,6 +35,7 @@ fun AppNavigation() {
     val bookRepo = remember { BookRepository(db.bookDao()) }
     val chapterRepo = remember { ChapterRepository(db.chapterDao()) }
     val settingsRepo = remember { SettingsRepository(application) }
+    val translationService = remember { LlmApiService() }
 
     NavHost(navController = navController, startDestination = Routes.BOOKSHELF) {
 
@@ -54,7 +56,7 @@ fun AppNavigation() {
         ) { entry ->
             val bookId = entry.arguments?.getLong("bookId") ?: return@composable
             val vm: ReaderViewModel = viewModel(
-                factory = ReaderViewModel.Factory(bookId, bookRepo, chapterRepo, settingsRepo)
+                factory = ReaderViewModel.Factory(bookId, bookRepo, chapterRepo, settingsRepo, translationService)
             )
             ReaderScreen(
                 vm = vm,

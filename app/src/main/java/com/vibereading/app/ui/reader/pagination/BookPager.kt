@@ -105,8 +105,10 @@ class SimFlipState {
             }
             PageCurl.Direction.NEXT -> {
                 if (viewWidth / 2 > startX) {
-                    cornerX = viewWidth - startX
-                    cornerY = startY
+                    // 左侧起手翻下一页仍从右侧卷起；必须把镜像起手点量化为右上/右下角。
+                    // 直接保留 viewWidth - startX、startY 会把中部坐标当作卷角，
+                    // 与 MOVE 阶段触点贴到底部时闭合出错误的三角裁剪区域。
+                    calcCornerXY(viewWidth - startX, viewWidth, viewHeight)
                 }
                 // else: 已在 DOWN 时由 calcCornerXY 设置，不额外调整
             }

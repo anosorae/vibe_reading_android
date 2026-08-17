@@ -38,8 +38,8 @@ interface BookDao {
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("UPDATE books SET lastReadChapterId = :chapterId, lastReadPage = :page, lastReadAt = :readAt WHERE id = :bookId")
-    suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, page: Int, readAt: Long)
+    @Query("UPDATE books SET lastReadChapterId = :chapterId, lastReadOffset = :offset, lastReadAt = :readAt WHERE id = :bookId")
+    suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int, readAt: Long)
 
     @Query("UPDATE books SET translatedChapters = :count WHERE id = :bookId")
     suspend fun updateTranslatedCount(bookId: Long, count: Int)

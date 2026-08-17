@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.ReadingSettings
+import com.vibereading.app.ui.reader.content.ReadingParagraph
 
 /**
  * 行级排版模型（对齐 Legado TextPageFactory / TextLine 思路，ADR-001）：
@@ -103,8 +104,18 @@ sealed class FlowItem {
         override val chapterId: Long,
         val paraIndex: Int,
         val cnText: String,
-        val enText: String?     // en 模式下英文译文；未翻译为 null（渲染回退原文）
-    ) : FlowItem()
+        val enText: String?,     // en 模式下英文译文；未翻译为 null（渲染回退原文）
+        val sourceStartOffset: Int = 0,
+        val sourceEndOffset: Int = sourceStartOffset + cnText.length
+    ) : FlowItem() {
+        fun toReadingParagraph(): ReadingParagraph = ReadingParagraph(
+            index = paraIndex,
+            sourceText = cnText,
+            translatedText = enText,
+            sourceStartOffset = sourceStartOffset,
+            sourceEndOffset = sourceEndOffset
+        )
+    }
 }
 
 /** 单页显示单元（排版完成后的结果）。 */
@@ -130,7 +141,9 @@ sealed class PageUnit {
         val pairHead: Boolean = true,      // en 首片段可显示原文气泡；续段无气泡
         val lineCount: Int = 0,            // 本单元本页实际行数（底部对齐用）
         val lineHeightExtraPx: Float = 0f, // 底部对齐分配给每行的额外高度
-        val mainLayout: TextLayoutResult? = null  // zh=正文布局 / en=英文布局
+        val mainLayout: TextLayoutResult? = null,  // zh=正文布局 / en=英文布局
+        val sourceStartOffset: Int = 0,
+        val sourceEndOffset: Int = sourceStartOffset + cnText.length
     ) : PageUnit()
 }
 
@@ -139,7 +152,14 @@ data class TextPage(
     val chapterId: Long,
     val indexInChapter: Int,
     val units: List<PageUnit>,
-    val usedHeightPx: Float
+    val usedHeightPx: Float,
+    /** 本页覆盖的原文范围（标题页或空页为 null）。 */
+    val sourceStartOffset: Int? = units
+        .filterIsInstance<PageUnit.Para>()
+        .minOfOrNull { it.sourceStartOffset },
+    val sourceEndOffset: Int? = units
+        .filterIsInstance<PageUnit.Para>()
+        .maxOfOrNull { it.sourceEndOffset }
 )
 
 /** 切段续排状态：超长段的第一段已排完，剩余文本随 [para] 进入下一页。 */
@@ -175,6 +195,19 @@ class ChapterPaginator(
     }
 
     fun pageUnits(page: Int): List<PageUnit> = pages.getOrNull(page)?.units ?: emptyList()
+
+    /** 返回包含原文偏移的页；边界偏移归入覆盖它的第一项。 */
+    fun pageForOffset(sourceOffset: Int): Int? {
+        val offset = sourceOffset.coerceAtLeast(0)
+        return pages.indexOfFirst { page ->
+            page.sourceStartOffset?.let { start ->
+                val end = page.sourceEndOffset ?: start
+                offset in start until end || (offset == start && start == end)
+            } == true
+        }.takeIf { it >= 0 }
+            ?: pages.indexOfLast { it.sourceStartOffset != null }
+                .takeIf { it >= 0 && offset >= (pages[it].sourceStartOffset ?: 0) }
+    }
 
     // ── 排版核心 ──
 
@@ -227,7 +260,9 @@ class ChapterPaginator(
                             val l1 = if (c1 != text) measureLayout(c1, style.body) else layout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, c1, null,
-                                splitFirst = true, lineCount = l1.lineCount, mainLayout = l1
+                                splitFirst = true, lineCount = l1.lineCount, mainLayout = l1,
+                                sourceStartOffset = item.sourceStartOffset,
+                                sourceEndOffset = item.sourceEndOffset
                             )
                             used += l1.size.height.toFloat()
                             if (c2.isNotBlank()) {
@@ -243,7 +278,9 @@ class ChapterPaginator(
                             if (units.isNotEmpty()) pageDone()
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, trunc, null,
-                                lineCount = tl.lineCount, mainLayout = tl
+                                lineCount = tl.lineCount, mainLayout = tl,
+                                sourceStartOffset = item.sourceStartOffset,
+                                sourceEndOffset = item.sourceEndOffset
                             )
                             used += tl.size.height.toFloat()
                             pos++
@@ -251,7 +288,9 @@ class ChapterPaginator(
                             if (units.isNotEmpty() && h > contentHeightPx - used) pageDone()
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, text, null,
-                                lineCount = layout.lineCount, mainLayout = layout
+                                lineCount = layout.lineCount, mainLayout = layout,
+                                sourceStartOffset = item.sourceStartOffset,
+                                sourceEndOffset = item.sourceEndOffset
                             )
                             used += h + style.paragraphSpacingPx
                             pos++
@@ -278,7 +317,9 @@ class ChapterPaginator(
                                 item.chapterId, item.paraIndex, item.cnText, c1,
                                 splitFirst = true, pairHead = head,
                                 lineCount = l1.lineCount,
-                                mainLayout = l1
+                                mainLayout = l1,
+                                sourceStartOffset = item.sourceStartOffset,
+                                sourceEndOffset = item.sourceEndOffset
                             )
                             used += l1.size.height.toFloat() + padPx
                             if (c2.isNotBlank()) {
@@ -296,7 +337,9 @@ class ChapterPaginator(
                                 item.chapterId, item.paraIndex, item.cnText, en,
                                 pairHead = head,
                                 lineCount = enLayout.lineCount,
-                                mainLayout = enLayout
+                                mainLayout = enLayout,
+                                sourceStartOffset = item.sourceStartOffset,
+                                sourceEndOffset = item.sourceEndOffset
                             )
                             used += h + padPx + style.paragraphSpacingPx
                             pos++

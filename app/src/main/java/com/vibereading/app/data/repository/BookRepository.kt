@@ -34,9 +34,9 @@ class BookRepository(private val bookDao: BookDao) {
     suspend fun delete(id: Long) =
         bookDao.deleteById(id)
 
-    /** 保存阅读进度：分页模式记「章 + 章内页」，滚动模式 page 恒 0。 */
-    suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, page: Int) =
-        bookDao.updateLastReadProgress(bookId, chapterId, page, System.currentTimeMillis())
+    /** 保存阅读进度：记录章节及原文字符 offset。 */
+    suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int) =
+        bookDao.updateLastReadProgress(bookId, chapterId, offset.coerceAtLeast(0), System.currentTimeMillis())
 
     suspend fun updateTranslatedCount(bookId: Long, count: Int) =
         bookDao.updateTranslatedCount(bookId, count)
@@ -44,14 +44,14 @@ class BookRepository(private val bookDao: BookDao) {
     private fun BookEntity.toDomain() = Book(
         id = id, title = title, filePath = filePath,
         totalChapters = totalChapters, translatedChapters = translatedChapters,
-        lastReadChapterId = lastReadChapterId, lastReadPage = lastReadPage,
+        lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
         lastReadAt = lastReadAt, createdAt = createdAt
     )
 
     private fun Book.toEntity() = BookEntity(
         id = id, title = title, filePath = filePath,
         totalChapters = totalChapters, translatedChapters = translatedChapters,
-        lastReadChapterId = lastReadChapterId, lastReadPage = lastReadPage,
+        lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
         lastReadAt = lastReadAt, createdAt = createdAt
     )
 

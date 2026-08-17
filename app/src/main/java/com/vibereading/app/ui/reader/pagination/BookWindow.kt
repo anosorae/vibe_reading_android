@@ -5,8 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextMeasurer
 import com.vibereading.app.domain.model.Chapter
-import com.vibereading.app.ui.reader.components.parseBilingualParagraphs
-import com.vibereading.app.ui.reader.components.splitParagraphs
+import com.vibereading.app.ui.reader.content.ReadingContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -97,6 +96,27 @@ class BookWindow(
         windowPages.indexOfFirst { it.chapterId == chapterId && it.pageInChapter == pageInChapter }
             .takeIf { it >= 0 }
 
+    /** 按章节原文偏移定位到窗口内页；Long 重载避免破坏既有 Int 页索引调用。 */
+    fun indexOf(chapterId: Long, sourceOffset: Long): Int? {
+        val paginator = synchronized(lock) { paginators[chapterId] } ?: return null
+        val page = paginator.pageForOffset(sourceOffset.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()) ?: return null
+        return indexOf(chapterId, page)
+    }
+
+    /** Int 形式的显式别名，适合来源偏移由字符串/编辑器 API 提供的调用点。 */
+    fun indexOfOffset(chapterId: Long, sourceOffset: Int): Int? =
+        indexOf(chapterId, sourceOffset.toLong())
+
+    /** 返回窗口页对应的章节原文范围；页不存在或未排版时返回 null。 */
+    fun offsetOfPage(index: Int): IntRange? {
+        val wp = windowPages.getOrNull(index) ?: return null
+        val page = synchronized(lock) { paginators[wp.chapterId]?.pages?.getOrNull(wp.pageInChapter) }
+            ?: return null
+        val start = page.sourceStartOffset ?: return null
+        val end = page.sourceEndOffset ?: start
+        return start..end
+    }
+
     /** 某章已排版时的页数（未排版返回 0）。 */
     fun pageCountInChapter(chapterId: Long): Int =
         synchronized(lock) { paginators[chapterId]?.pages?.size } ?: 0
@@ -142,25 +162,26 @@ class BookWindow(
          *  以 parseBilingualParagraphs 为唯一数据源——cnText 和 enText 均来自配对结果，
          *  避免独立拆分中文段落导致索引不对齐（如整章无 \n\n 分隔时 cnText 为全章文本）。 */
         fun buildChapterItems(chapter: Chapter): List<FlowItem> {
-            val list = mutableListOf<FlowItem>()
-            list += FlowItem.Title(chapter.id, chapter.section, chapter.title, chapter.status, chapter.errorMessage)
-            val pairs = chapter.translatedContent?.takeIf { it.isNotBlank() }
-                ?.let { parseBilingualParagraphs(it, chapter.content) }
-            if (pairs != null) {
-                pairs.forEachIndexed { idx, (en, cn) ->
-                    list += FlowItem.Para(
-                        chapter.id, idx, cn,
-                        en.takeIf { it.isNotBlank() }
-                    )
-                }
-            } else {
-                // 未翻译：纯中文模式，按原文段落拆分
-                val paragraphs = splitParagraphs(chapter.content)
-                paragraphs.forEachIndexed { idx, para ->
-                    list += FlowItem.Para(chapter.id, idx, para, null)
+            val content = ReadingContent.fromChapter(chapter)
+            return buildList {
+                add(FlowItem.Title(
+                    chapterId = content.chapterId,
+                    section = content.section,
+                    title = content.title,
+                    status = content.status,
+                    errorMessage = content.errorMessage
+                ))
+                content.paragraphs.forEach { paragraph ->
+                    add(FlowItem.Para(
+                        chapterId = content.chapterId,
+                        paraIndex = paragraph.index,
+                        cnText = paragraph.sourceText,
+                        enText = paragraph.translatedText,
+                        sourceStartOffset = paragraph.sourceStartOffset,
+                        sourceEndOffset = paragraph.sourceEndOffset
+                    ))
                 }
             }
-            return list
         }
     }
 }

@@ -38,6 +38,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -50,6 +53,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.BilingualParagraph
+import com.vibereading.app.ui.reader.components.ReadingChapterTitle
+import com.vibereading.app.ui.reader.components.ReadingParagraphItem
+import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.PageInfoOverlays
@@ -70,6 +76,8 @@ fun ReaderScreen(
     onBack: () -> Unit
 ) {
     val state by vm.uiState.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val flushScope = rememberCoroutineScope()
     val readingSettings = state.readingSettings
     val bgPresets = listOf(
         ReaderBgPresets.WarmCream,
@@ -199,7 +207,7 @@ fun ReaderScreen(
     // 分页模式「程序化跳章」目标（目录/上下章/窗口边界续翻）；「当前章重定位」也走这里
     var pagerJumpTarget by remember { mutableStateOf<Long?>(null) }
     var pagerJumpPage by remember { mutableIntStateOf(0) }
-    // 首次进入阅读器是否已完成初始定位（lastReadPage）
+    // 首次恢复必须在窗口可按 sourceOffset 定位后才放行位置追踪
     var initialSeekDone by remember { mutableStateOf(false) }
     // 窗口滑动期间抑制「翻页同步章」，避免 recenter 滚动与跨章同步互相打架
     var windowSliding by remember { mutableStateOf(false) }
@@ -212,16 +220,15 @@ fun ReaderScreen(
         val isProgrammatic = pagerJumpTarget != null
         val target = pagerJumpTarget ?: state.activeChapterId
         if (target == null) return@LaunchedEffect
-        val pageInChapter = when {
-            isProgrammatic -> pagerJumpPage
-            // window 会因章节翻译状态/译文更新重建；重建后旧 pagerState.currentPage
-            // 属于旧索引空间，不能再反推章内页，否则找不到目标时会落到第 0 页。
-            else -> state.lastReadPage
+        val sourceOffset = when {
+            isProgrammatic -> 0
+            !initialSeekDone -> state.position?.offset ?: 0
+            else -> window.offsetOfPage(pagerState.currentPage)?.first ?: (state.position?.offset ?: 0)
         }
         windowSliding = true
         window.recenterSync(target)
         // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
-        val idx = window.indexOf(target, pageInChapter)
+        val idx = window.indexOf(target, sourceOffset.toLong())
             ?: window.indexOf(target, 0)
             ?: window.indexOf(window.centerChapterId ?: target, 0)
             ?: 0
@@ -233,15 +240,12 @@ fun ReaderScreen(
     }
 
     // 分页模式：翻页时保存「章 + 章内页」进度；翻入新章同步 activeChapter（触发窗口滑动）
-    LaunchedEffect(pagerState.currentPage, window) {
-        if (!isPagerMode) return@LaunchedEffect
-        if (windowSliding) return@LaunchedEffect
+    LaunchedEffect(pagerState.currentPage, window, isPagerMode) {
+        if (!isPagerMode || !initialSeekDone || windowSliding) return@LaunchedEffect
         val cp = window.chapterOfPage(pagerState.currentPage) ?: return@LaunchedEffect
-        val pi = window.pageInChapterOfPage(pagerState.currentPage)
-        vm.updateProgress(pi)
-        if (cp != state.activeChapterId) {
-            vm.navigateTo(cp, pi)
-        }
+        val offset = window.offsetOfPage(pagerState.currentPage)?.first ?: return@LaunchedEffect
+        vm.updateProgress(cp, offset)
+        if (cp != state.activeChapterId) vm.navigateTo(cp, offset)
     }
 
     /** 卷页快照对（对齐 Legado setBitmap）：curBitmap=当前页, targetBitmap=目标页。 */
@@ -399,11 +403,11 @@ fun ReaderScreen(
                 next < 0 -> state.chapters.getOrNull(ci - 1)?.id
                 else -> null
             } ?: return
-            val targetPage = if (next >= window.pageCount) 0
-            else (window.pageCountInChapter(nid) - 1).coerceAtLeast(0)
+            val targetOffset = if (next >= window.pageCount) 0
+            else state.chapters.firstOrNull { it.id == nid }?.content?.length ?: 0
             pagerJumpTarget = nid
-            pagerJumpPage = targetPage
-            vm.navigateTo(nid, targetPage)
+            pagerJumpPage = 0
+            vm.navigateTo(nid, targetOffset)
             return
         }
         if (flipMode == ReadingSettings.FLIP_SIMULATION) {
@@ -428,26 +432,24 @@ fun ReaderScreen(
     var suppressTracking by remember { mutableStateOf(false) }
 
     // 初始定位 + 切换到滚动模式时定位到当前章
-    LaunchedEffect(scrollChunks.size, !isPagerMode) {
-        if (isPagerMode || scrollChunks.isEmpty()) return@LaunchedEffect
-        val idx = scrollChunks.indexInChunks(state.activeChapterId) ?: return@LaunchedEffect
+    LaunchedEffect(scrollChunks, !isPagerMode, state.activeChapterId, state.position?.offset) {
+        if (isPagerMode || scrollChunks.isEmpty() || !state.restoreReady) return@LaunchedEffect
+        val idx = scrollChunks.indexInChunks(state.activeChapterId, state.position?.offset ?: 0) ?: return@LaunchedEffect
         suppressTracking = true
         scrollState.scrollToItem(idx)
         kotlinx.coroutines.delay(300)
         suppressTracking = false
     }
 
-    // 滚动模式：跨章连续滚动时跟踪当前章并保存进度
-    LaunchedEffect(scrollState, scrollChunks) {
+    // 滚动模式：可见内容项直接提供章节 + 原文 offset
+    LaunchedEffect(scrollState, scrollChunks, isPagerMode) {
+        if (isPagerMode) return@LaunchedEffect
         snapshotFlow {
-            scrollState.layoutInfo.visibleItemsInfo.firstOrNull()?.let { info ->
-                chapterIdOfChunkKey(info.key as? String)
-            }
-        }.collect { visibleChapter ->
-            if (suppressTracking || pendingJumpChapter != null) return@collect
-            if (visibleChapter != null && visibleChapter != state.activeChapterId) {
-                vm.navigateTo(visibleChapter)
-            }
+            scrollState.layoutInfo.visibleItemsInfo.firstOrNull()?.index
+                ?.let { scrollChunks.getOrNull(it) }
+        }.collect { visibleItem ->
+            if (suppressTracking || pendingJumpChapter != null || visibleItem == null) return@collect
+            vm.updateProgress(visibleItem.chapterId, visibleItem.sourceStartOffset)
         }
     }
 
@@ -493,6 +495,20 @@ fun ReaderScreen(
     // （闭包是手势协程启动时快照的旧引用，直接读 readingSettings.oneHandMode 会读到
     //  开启设置前的旧值导致开关无效；与 overlayVisible 同款模式，不加入 key）
     val oneHandMode by rememberUpdatedState(readingSettings.oneHandMode)
+
+    // 页面离开/进入后台时，把内存中的最新原文位置同步到 Room。
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                flushScope.launch { vm.flushProgress() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            kotlinx.coroutines.MainScope().launch { vm.flushProgress() }
+        }
+    }
 
     // ── 阅读器沉浸式（对齐 Legado BaseReadBookActivity.upSystemUiVisibility） ──
     // toolBarHide = 浮层关闭 → 应隐藏系统栏（若设置允许）；浮层打开 → 应显示系统栏
@@ -783,7 +799,12 @@ fun ReaderScreen(
                         .padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        flushScope.launch {
+                            vm.flushProgress()
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
                     }
                     Text(
@@ -1031,26 +1052,45 @@ private fun EmptyReaderHint(isDark: Boolean) {
     }
 }
 
-// ── 滚动模式：跨章连续滚动 ──
-private data class ScrollChunk(
-    val chapterId: Long,
-    val section: String?,
-    val title: String,
-    val status: Int
-)
+// ── 滚动模式：与分页共用 ReadingContent 的扁平内容项 ──
+private sealed interface ScrollItem {
+    val chapterId: Long
+    val sourceStartOffset: Int
 
-/** 每个章节一个块：标题行（key="h-$chapterId"）+ 段落行（key="p-$chapterId-$idx"）。 */
-private fun buildScrollChunks(chapters: List<Chapter>): List<ScrollChunk> =
-    chapters.map { ScrollChunk(it.id, it.section, it.title, it.status) }
+    data class Title(
+        override val chapterId: Long,
+        val section: String?,
+        val title: String,
+        val status: Int,
+        val errorMessage: String?
+    ) : ScrollItem {
+        override val sourceStartOffset: Int = 0
+    }
 
-private fun chapterIdOfChunkKey(key: String?): Long? {
-    if (key == null || !key.startsWith("h-")) return null
-    return key.removePrefix("h-").toLongOrNull()
+    data class Paragraph(
+        override val chapterId: Long,
+        val paragraph: com.vibereading.app.ui.reader.content.ReadingParagraph
+    ) : ScrollItem {
+        override val sourceStartOffset: Int = paragraph.sourceStartOffset
+    }
 }
 
-private fun List<ScrollChunk>.indexInChunks(chapterId: Long?): Int? {
+private fun buildScrollChunks(chapters: List<Chapter>): List<ScrollItem> = buildList {
+    chapters.forEach { chapter ->
+        val content = com.vibereading.app.ui.reader.content.ReadingContent.fromChapter(chapter)
+        add(ScrollItem.Title(content.chapterId, content.section, content.title, content.status, content.errorMessage))
+        content.paragraphs.forEach { add(ScrollItem.Paragraph(content.chapterId, it)) }
+    }
+}
+
+private fun chapterIdOfChunkKey(key: String?): Long? =
+    key?.substringAfter('-', "")?.substringBefore('-')?.toLongOrNull()
+
+private fun List<ScrollItem>.indexInChunks(chapterId: Long?, offset: Int = 0): Int? {
     if (chapterId == null) return null
-    return indexOfFirst { it.chapterId == chapterId }.takeIf { it >= 0 }
+    val candidates = indices.filter { get(it).chapterId == chapterId }
+    if (candidates.isEmpty()) return null
+    return candidates.firstOrNull { get(it).sourceStartOffset >= offset } ?: candidates.last()
 }
 
 /** 章节号正则：提取「第N章/回/节/卷」中的数字。 */
@@ -1073,7 +1113,7 @@ internal fun chapterLabel(chapters: List<Chapter>, index: Int): String {
 @Composable
 private fun ScrollReader(
     chapters: List<Chapter>,
-    chunks: List<ScrollChunk>,
+    chunks: List<ScrollItem>,
     scrollState: LazyListState,
     state: ReaderUiState,
     pageStyle: PageStyle,
@@ -1099,96 +1139,30 @@ private fun ScrollReader(
             bottom = insetBottomDp + paddingV.dp
         )
     ) {
-        // 每个章节一个 item（key="h-$id"），使「章节块序号 == LazyColumn item 序号」，
-        // 跨章跳转 scrollToItem(chunkIndex) 才能精确定位。
-        itemsIndexed(chunks, key = { _, chunk -> "h-${chunk.chapterId}" }) { chunkIdx, chunk ->
-            val chapter = chapters.getOrNull(chunkIdx) ?: return@itemsIndexed
-
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // 章节标题头
-                ChapterHeader(
-                    chunk = chunk,
+        itemsIndexed(chunks, key = { _, item ->
+            when (item) {
+                is ScrollItem.Title -> "title-${item.chapterId}"
+                is ScrollItem.Paragraph -> "para-${item.chapterId}-${item.paragraph.index}"
+            }
+        }) { _, item ->
+            when (item) {
+                is ScrollItem.Title -> ReadingChapterTitle(
+                    section = item.section,
+                    title = item.title,
+                    palette = palette,
+                    pageStyle = pageStyle
+                )
+                is ScrollItem.Paragraph -> ReadingParagraphItem(
+                    paragraph = item.paragraph,
+                    mode = state.mode,
+                    pageStyle = pageStyle,
                     palette = palette
                 )
-
-                // 正文（中英文模式统一：已翻译章节显示英文，未翻译显示中文）
-                if (state.mode == "zh" && chapter.translatedContent.isNullOrBlank()) {
-                    // 未翻译：纯中文显示
-                    val paragraphs = splitParagraphs(chapter.content)
-                    paragraphs.forEach { para ->
-                        Text(
-                            para.trim(),
-                            style = pageStyle.body,
-                            color = palette.bodyText,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = paragraphSpacingDp)
-                        )
-                    }
-                } else if (!chapter.translatedContent.isNullOrBlank()) {
-                    // 已翻译：显示英文（zh 模式无气泡，en 模式有气泡）
-                    val pairs = parseBilingualParagraphs(chapter.translatedContent, chapter.content)
-                    pairs.forEach { (en, cn) ->
-                        if (state.mode == "en") {
-                            BilingualParagraph(
-                                englishText = en,
-                                chineseText = cn,
-                                pageStyle = pageStyle,
-                                palette = palette
-                            )
-                        } else {
-                            Text(
-                                cn,
-                                style = pageStyle.body,
-                                color = palette.bodyText,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = paragraphSpacingDp)
-                            )
-                        }
-                    }
-                } else {
-                    // 未翻译章节：直接显示中文原文（状态提示由底部浮动面板统一显示）
-                    val paragraphs = splitParagraphs(chapter.content)
-                    paragraphs.forEach { para ->
-                        Text(
-                            para.trim(),
-                            style = pageStyle.body,
-                            color = palette.bodyText,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = paragraphSpacingDp)
-                        )
-                    }
-                }
             }
         }
     }
 }
 
-@Composable
-private fun ChapterHeader(
-    chunk: ScrollChunk,
-    palette: ReaderPalette
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        if (chunk.section != null) {
-            Text(
-                chunk.section,
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-        }
-        Text(
-            chunk.title,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = palette.titleText,
-            modifier = Modifier.padding(bottom = ReaderMetrics.TITLE_BOTTOM_DP.dp)
-        )
-    }
-}
 
 // ── Bottom control bar: 上一章 | slider | 下一章 / 目录 | 翻译 | 重翻 | 设置 ──
 @Composable

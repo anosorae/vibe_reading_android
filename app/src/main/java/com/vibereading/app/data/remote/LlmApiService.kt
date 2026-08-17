@@ -2,7 +2,7 @@ package com.vibereading.app.data.remote
 
 import com.google.gson.Gson
 import com.vibereading.app.domain.model.LlmSettings
-import com.vibereading.app.ui.reader.components.splitParagraphs
+import com.vibereading.app.domain.parser.ReadingContentParser.splitParagraphs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext

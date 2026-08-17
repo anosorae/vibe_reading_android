@@ -16,6 +16,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import com.vibereading.app.domain.model.ReadingPosition
 
 enum class TranslationPhase {
     IDLE,
@@ -32,7 +35,8 @@ data class ReaderUiState(
     val chapters: List<Chapter> = emptyList(),
     val activeChapter: Chapter? = null,
     val activeChapterId: Long? = null,
-    val lastReadPage: Int = 0,          // 分页模式：上次阅读的「章内页」索引（滚动模式恒 0）
+    val position: ReadingPosition? = null,
+    val restoreReady: Boolean = false,
     val streamingText: String = "",
     val thinkingText: String = "",
     val streamingCharCount: Int = 0,
@@ -66,34 +70,41 @@ class ReaderViewModel(
     private var translationGeneration = 0L
     private var translationChapterId: Long? = null
     private var llmEditDirty = false
+    private val progressMutex = Mutex()
+    private var pendingPosition: ReadingPosition? = null
+    private var restoreCompleted = false
 
     init {
-        // Load book info
         viewModelScope.launch {
             val book = bookRepo.getBookByIdOnce(bookId) ?: return@launch
-            _uiState.update { it.copy(bookTitle = book.title, lastReadPage = book.lastReadPage) }
-        }
-
-        // Load chapters
-        viewModelScope.launch {
+            val savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
             chapterRepo.getChaptersByBook(bookId).collect { chapters ->
-                _uiState.update { it.copy(chapters = chapters) }
-                // Restore last read chapter
-                val current = _uiState.value.activeChapterId
-                if (current == null) {
-                    val book = bookRepo.getBookByIdOnce(bookId)
-                    val lastRead = book?.lastReadChapterId
-                    if (lastRead != null) {
-                        navigateTo(lastRead)
-                    } else if (chapters.isNotEmpty()) {
-                        navigateTo(chapters.first().id)
+                _uiState.update { it.copy(bookTitle = book.title, chapters = chapters) }
+                if (!restoreCompleted && chapters.isNotEmpty()) {
+                    val chapter = chapters.firstOrNull { it.id == savedPosition.chapterId } ?: chapters.first()
+                    val offset = if (chapter.id == savedPosition.chapterId) {
+                        savedPosition.offset.coerceIn(0, chapter.content.length)
+                    } else 0
+                    val position = ReadingPosition(chapter.id, offset)
+                    restoreCompleted = true
+                    _uiState.update {
+                        it.copy(
+                            activeChapterId = chapter.id,
+                            activeChapter = chapter,
+                            position = position,
+                            restoreReady = true,
+                            streamingText = "",
+                            thinkingText = "",
+                            isStreaming = false,
+                            translationPhase = TranslationPhase.IDLE,
+                            errorMessage = null
+                        )
                     }
-                } else {
-                    // Refresh active chapter data
+                    if (_uiState.value.mode == "en") maybeTranslateChapter(chapter.id)
+                } else if (restoreCompleted) {
+                    val current = _uiState.value.activeChapterId
                     val updated = chapters.find { it.id == current }
-                    if (updated != null) {
-                        _uiState.update { it.copy(activeChapter = updated) }
-                    }
+                    if (updated != null) _uiState.update { it.copy(activeChapter = updated) }
                 }
             }
         }
@@ -129,15 +140,17 @@ class ReaderViewModel(
         }
     }
 
-    /** 跳转/恢复：分页模式可带「章内页」；目录跳章/翻译触发 page 恒 0（章首页）。 */
-    fun navigateTo(chapterId: Long, page: Int = 0) {
+    /** 用户主动跳转；分页位置由当前排版器根据 offset 派生。 */
+    fun navigateTo(chapterId: Long, offset: Int = 0, persist: Boolean = true) {
         viewModelScope.launch {
             val chapter = chapterRepo.getChapterById(chapterId) ?: return@launch
+            val position = ReadingPosition(chapterId, offset.coerceIn(0, chapter.content.length))
             _uiState.update {
                 it.copy(
                     activeChapterId = chapterId,
                     activeChapter = chapter,
-                    lastReadPage = page,
+                    position = position,
+                    restoreReady = true,
                     streamingText = "",
                     thinkingText = "",
                     isStreaming = false,
@@ -145,21 +158,39 @@ class ReaderViewModel(
                     errorMessage = null
                 )
             }
-            // Save reading progress
-            bookRepo.updateLastReadProgress(bookId, chapterId, page)
-            // Auto-translate if in EN mode
-            if (_uiState.value.mode == "en") {
-                maybeTranslateChapter(chapterId)
+            if (persist) enqueueProgress(position)
+            if (_uiState.value.mode == "en") maybeTranslateChapter(chapterId)
+        }
+    }
+
+    /** 统一记录当前内容位置；分页和滚动都调用同一个入口。 */
+    fun updateProgress(chapterId: Long, offset: Int) {
+        val chapter = _uiState.value.chapters.firstOrNull { it.id == chapterId } ?: return
+        val position = ReadingPosition(chapterId, offset.coerceIn(0, chapter.content.length))
+        if (position == _uiState.value.position) return
+        _uiState.update { it.copy(position = position, activeChapterId = chapterId, activeChapter = chapter) }
+        enqueueProgress(position)
+    }
+
+    private fun enqueueProgress(position: ReadingPosition) {
+        pendingPosition = position
+        viewModelScope.launch {
+            progressMutex.withLock {
+                val latest = pendingPosition ?: return@withLock
+                pendingPosition = null
+                if (latest.chapterId != null) {
+                    bookRepo.updateLastReadProgress(bookId, latest.chapterId, latest.offset)
+                }
             }
         }
     }
 
-    /** 分页模式：翻页时保存「章 + 章内页」进度（滚动模式不用，page 恒 0）。 */
-    fun updateProgress(page: Int) {
-        val chapterId = _uiState.value.activeChapterId ?: return
-        if (page == _uiState.value.lastReadPage) return
-        _uiState.update { it.copy(lastReadPage = page) }
-        viewModelScope.launch { bookRepo.updateLastReadProgress(bookId, chapterId, page) }
+    suspend fun flushProgress() {
+        progressMutex.withLock {
+            val latest = pendingPosition ?: _uiState.value.position ?: return
+            pendingPosition = null
+            latest.chapterId?.let { bookRepo.updateLastReadProgress(bookId, it, latest.offset) }
+        }
     }
 
     fun nextChapter() {
@@ -167,7 +198,7 @@ class ReaderViewModel(
         val chapters = _uiState.value.chapters
         val idx = chapters.indexOfFirst { it.id == current.id }
         if (idx >= 0 && idx < chapters.size - 1) {
-            navigateTo(chapters[idx + 1].id)
+            navigateTo(chapters[idx + 1].id, 0)
         }
     }
 
@@ -176,7 +207,8 @@ class ReaderViewModel(
         val chapters = _uiState.value.chapters
         val idx = chapters.indexOfFirst { it.id == current.id }
         if (idx > 0) {
-            navigateTo(chapters[idx - 1].id)
+            val previous = chapters[idx - 1]
+            navigateTo(previous.id, previous.content.length)
         }
     }
 

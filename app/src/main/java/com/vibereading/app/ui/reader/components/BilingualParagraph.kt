@@ -21,7 +21,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.ui.reader.ReaderPalette
+import com.vibereading.app.ui.reader.content.ReadingContent
+import com.vibereading.app.ui.reader.content.ReadingParagraph
+import com.vibereading.app.ui.reader.content.sourceParagraphs
 import com.vibereading.app.ui.reader.pagination.PageStyle
 import com.vibereading.app.ui.reader.pagination.ReaderMetrics
 
@@ -161,12 +165,21 @@ private fun BoxScope.SourceBubble(
  * TXT 小说常见格式：每行一段（仅 \n），部分文件用空行分段（\n\n）。
  * 此函数需与 LlmApiService.buildUserPrompt 使用相同逻辑，保证 [N] 标记与段落索引对齐。
  */
-fun splitParagraphs(content: String): List<String> {
-    val byBlank = content.split("\n\n").map { it.trim() }.filter { it.isNotEmpty() }
-    if (byBlank.size > 1) return byBlank
-    // 无空行分段 → 每行一段（中文小说常见）
-    return content.lines().map { it.trim() }.filter { it.isNotEmpty() }
-}
+fun splitParagraphs(content: String): List<String> =
+    sourceParagraphs(content).map { it.text }
+
+/** 统一章节内容构造入口；分页和滚动可共享同一段落范围数据。 */
+fun readingContent(chapter: Chapter): ReadingContent = ReadingContent.fromChapter(chapter)
+
+/** 带原文范围的滚动项，供 ReaderScreen 后续接线而不改变当前滚动渲染。 */
+data class ReadingScrollItem(
+    val paragraph: ReadingParagraph,
+    val sourceStartOffset: Int = paragraph.sourceStartOffset,
+    val sourceEndOffset: Int = paragraph.sourceEndOffset
+)
+
+fun ReadingContent.scrollItems(): List<ReadingScrollItem> =
+    paragraphs.map { ReadingScrollItem(it) }
 
 /**
  * Parse [N] markers from translated text into paired paragraphs.

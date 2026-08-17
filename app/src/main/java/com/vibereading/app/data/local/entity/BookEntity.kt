@@ -13,7 +13,7 @@ data class BookEntity(
     val totalChapters: Int = 0,
     val translatedChapters: Int = 0,
     val lastReadChapterId: Long? = null,
-    val lastReadPage: Int = 0,          // 分页模式：最后阅读的「章内页」索引（滚动模式恒 0）
+    val lastReadOffset: Int = 0,        // 原文字符偏移量；旧页码不转换
     val lastReadAt: Long = 0,           // 最近阅读时间，书架「最近阅读」排序用
     val createdAt: Long = System.currentTimeMillis()
 )

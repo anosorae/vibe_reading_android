@@ -30,6 +30,7 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.ReaderPageGeometry
 import com.vibereading.app.ui.reader.components.BilingualParagraph
+import com.vibereading.app.ui.reader.components.ReadingChapterTitle
 import com.vibereading.app.ui.theme.VibeColors
 
 /** 普通 HorizontalPager 的滑动开关；浮层不改变翻页手势本身。 */
@@ -293,7 +294,7 @@ fun PageRenderer(
             content = {
                 units.forEachIndexed { idx, unit ->
                     when (unit) {
-                        is PageUnit.Title -> PageTitleBlock(
+                        is PageUnit.Title -> ReadingChapterTitle(
                             section = unit.section,
                             title = unit.title,
                             palette = palette,

@@ -4,26 +4,78 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Book icon -->
+
+    <!-- 左页：略微偏暖的白色，带微妙透视 -->
+    <path
+        android:fillColor="#F0EDFF"
+        android:pathData="M54,32 L54,76 L32,71.5 L32,27.5 Z"/>
+
+    <!-- 右页：纯白偏冷 -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M54,30 L54,78 L30,72 L30,24 Z"/>
+        android:pathData="M54,32 L54,76 L76,71.5 L76,27.5 Z"/>
+
+    <!-- 书脊阴影 -->
     <path
-        android:fillColor="#F5F0E8"
-        android:pathData="M54,30 L54,78 L78,72 L78,24 Z"/>
-    <path
-        android:fillColor="#8B6914"
-        android:pathData="M54,30 L54,78"/>
-    <!-- Page lines left -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#8B6914"
-        android:strokeWidth="1.5"
-        android:pathData="M35,36 L50,36 M35,42 L50,42 M35,48 L50,48 M35,54 L50,54"/>
-    <!-- Page lines right -->
+        android:fillColor="#4A3A8A"
+        android:pathData="M53,31 L55,31 L55,77 L53,77 Z"
+        android:fillAlpha="0.25"/>
+
+    <!-- 左页竖排中文笔触（三条短竖线，模拟中文排版） -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#8B6914"
+        android:strokeColor="#6C5CE7"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M38,35 L38,46 M42.5,35 L42.5,46 M47,35 L47,46"/>
+
+    <!-- 左页竖排第二行 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#6C5CE7"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M38,50 L38,61 M42.5,50 L42.5,61 M47,50 L47,61"/>
+
+    <!-- 右页横排英文行 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#00B894"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M58,37 L73,37 M58,42 L70,42 M58,47 L73,47 M58,52 L68,52 M58,57 L73,57"/>
+
+    <!-- 翻译箭头：从左页指向右页的弧形箭头 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#A29BFE"
         android:strokeWidth="1.5"
-        android:pathData="M58,36 L73,36 M58,42 L73,42 M58,48 L73,48 M58,54 L73,54"/>
+        android:strokeLineCap="round"
+        android:pathData="M48,66 Q54,62 60,66"/>
+    <path
+        android:fillColor="#A29BFE"
+        android:pathData="M58,63.5 L62,66 L58,68 Z"/>
+
+    <!-- 星芒点缀 1：右上 -->
+    <path
+        android:fillColor="#00CEC9"
+        android:pathData="M78,26 L79.5,23 L81,26 L78,27.5 Z"/>
+    <path
+        android:fillColor="#00CEC9"
+        android:pathData="M77.5,25.5 L80,25.5 L80,28 L77.5,28 Z"
+        android:fillAlpha="0.5"/>
+
+    <!-- 星芒点缀 2：左上 -->
+    <path
+        android:fillColor="#FDCB6E"
+        android:pathData="M28,24 L29.2,21.5 L30.5,24 L28,25.2 Z"/>
+    <path
+        android:fillColor="#FDCB6E"
+        android:pathData="M27.5,23.5 L30,23.5 L30,26 L27.5,26 Z"
+        android:fillAlpha="0.5"/>
+
+    <!-- 星芒点缀 3：小圆点 -->
+    <path
+        android:fillColor="#E17055"
+        android:pathData="M82,33 A2,2 0 1,1 82,33.01 Z"/>
 </vector>

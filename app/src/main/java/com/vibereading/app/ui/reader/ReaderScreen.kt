@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.lazy.LazyColumn
@@ -568,6 +567,7 @@ fun ReaderScreen(
                         simFlip.curl.setViewSize(viewW, viewH)
 
                         var curlActive = false
+                        var gestureStartedWithOverlay = overlayVisible
 
                         while (true) {
                             val event = awaitPointerEvent()
@@ -605,6 +605,10 @@ fun ReaderScreen(
                                 val deltaY = focusY - simFlip.startY
                                 val distance = deltaX * deltaX + deltaY * deltaY
                                 if (distance > slopSquare) {
+                                    if (gestureStartedWithOverlay) {
+                                        vm.dismissAllOverlays()
+                                        gestureStartedWithOverlay = false
+                                    }
                                     simFlip.isMoved = true
                                     if (focusX - simFlip.startX > 0) {
                                         // 右滑 → PREV
@@ -652,28 +656,47 @@ fun ReaderScreen(
                             if (change.isConsumed) break
                         }
                     } else {
-                        // ── 其他模式：三段点按 ──
-                        val up = waitForUpOrCancellation()
-                        if (up != null && !up.isConsumed) {
-                            val x = down.position.x
-                            val third = size.width / 3f
-                            if (overlayVisible) {
-                                // 浮层可见时：任意区域点击均关闭浮层，不翻页
-                                vm.dismissAllOverlays()
-                            } else if (isPagerMode) {
-                                // 单手模式：左 1/3 点击也翻下一页（单手拇指够不到左侧）
-                                val leftGoNext = oneHandMode
-                                when {
-                                    x < third -> goPage(pagerState.currentPage + if (leftGoNext) 1 else -1)
-                                    x < third * 2 -> vm.toggleToolbar()
-                                    else -> goPage(pagerState.currentPage + 1)
+                        // ── 其他模式：三段点按；有浮层时，滑动先关闭浮层再交给分页器 ──
+                        val downX = down.position.x
+                        val downY = down.position.y
+                        val slopSquare = 30f * 30f
+                        var moved = false
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                if (!moved && !change.isConsumed) {
+                                    val x = down.position.x
+                                    val third = size.width / 3f
+                                    if (overlayVisible) {
+                                        // 点击浮层时只关闭浮层，不翻页
+                                        vm.dismissAllOverlays()
+                                    } else if (isPagerMode) {
+                                        // 单手模式：左 1/3 点击也翻下一页（单手拇指够不到左侧）
+                                        val leftGoNext = oneHandMode
+                                        when {
+                                            x < third -> goPage(pagerState.currentPage + if (leftGoNext) 1 else -1)
+                                            x < third * 2 -> vm.toggleToolbar()
+                                            else -> goPage(pagerState.currentPage + 1)
+                                        }
+                                    } else {
+                                        // 滚动模式：仅中间 1/3 开关菜单
+                                        if (x >= third && x < third * 2) {
+                                            vm.toggleToolbar()
+                                        }
+                                    }
                                 }
-                            } else {
-                                // 滚动模式：仅中间 1/3 开关菜单；左右 1/3 不响应（上下滚动阅读，左右点按会突兀跳章）
-                                if (x >= third && x < third * 2) {
-                                    vm.toggleToolbar()
+                                break
+                            }
+                            if (!moved && readerShouldDismissOverlayOnGestureStart(overlayVisible)) {
+                                val dx = change.position.x - downX
+                                val dy = change.position.y - downY
+                                if (dx * dx + dy * dy > slopSquare) {
+                                    vm.dismissAllOverlays()
+                                    moved = true
                                 }
                             }
+                            if (change.isConsumed) break
                         }
                     }
                 }

@@ -32,6 +32,14 @@ import com.vibereading.app.ui.reader.ReaderPageGeometry
 import com.vibereading.app.ui.reader.components.BilingualParagraph
 import com.vibereading.app.ui.theme.VibeColors
 
+/** 普通 HorizontalPager 的滑动开关；浮层不改变翻页手势本身。 */
+fun readerPagerScrollEnabled(flipMode: String): Boolean =
+    flipMode != ReadingSettings.FLIP_NO_ANIM &&
+        flipMode != ReadingSettings.FLIP_SIMULATION
+
+/** 手势开始时若有浮层，先关闭浮层，再继续处理本次手势。 */
+fun readerShouldDismissOverlayOnGestureStart(overlayVisible: Boolean): Boolean = overlayVisible
+
 /**
  * 仿真卷页状态机（对齐 Legado PageDelegate + HorizontalPageDelegate + SimulationPageDelegate）。
  *
@@ -170,8 +178,7 @@ fun ReaderPager(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = flipMode != ReadingSettings.FLIP_NO_ANIM &&
-                flipMode != ReadingSettings.FLIP_SIMULATION,
+            userScrollEnabled = readerPagerScrollEnabled(flipMode),
             contentPadding = PaddingValues(0.dp)
         ) { page ->
             val units = window.pageUnits(page)

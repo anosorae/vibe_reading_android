@@ -433,7 +433,7 @@ private fun LlmForm(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("思考模式", style = MaterialTheme.typography.bodyMedium)
-                Text("启用 DeepSeek 深度思考", fontSize = 12.sp, color = VibeColors.WarmGray)
+                Text("允许模型输出思考过程", fontSize = 12.sp, color = VibeColors.WarmGray)
             }
             Switch(
                 checked = ls.enableThinking,

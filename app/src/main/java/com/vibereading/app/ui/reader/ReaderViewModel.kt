@@ -34,6 +34,7 @@ data class ReaderUiState(
     val activeChapterId: Long? = null,
     val lastReadPage: Int = 0,          // 分页模式：上次阅读的「章内页」索引（滚动模式恒 0）
     val streamingText: String = "",
+    val thinkingText: String = "",
     val streamingCharCount: Int = 0,
     val isStreaming: Boolean = false,
     val translationPhase: TranslationPhase = TranslationPhase.IDLE,
@@ -138,6 +139,7 @@ class ReaderViewModel(
                     activeChapter = chapter,
                     lastReadPage = page,
                     streamingText = "",
+                    thinkingText = "",
                     isStreaming = false,
                     translationPhase = TranslationPhase.IDLE,
                     errorMessage = null
@@ -404,6 +406,7 @@ class ReaderViewModel(
                             isStreaming = true,
                             translationPhase = TranslationPhase.WAITING_FIRST_TOKEN,
                             streamingText = "",
+                            thinkingText = "",
                             streamingCharCount = 0,
                             errorMessage = null
                         )
@@ -423,7 +426,10 @@ class ReaderViewModel(
                             it.copy(translationPhase = TranslationPhase.WAITING_FIRST_TOKEN)
                         }
                         is TranslationEvent.Thinking -> if (isCurrent) _uiState.update {
-                            it.copy(translationPhase = TranslationPhase.THINKING)
+                            it.copy(
+                                translationPhase = TranslationPhase.THINKING,
+                                thinkingText = it.thinkingText + event.text
+                            )
                         }
                         is TranslationEvent.Chunk -> if (isCurrent) _uiState.update {
                             it.copy(
@@ -445,6 +451,7 @@ class ReaderViewModel(
                                 it.copy(
                                     isStreaming = false,
                                     translationPhase = TranslationPhase.IDLE,
+                                    thinkingText = "",
                                     streamingCharCount = 0
                                 )
                             }
@@ -456,6 +463,7 @@ class ReaderViewModel(
                                 it.copy(
                                     isStreaming = false,
                                     translationPhase = TranslationPhase.FAILED,
+                                    thinkingText = "",
                                     streamingCharCount = 0,
                                     errorMessage = event.reason
                                 )
@@ -477,7 +485,7 @@ class ReaderViewModel(
                     chapterRepo.updateStatus(chapterId, Chapter.STATUS_PENDING)
                     if (_uiState.value.activeChapterId == chapterId) {
                         _uiState.update {
-                            it.copy(isStreaming = false, translationPhase = TranslationPhase.CANCELLED, streamingCharCount = 0)
+                            it.copy(isStreaming = false, translationPhase = TranslationPhase.CANCELLED, thinkingText = "", streamingCharCount = 0)
                         }
                     }
                 }

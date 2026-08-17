@@ -855,7 +855,7 @@ fun ReaderScreen(
                 if (state.isStreaming) {
                     // ── 流式翻译进度 ──
                     val scrollState = rememberScrollState()
-                    LaunchedEffect(scrollState.maxValue) {
+                    LaunchedEffect(state.thinkingText, state.streamingText) {
                         scrollState.scrollTo(scrollState.maxValue)
                     }
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -884,18 +884,47 @@ fun ReaderScreen(
                                 color = VibeColors.Sage
                             )
                         }
-                        if (state.streamingText.isNotBlank()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                state.streamingText,
-                                style = pageStyle.body.copy(fontSize = 13.sp),
-                                color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal.copy(alpha = 0.7f),
-                                maxLines = 12,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .verticalScroll(scrollState)
-                            )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 260.dp)
+                                .verticalScroll(scrollState)
+                        ) {
+                            if (state.thinkingText.isNotBlank()) {
+                                Text(
+                                    "思考过程",
+                                    fontSize = 11.sp,
+                                    color = if (isDark) VibeColors.Stone else VibeColors.WarmGray
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    state.thinkingText,
+                                    style = pageStyle.body.copy(fontSize = 12.sp),
+                                    color = if (isDark) VibeColors.Stone else VibeColors.WarmGray,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            if (state.thinkingText.isNotBlank() && state.streamingText.isNotBlank()) {
+                                Spacer(Modifier.height(10.dp))
+                            }
+                            if (state.streamingText.isNotBlank()) {
+                                Text(
+                                    "正式回复",
+                                    fontSize = 11.sp,
+                                    color = if (isDark) VibeColors.Cream.copy(alpha = 0.65f) else VibeColors.Charcoal.copy(alpha = 0.6f)
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    state.streamingText,
+                                    style = pageStyle.body.copy(fontSize = 13.sp),
+                                    color = if (isDark) VibeColors.Cream.copy(alpha = 0.85f) else VibeColors.Charcoal.copy(alpha = 0.7f),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                 } else if (activeChapter != null) {

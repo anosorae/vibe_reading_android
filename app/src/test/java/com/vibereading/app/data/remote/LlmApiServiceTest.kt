@@ -27,10 +27,14 @@ class LlmApiServiceTest {
         server.shutdown()
     }
 
-    private fun settings(apiBase: String = server.url("/v1").toString()) = LlmSettings(
+    private fun settings(
+        apiBase: String = server.url("/v1").toString(),
+        enableThinking: Boolean = false
+    ) = LlmSettings(
         apiKey = "test-key",
         apiBase = apiBase,
-        model = "test-model"
+        model = "test-model",
+        enableThinking = enableThinking
     )
 
     @Test
@@ -57,7 +61,7 @@ class LlmApiServiceTest {
     }
 
     @Test
-    fun `reasoning delta is surfaced without contaminating translated text`() = runTest {
+    fun `reasoning delta is ignored when thinking is disabled`() = runTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "text/event-stream")
@@ -68,10 +72,66 @@ class LlmApiServiceTest {
                 )
         )
 
-        val events = service.translateStream(settings(), "Title", "Paragraph").toList()
+        val events = service.translateStream(settings(enableThinking = false), "Title", "Paragraph").toList()
+        assertTrue(events.none { it is TranslationEvent.Thinking })
+        assertTrue(events.contains(TranslationEvent.Chunk("answer")))
+        assertTrue(events.contains(TranslationEvent.Done("answer")))
+    }
+
+    @Test
+    fun `reasoning delta is surfaced only when thinking is enabled`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(
+                    "data:{\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n" +
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"}}]}\n\n" +
+                        "data: [DONE]\n\n"
+                )
+        )
+
+        val events = service.translateStream(settings(enableThinking = true), "Title", "Paragraph").toList()
         assertTrue(events.contains(TranslationEvent.Thinking("thinking")))
         assertTrue(events.contains(TranslationEvent.Chunk("answer")))
         assertTrue(events.contains(TranslationEvent.Done("answer")))
+    }
+
+    @Test
+    fun `finish reason length rejects incomplete response`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n" +
+                        "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n" +
+                        "data: [DONE]\n\n"
+                )
+        )
+
+        val events = service.translateStream(settings(), "Title", "Paragraph").toList()
+        assertTrue(events.none { it is TranslationEvent.Done })
+        assertEquals(
+            TranslationEvent.Error("模型输出达到长度上限，译文未完整生成"),
+            events.last()
+        )
+    }
+
+    @Test
+    fun `long content chunks are all included until done`() = runTest {
+        val chunks = (1..40).map { "segment-$it " }
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(
+                    chunks.joinToString("") { chunk ->
+                        "data: {\"choices\":[{\"delta\":{\"content\":\"$chunk\"}}]}\n\n"
+                    } + "data: [DONE]\n\n"
+                )
+        )
+
+        val events = service.translateStream(settings(), "Title", "Paragraph").toList()
+        assertEquals(chunks.joinToString(""), events.filterIsInstance<TranslationEvent.Chunk>().joinToString("") { it.text })
+        assertEquals(TranslationEvent.Done(chunks.joinToString("")), events.last())
     }
 
     @Test

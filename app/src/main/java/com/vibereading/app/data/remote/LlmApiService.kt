@@ -34,7 +34,10 @@ private data class ChatStreamDelta(
     val reasoning: String? = null,
     val thinking: String? = null
 )
-private data class ChatStreamChoice(val delta: ChatStreamDelta? = null)
+private data class ChatStreamChoice(
+    val delta: ChatStreamDelta? = null,
+    val finish_reason: String? = null
+)
 private data class ChatStreamResponse(val choices: List<ChatStreamChoice>? = null)
 private data class ChatCompletionChoice(val message: ChatCompletionMessage? = null)
 private data class ChatCompletionMessage(val role: String, val content: String)
@@ -113,6 +116,7 @@ class LlmApiService {
     ): Flow<TranslationEvent> = flow {
         var call: okhttp3.Call? = null
         var sawDone = false
+        var finishReason: String? = null
         try {
             emit(TranslationEvent.Started)
             val userPrompt = buildUserPrompt(chapterTitle, chapterContent, prevChapterEnglish)
@@ -160,15 +164,22 @@ class LlmApiService {
                         val data = currentLine.removePrefix("data:").trim()
                         if (data == "[DONE]") {
                             sawDone = true
-                            if (fullText.isEmpty()) emit(TranslationEvent.Error("翻译结果为空"))
-                            else emit(TranslationEvent.Done(fullText.toString()))
+                            when {
+                                finishReason == "length" -> emit(TranslationEvent.Error("模型输出达到长度上限，译文未完整生成"))
+                                fullText.isEmpty() -> emit(TranslationEvent.Error("翻译结果为空"))
+                                else -> emit(TranslationEvent.Done(fullText.toString()))
+                            }
                             break
                         }
                         try {
-                            val delta = gson.fromJson(data, ChatStreamResponse::class.java)
-                                .choices?.firstOrNull()?.delta
+                            val streamChoice = gson.fromJson(data, ChatStreamResponse::class.java)
+                                .choices?.firstOrNull()
+                            finishReason = streamChoice?.finish_reason ?: finishReason
+                            val delta = streamChoice?.delta
                             val reasoning = delta?.reasoning_content ?: delta?.reasoning ?: delta?.thinking
-                            if (!reasoning.isNullOrEmpty()) emit(TranslationEvent.Thinking(reasoning))
+                            if (settings.enableThinking && !reasoning.isNullOrEmpty()) {
+                                emit(TranslationEvent.Thinking(reasoning))
+                            }
                             val content = delta?.content
                             if (!content.isNullOrEmpty()) {
                                 fullText.append(content)

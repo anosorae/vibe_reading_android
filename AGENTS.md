@@ -8,8 +8,8 @@
 - **JAVA_HOME 需指向 JDK 17**（如 `C:\Program Files\Microsoft\jdk-17.0.20.8-hotspot`）；Android Studio 自带 jbr 为 JDK 25，Kotlin 2.1.0 不识别（`JavaVersion.parse` 抛错）。
 - `./gradlew.bat :app:assembleDebug` 构建 debug APK。
 - 可用 android-emulator MCP 插件做构建/安装/截图/UI 自动化验证。
-- **每次代码改动后必须编译 APK 并安装到模拟器验证**：`./gradlew.bat :app:assembleDebug` → 用 android-emulator MCP 插件 `install_app`（APK 路径 `app/build/outputs/apk/debug/app-debug.apk`）→ `launch_app`。不要只编译不安装。 **在没有用户明确指定做截图，UI 自动化验证等时不要自己主动做多余的操作** 。
-- **单测**：`./gradlew.bat :app:testDebugUnitTest`（`app/src/test` 下 Robolectric 4.14 + `@GraphicsMode(NATIVE)` 提供真实换行测量；断言结构化——切段拼接/双语对原子/页高不溢出——不 pin 像素值）。
+- **每次代码改动后必须编译 APK 并安装到模拟器验证**：`./gradlew.bat :app:assembleDebug` → 按 `app/build/outputs/apk/debug/output-metadata.json` 选择设备 ABI 对应的 APK（例如 x86_64 模拟器使用 `app-x86_64-debug.apk`；没有对应设备时可用 `app-universal-debug.apk`）→ 用 android-emulator MCP 插件 `install_app` → `launch_app`。不要只编译不安装。 **在没有用户明确指定做截图，UI 自动化验证等时不要自己主动做多余的操作** 。
+- **单测**：`./gradlew.bat :app:testDebugUnitTest`（`app/src/test` 下 Robolectric 4.14 + `@GraphicsMode(NATIVE)` 提供真实换行测量；断言结构化——切段拼接/双语对原子/页高不溢出——不 pin 像素值；SSE 流用 MockWebServer 验证事件顺序、完整 content 拼接、思考开关和终止语义）。
 - 单模块 `:app`，包名 `com.vibereading.app`，minSdk 26，target/compileSdk 35，Kotlin 2.1.0 + Compose BOM 2024.12.01，Gradle 8.11.1。
 - 已 git init（无远程）。
 
@@ -32,7 +32,7 @@
 - 无 DI 框架：`VibeReadingApp` 暴露 `database`，仓库在 `AppNavigation.kt` 里手工构造，经 `viewModel(factory = ...)` 注入。新增依赖沿用此模式。
 - ViewModel 统一持有单个 `MutableStateFlow<UiState>` + 只读 `uiState: StateFlow`，用 `_uiState.update { ... }` 更新。
 - 数据流：Repository → ViewModel（collect Flow）→ Composable 直接读 `vm.uiState`。
-- 章节翻译走 `LlmApiService.translateStream()`，返回 `Flow<TranslationEvent>`（Status/Chunk/Progress/Done/Error），ReaderViewModel 里维护 `translateJob: Job?`。
+- 章节翻译走 `LlmApiService.translateStream()`，返回 `Flow<TranslationEvent>`（Started/Thinking/Chunk/Progress/Done/Error），ReaderViewModel 里维护 `translateJob: Job?`。`Thinking` 只接收开启思考模式时的 reasoning 字段，`Chunk` 只接收正式 `content`；两者不得混写，`Done` 只持久化正式 content。
 - **分页渲染（章窗口模型）**：`ReaderScreen` 构造 `BookWindow`（key 含 `isPagerMode`/页几何/样式——**跨模式切换或改边距必须重建窗口**），窗口 = 当前章±1；`HorizontalPager` 索引空间 = `window.windowPages`（扁平章页列表）；跨章续翻在窗口边界重建、目录/滑块远跳重建窗口。样式/模式/边距变更后恢复到「章 + 章内页」。
 
 ## 领域规则（关键 gotchas）
@@ -45,6 +45,7 @@
 - **设置入口边界**（CONTEXT.md 决策）：字体/字号/间距/翻页类型/背景的唯一入口是阅读器内设置面板；面板按 Legado 信息密度组织，**页边距/字间距/首行缩进/两端对齐在「高级选项」折叠组**；字体 = 「系统字体」+「导入字体…」（SAF，content:// URI 持久化 + takePersistableUriPermission），`fontFamily` 三系统字体选择已从 UI 移除。设置页为单页分组列表（主题设置 / 阅读设置 / 翻译设置 / 关于），主题选择（跟随系统/浅色/深色 × 原木/青简）在「主题设置」分组。
 - **点按交互耦合**：分页类模式（pager/cover/no_anim/simulation）左右 1/3 点按翻**页**（跨章自动续翻），中间 1/3 开关菜单；`scroll` 模式三段点按翻**章**（点击段落尾部原文气泡弹窗查看中文优先）；仿真模式另有拖拽卷页手势（见上）。
 - **边到边模式**：排版内容区 = `floor(screenHeight - statusBar - navBar - paddingV*2)`；渲染层 `PageRenderer`/`CurlOverlay` 用 `.statusBarsPadding().navigationBarsPadding()` + 用户边距；滚动模式 `LazyColumn` 的 `contentPadding` = 系统栏 + 用户边距；**排版/渲染/手势三处系统栏扣除必须一致**，否则内容区错位导致底行被裁或手势偏移。
+- **翻译流状态与展示**：`ReaderUiState.thinkingText` 与 `streamingText` 分开保存；思考内容只在思考阶段面板显示，正式回复只显示 `streamingText`。翻译状态栏固定在状态面板顶部，思考/正式回复内容在下方独立滚动区域内滚动；内容追加时保持现有自动滚底行为，暂不根据用户是否离底暂停自动滚动。`streamingText` 不得设置固定 `maxLines`/`TextOverflow.Ellipsis`，否则会把流式预览误截断。
 - **进度持久化**：分页模式「章 + 章内页」（`books.lastReadPage`，Room v3 `MIGRATION_2_3`）；滚动模式 page 恒 0。
 - 目录唯一入口在阅读器底部栏中央；顶栏不再有目录按钮。
 - 夜间模式独立于背景色预设，翻转时不改背景设置本身。
@@ -66,5 +67,6 @@
 
 - 注释与 UI 字符串以中文为主，新增代码保持一致。
 - 文案/术语与 `CONTEXT.md` 对齐（书籍/章节/双语段落/翻页类型/章窗口/底部对齐等），新增概念先更新术语表。
-- `ReadingSettings` 用字符串常量标记翻页模式（`FLIP_*` companion 常量）、整数标记标题模式（`TITLE_MODE_*`）；`LlmSettings` 默认 apiBase 为 DeepSeek，apiKey 存于 DataStore。
+- `ReadingSettings` 用字符串常量标记翻页模式（`FLIP_*` companion 常量）、整数标记标题模式（`TITLE_MODE_*`）；`LlmSettings` 默认 apiBase 为 DeepSeek，apiKey 存于 DataStore。思考模式说明使用通用模型文案，不绑定具体厂商。
+- SSE 流式翻译必须持续拼接所有 `content` chunk 直到 `[DONE]`；读取 `choices[].finish_reason`，`length` 表示模型输出未完整生成，必须进入失败状态，不能把 partial content 标记为已翻译。SSE/网络/解析异常也不得静默保存为成功译文。
 - 单测断言结构化（行数/切段范围/原子性），不 pin 像素值（Robolectric NATIVE 跨版本换行可能微差）。

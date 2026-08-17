@@ -34,7 +34,12 @@
 | **单手模式 (One-hand Mode)** | 单手阅读辅助：开启后分页模式下点击左右 1/3 均翻**下一页**（原左 1/3 翻上一页）；滚动模式无「页」概念不生效 | 三段点按 |
 | **长按操作菜单 (Long-press Action Menu)** | 书架上长按书籍弹出的操作列表：`开始阅读` / `删除`（二次确认） | 书籍卡片 |
 | **书籍卡片 (Book Row / Grid Card)** | 书架列表行或网格卡片：封面 + 书名 + 元数据 + 阅读进度条；点击=打开，长按=操作菜单 | 长按操作菜单 |
-| **章节状态 (Chapter Status)** | 0=待翻译 1=翻译中 2=已翻译 -1=失败 3=过长 | — |
+| **章节状态 (Chapter Status)** | 0=待翻译 1=翻译中 2=已翻译 -1=失败 3=过长；是 Room 持久化的粗粒度状态 | 翻译阶段 |
+| **翻译阶段 (Translation Phase)** | 一次翻译任务的运行时状态：准备翻译、等待模型响应、模型思考中、正式回复流式输出、失败、取消；由 `TranslationPhase` 表示，不写入 Chapter.status | 章节状态 |
+| **思考过程 (Thinking / Reasoning)** | 模型返回的 `reasoning_content`、`reasoning` 或 `thinking` 增量；仅在思考模式开启时展示，存于 `ReaderUiState.thinkingText`，不进入正式译文 | 正式回复 |
+| **正式回复 (Final Content)** | SSE `delta.content` 增量拼接形成的最终译文；存于 `streamingText`/`Done.text`，与思考过程严格分离 | 思考过程 |
+| **流式翻译状态栏 (Streaming Status Bar)** | 翻译面板顶部固定的阶段/字符数提示；思考过程与正式回复在其下方独立滚动，内容追加时自动滚底 | 流式内容区 |
+| **输出长度截断 (Length Truncation)** | SSE `choices[].finish_reason = "length"` 表示模型达到输出上限；即使收到 `[DONE]` 也不得标记章节为已翻译，必须进入失败并提示译文未完整生成 | 正常停止 |
 | **语义色板 (Reader Palette)** | 阅读器亮/暗配色的一处定义（`ReaderPalette.of(isDark)`）：正文/标题/气泡/弹窗文字色集中，组件共用，避免亮暗不一致 | 分散的三元色 |
 | **阅读页几何 (Reader Page Geometry)** | 「内容区 = 屏幕 − 系统栏 − 用户边距」的集中计算（`ReaderPageGeometry.of(...)`），排版/渲染/手势三处共用同一口径 | 各处手算 |
 | **排版共享常量 (Reader Metrics)** | 标题顶距/卷名间距/双语 padding/气泡尺寸等 dp 常量的单一来源（`ReaderMetrics`），排版器（px）、卷页位图（px）、渲染组件（dp）三处引用 | 魔法数散布 |
@@ -49,6 +54,7 @@
 - **样式/模式/边距变更即重建窗口**：换字号/字距/边距/切换中英模式/切换翻页类型时，窗口重建并恢复到「章 + 章内页」，不跳回第 0 页。
 - 目录在阅读器中的**唯一入口**是底部栏中央；顶栏不再有目录按钮。
 - 全局主题的 dark/light 由 `ThemeSettings`（跟随系统/浅色/深色 × 原木/青简）决定；阅读器页面背景/文字色由 `ReadingSettings` + `ReaderBgPresets` 独立控制。
+- **LLM 流式翻译**：请求通过 SSE 持续读取并按顺序拼接全部 `delta.content`，直到 `[DONE]`；`reasoning_content`/`reasoning`/`thinking` 仅在思考模式开启时作为 `Thinking` 事件展示，不得混入 `content`。状态栏固定在翻译面板顶部，思考过程与正式回复在下方独立滚动；流式内容区不设固定行数或省略号截断。`finish_reason="length"` 视为未完成输出，进入失败状态而不是保存为已翻译。
 - 仿真卷页：Canvas 卷页几何来自 Legado `SimulationPageDelegate` 移植（`PageCurl`）；页面快照位图用 `StaticLayout` + **真实 px 字号**绘制（与真实页视觉一致，旧实现把 sp 数值当 px 导致位图小字重叠）；手势 = 拖拽跟手 + 点按自动卷页（360ms）；**边到边模式下手势坐标需减去 statusBar 偏移**，内容区高度也扣除系统栏。
 - **边到边模式**：排版内容区 = 屏幕 − 系统栏 − 用户边距（`contentHeightPx = floor(screen - statusBar - navBar - paddingV*2)`）；渲染层 `PageRenderer`/`CurlOverlay` 用 `.statusBarsPadding().navigationBarsPadding()` + 用户边距；滚动模式 `LazyColumn` 的 `contentPadding` = 系统栏 + 用户边距；**仿真手势坐标 `downY/focusY` 需减去 statusBar**；排版/渲染/手势三处系统栏扣除必须一致，否则内容区错位导致底行被裁或手势偏移。
 - 滚动模式（`FLIP_SCROLL`）与分页模式**共享同一 `PageStyle`**（行高/字号/缩进/字距/两端对齐一致），边距也共用 `paddingH/paddingV`；滚动模式不参与行级排版与章窗口（LazyColumn + Text 结构）。

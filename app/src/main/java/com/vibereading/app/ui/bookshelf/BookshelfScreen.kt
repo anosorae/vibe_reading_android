@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -33,6 +32,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -393,7 +394,7 @@ private fun SortBar(
     }
 }
 
-// ── 列表行：封面 + 书名 + 进度 ──
+// ── 列表行：封面 + 书名 + 阅读进度（仿 Legado 三行列表） ──
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookRow(
@@ -409,7 +410,7 @@ private fun BookRow(
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         BookCover(
@@ -417,9 +418,10 @@ private fun BookRow(
             modifier = Modifier.width(56.dp).height(76.dp)
         )
 
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
 
         Column(modifier = Modifier.weight(1f)) {
+            // 第 1 行：书名
             Text(
                 book.title,
                 style = MaterialTheme.typography.titleSmall,
@@ -427,53 +429,56 @@ private fun BookRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+
+            // 第 2 行：阅读进度章节标题
             Spacer(Modifier.height(4.dp))
+            if (item.lastReadChapterTitle != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.MenuBook,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        item.lastReadChapterTitle,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Text(
+                    "未开始阅读",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+
+            // 第 3 行：章数 + 已译 + 翻译状态
+            Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "${book.totalChapters}章",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(" · ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                Text(
-                    "已译${item.translatedCount}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = VibeColors.Sage
-                )
-            }
-            // 阅读进度条
-            item.lastReadChapterTitle?.let { title ->
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    title,
                     fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.outline
                 )
-                Spacer(Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { item.progress.coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(2.dp)),
-                    color = accentColor,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+                if (item.translatedCount > 0) {
+                    Text(" · ", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        "已译${item.translatedCount}",
+                        fontSize = 11.sp,
+                        color = VibeColors.Sage
+                    )
+                }
             }
         }
-
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.outlineVariant,
-            modifier = Modifier.size(20.dp)
-        )
     }
 }
 
-// ── 网格卡片：竖版封面 + 书名 + 进度条 ──
+// ── 网格卡片：封面 + 底部渐变叠加书名 + 角标（仿 Legado grid） ──
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookGridCard(
@@ -487,44 +492,63 @@ private fun BookGridCard(
     Column(
         modifier = Modifier
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-            .padding(8.dp)
     ) {
-        BookCover(
-            title = book.title,
+        // 封面区域：封面 + 底部渐变叠加书名 + 右上角翻译角标
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            book.title,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.fillMaxWidth()
-        )
-        if (item.progress > 0f) {
-            Spacer(Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { item.progress.coerceIn(0f, 1f) },
+                .clip(RoundedCornerShape(8.dp))
+        ) {
+            BookCover(
+                title = book.title,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // 底部渐变遮罩 + 书名
+            Box(
                 modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = accentColor,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        } else {
-            Spacer(Modifier.height(3.dp))
-            Text(
-                "未开始",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.fillMaxWidth()
-            )
+                    .height(56.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.55f)
+                            )
+                        )
+                    )
+            ) {
+                Text(
+                    book.title,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+
+            // 右上角：已译/总章 角标
+            if (item.translatedCount > 0) {
+                Surface(
+                    shape = RoundedCornerShape(topEnd = 8.dp, bottomStart = 8.dp),
+                    color = VibeColors.Sage.copy(alpha = 0.85f),
+                    modifier = Modifier.align(Alignment.TopEnd)
+                ) {
+                    Text(
+                        "${item.translatedCount}/${book.totalChapters}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
         }
     }
 }

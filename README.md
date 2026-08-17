@@ -1,4 +1,4 @@
-# VibeReading
+# 译读 / VibeReading
 
 **双语阅读器** — 导入 TXT 小说，逐章调用 LLM 翻译为英文，中文/英文双模式阅读。
 

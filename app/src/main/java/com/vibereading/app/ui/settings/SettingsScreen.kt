@@ -200,7 +200,7 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "VibeReading —— 双语阅读器：导入 TXT 小说，逐章调用 LLM 翻译为英文，中英双模式阅读。",
+                    "译读 —— 双语阅读器：导入 TXT 小说，逐章调用 LLM 翻译为英文，中英双模式阅读。",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 20.sp

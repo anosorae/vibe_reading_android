@@ -100,7 +100,7 @@ fun BookshelfScreen(
                         )
                     } else {
                         Text(
-                            "Vibe Reading",
+                            "译读",
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )

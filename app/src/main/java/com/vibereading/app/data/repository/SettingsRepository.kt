@@ -197,6 +197,7 @@ class SettingsRepository(
     private object ShelfKeys {
         val LAYOUT = stringPreferencesKey("bookshelf_layout")   // "list" | "grid"
         val SORT = stringPreferencesKey("bookshelf_sort")       // "recent" | "title" | "created"
+        val SORT_ORDER = stringPreferencesKey("bookshelf_sort_order") // "asc" | "desc"
     }
 
     val bookshelfLayout: Flow<String> = store.data
@@ -213,6 +214,14 @@ class SettingsRepository(
 
     suspend fun saveBookshelfSort(sort: String) {
         store.edit { prefs -> prefs[ShelfKeys.SORT] = sort }
+    }
+
+    val bookshelfSortOrder: Flow<String> = store.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> prefs[ShelfKeys.SORT_ORDER] ?: "desc" }
+
+    suspend fun saveBookshelfSortOrder(order: String) {
+        store.edit { prefs -> prefs[ShelfKeys.SORT_ORDER] = order }
     }
 
     // ── Reading Mode ──

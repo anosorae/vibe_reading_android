@@ -17,11 +17,17 @@ import com.vibereading.app.domain.parser.TxtParser
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-/** 书架排序方式（对齐 Legado bookshelfSort）。 */
+/** 书架排序方式。 */
 object ShelfSort {
     const val RECENT = "recent"   // 最近阅读
     const val TITLE = "title"     // 书名
     const val CREATED = "created" // 上传时间
+}
+
+/** 排序方向。 */
+object SortOrder {
+    const val ASC = "asc"
+    const val DESC = "desc"
 }
 
 data class BookshelfUiState(
@@ -31,7 +37,8 @@ data class BookshelfUiState(
     val uploadMessage: String? = null,
     val accent: AppAccent = AppAccent.VIBE,
     val layout: String = "list",     // "list" | "grid"
-    val sort: String = ShelfSort.RECENT
+    val sort: String = ShelfSort.RECENT,
+    val sortOrder: String = SortOrder.DESC
 )
 
 class BookshelfViewModel(
@@ -45,16 +52,19 @@ class BookshelfViewModel(
 
     private val searchQuery = MutableStateFlow("")
 
+    // 排序方式 + 排序方向合成流
+    private val sortPref = combine(settingsRepo.bookshelfSort, settingsRepo.bookshelfSortOrder) { sort, order -> sort to order }
+
     init {
         viewModelScope.launch {
             combine(
                 bookRepo.getShelfItems(),
                 settingsRepo.themeSettings,
                 settingsRepo.bookshelfLayout,
-                settingsRepo.bookshelfSort,
+                sortPref,
                 searchQuery
-            ) { items, theme, layout, sort, query ->
-                val sorted = sortItems(items, sort)
+            ) { items, theme, layout, (sort, sortOrder), query ->
+                val sorted = sortItems(items, sort, sortOrder)
                 val filtered = if (query.isBlank()) {
                     sorted
                 } else {
@@ -65,7 +75,8 @@ class BookshelfViewModel(
                     filteredItems = filtered,
                     accent = theme.accent,
                     layout = layout,
-                    sort = sort
+                    sort = sort,
+                    sortOrder = sortOrder
                 )
             }.collect {}
         }
@@ -83,11 +94,18 @@ class BookshelfViewModel(
         viewModelScope.launch { settingsRepo.saveBookshelfSort(sort) }
     }
 
-    /** 书架排序：最近阅读 / 书名 / 上传时间（对齐 Legado bookshelfSort）。 */
-    private fun sortItems(items: List<BookShelfItem>, sort: String): List<BookShelfItem> = when (sort) {
-        ShelfSort.TITLE -> items.sortedBy { it.book.title }
-        ShelfSort.CREATED -> items.sortedByDescending { it.book.createdAt }
-        else -> items.sortedByDescending { it.book.lastReadAt }
+    fun switchSortOrder(order: String) {
+        viewModelScope.launch { settingsRepo.saveBookshelfSortOrder(order) }
+    }
+
+    /** 书架排序：最近阅读 / 书名 / 上传时间，支持升序/降序。 */
+    private fun sortItems(items: List<BookShelfItem>, sort: String, sortOrder: String): List<BookShelfItem> {
+        val ascending = sortOrder == SortOrder.ASC
+        return when (sort) {
+            ShelfSort.TITLE -> if (ascending) items.sortedBy { it.book.title } else items.sortedByDescending { it.book.title }
+            ShelfSort.CREATED -> if (ascending) items.sortedBy { it.book.createdAt } else items.sortedByDescending { it.book.createdAt }
+            else -> if (ascending) items.sortedBy { it.book.lastReadAt } else items.sortedByDescending { it.book.lastReadAt }
+        }
     }
 
     fun uploadBook(context: Context, uri: Uri) {

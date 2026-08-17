@@ -19,6 +19,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MenuBook
@@ -184,11 +186,13 @@ fun BookshelfScreen(
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // 排序条（仿 Legado bookshelfSort 下拉）
+                    // 排序条
                     SortBar(
                         sort = state.sort,
+                        sortOrder = state.sortOrder,
                         accentColor = accentColor,
-                        onSort = vm::switchSort
+                        onSort = vm::switchSort,
+                        onToggleOrder = vm::switchSortOrder
                     )
 
                     // 无搜索结果
@@ -325,12 +329,14 @@ fun BookshelfScreen(
     }
 }
 
-// ── 排序条：最近阅读 / 书名 / 上传时间 ──
+// ── 排序条：排序方式 + 升序/降序切换 ──
 @Composable
 private fun SortBar(
     sort: String,
+    sortOrder: String,
     accentColor: androidx.compose.ui.graphics.Color,
-    onSort: (String) -> Unit
+    onSort: (String) -> Unit,
+    onToggleOrder: (String) -> Unit
 ) {
     val options = listOf(
         ShelfSort.RECENT to "最近阅读",
@@ -339,6 +345,7 @@ private fun SortBar(
     )
     var menuExpanded by remember { mutableStateOf(false) }
     val currentLabel = options.firstOrNull { it.first == sort }?.second ?: "最近阅读"
+    val isDesc = sortOrder == SortOrder.DESC
 
     Row(
         modifier = Modifier
@@ -371,11 +378,18 @@ private fun SortBar(
             }
         }
         Spacer(Modifier.weight(1f))
-        Text(
-            "下拉菜单可切换排序",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.outline
-        )
+        // 升序/降序切换按钮
+        IconButton(
+            onClick = { onToggleOrder(if (isDesc) SortOrder.ASC else SortOrder.DESC) },
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                if (isDesc) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
+                contentDescription = if (isDesc) "降序" else "升序",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 

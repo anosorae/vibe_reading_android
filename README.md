@@ -15,12 +15,20 @@
 
 ## 截图
 
-<p align="center">
-  <img src="docs/screenshots/bookshelf.png" width="24%" alt="书架" />
-  <img src="docs/screenshots/reader-zh.png" width="24%" alt="阅读器 · 中文模式" />
-  <img src="docs/screenshots/reader-toolbar.png" width="24%" alt="阅读器 · 工具栏" />
-  <img src="docs/screenshots/settings.png" width="24%" alt="设置" />
-</p>
+<table>
+  <tr>
+    <td><img src="docs/screenshots/bookshelf.png" width="200" alt="书架" /></td>
+    <td><img src="docs/screenshots/reader-zh.png" width="200" alt="阅读器 · 中文模式" /></td>
+    <td><img src="docs/screenshots/reader-toolbar.png" width="200" alt="阅读器 · 工具栏" /></td>
+    <td><img src="docs/screenshots/settings.png" width="200" alt="设置" /></td>
+  </tr>
+  <tr>
+    <td align="center">书架</td>
+    <td align="center">中文模式</td>
+    <td align="center">工具栏</td>
+    <td align="center">设置</td>
+  </tr>
+</table>
 
 ## 技术栈
 

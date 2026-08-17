@@ -215,13 +215,17 @@ fun ReaderScreen(
         if (target == null) return@LaunchedEffect
         val pageInChapter = when {
             isProgrammatic -> pagerJumpPage
-            !initialSeekDone -> state.lastReadPage
-            else -> window.pageInChapterOfPage(pagerState.currentPage)
+            // window 会因章节翻译状态/译文更新重建；重建后旧 pagerState.currentPage
+            // 属于旧索引空间，不能再反推章内页，否则找不到目标时会落到第 0 页。
+            else -> state.lastReadPage
         }
         windowSliding = true
         window.recenterSync(target)
-        // 窗口滑动后索引空间变化：滚动到（target, 章内页）保持视觉一致（scrollToPage 瞬时）
-        val idx = window.indexOf(target, pageInChapter) ?: 0
+        // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
+        val idx = window.indexOf(target, pageInChapter)
+            ?: window.indexOf(target, 0)
+            ?: window.indexOf(window.centerChapterId ?: target, 0)
+            ?: 0
         if (pagerState.currentPage != idx) pagerState.scrollToPage(idx)
         initialSeekDone = true
         windowSliding = false
@@ -865,9 +869,17 @@ fun ReaderScreen(
                                 color = VibeColors.Sage
                             )
                             Spacer(Modifier.width(8.dp))
+                            val phaseText = when (state.translationPhase) {
+                                TranslationPhase.PREPARING -> "准备翻译…"
+                                TranslationPhase.WAITING_FIRST_TOKEN -> "等待模型响应…"
+                                TranslationPhase.THINKING -> "模型思考中…"
+                                TranslationPhase.STREAMING -> "翻译中… (${state.streamingCharCount}字)"
+                                TranslationPhase.FAILED -> "翻译失败"
+                                TranslationPhase.CANCELLED -> "翻译已取消"
+                                TranslationPhase.IDLE -> "翻译中…"
+                            }
                             Text(
-                                if (state.streamingCharCount > 0) "翻译中… (${state.streamingCharCount}字)"
-                                    else if (state.streamingText.isBlank()) "正在连接…" else "翻译中…",
+                                phaseText,
                                 fontSize = 12.sp,
                                 color = VibeColors.Sage
                             )

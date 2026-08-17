@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
-class SettingsRepository(private val context: Context) {
+class SettingsRepository(
+    private val context: Context,
+    private val store: DataStore<Preferences> = context.dataStore
+) {
 
     // ── LLM Settings ──
 
@@ -31,13 +34,16 @@ class SettingsRepository(private val context: Context) {
         val ENABLE_THINKING = booleanPreferencesKey("enable_thinking")
     }
 
-    val llmSettings: Flow<LlmSettings> = context.dataStore.data
+    private val defaultApiBase: String
+        get() = BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/').ifEmpty { "https://api.deepseek.com" }
+
+    val llmSettings: Flow<LlmSettings> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs ->
             LlmSettings(
-                apiKey = prefs[LlmKeys.API_KEY] ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
-                apiBase = prefs[LlmKeys.API_BASE] ?: BuildConfig.DEBUG_LLM_API_BASE.ifEmpty { "https://api.deepseek.com" },
-                model = prefs[LlmKeys.MODEL] ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { "deepseek-v4-flash" },
+                apiKey = prefs[LlmKeys.API_KEY]?.trim() ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
+                apiBase = prefs[LlmKeys.API_BASE]?.trim()?.trimEnd('/')?.ifEmpty { defaultApiBase } ?: defaultApiBase,
+                model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { "deepseek-v4-flash" },
                 chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 20000,
                 enableContextBoost = prefs[LlmKeys.ENABLE_CONTEXT_BOOST] ?: false,
                 contextChapters = prefs[LlmKeys.CONTEXT_CHAPTERS]?.coerceIn(1, 3) ?: 1,
@@ -47,10 +53,11 @@ class SettingsRepository(private val context: Context) {
         }
 
     suspend fun saveLlmSettings(settings: LlmSettings) {
-        context.dataStore.edit { prefs ->
-            prefs[LlmKeys.API_KEY] = settings.apiKey
-            prefs[LlmKeys.API_BASE] = settings.apiBase.trimEnd('/')
-            prefs[LlmKeys.MODEL] = settings.model
+        val apiBase = settings.apiBase.trim().trimEnd('/').ifEmpty { defaultApiBase }
+        store.edit { prefs ->
+            prefs[LlmKeys.API_KEY] = settings.apiKey.trim()
+            prefs[LlmKeys.API_BASE] = apiBase
+            prefs[LlmKeys.MODEL] = settings.model.trim()
             prefs[LlmKeys.CHAPTER_MAX_CHARS] = settings.chapterMaxChars
             prefs[LlmKeys.ENABLE_CONTEXT_BOOST] = settings.enableContextBoost
             prefs[LlmKeys.CONTEXT_CHAPTERS] = settings.contextChapters.coerceIn(1, 3)
@@ -83,7 +90,7 @@ class SettingsRepository(private val context: Context) {
         val NIGHT_MODE = booleanPreferencesKey("night_mode")
     }
 
-    val readingSettings: Flow<ReadingSettings> = context.dataStore.data
+    val readingSettings: Flow<ReadingSettings> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs ->
             ReadingSettings(
@@ -109,7 +116,7 @@ class SettingsRepository(private val context: Context) {
         }
 
     suspend fun saveReadingSettings(settings: ReadingSettings) {
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[ReadingKeys.FONT_SIZE] = settings.fontSize
             prefs[ReadingKeys.FONT_FAMILY] = settings.fontFamily
             prefs[ReadingKeys.BG_COLOR_INDEX] = settings.bgColorIndex
@@ -135,12 +142,12 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    val nightMode: Flow<Boolean> = context.dataStore.data
+    val nightMode: Flow<Boolean> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs -> prefs[ReadingKeys.NIGHT_MODE] ?: false }
 
     suspend fun saveNightMode(enabled: Boolean) {
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[ReadingKeys.NIGHT_MODE] = enabled
         }
     }
@@ -155,7 +162,7 @@ class SettingsRepository(private val context: Context) {
         val LEGACY_THEME = stringPreferencesKey("theme")
     }
 
-    val themeSettings: Flow<ThemeSettings> = context.dataStore.data
+    val themeSettings: Flow<ThemeSettings> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs ->
             val themeMode = when (prefs[ThemeKeys.THEME_MODE]) {
@@ -171,7 +178,7 @@ class SettingsRepository(private val context: Context) {
         }
 
     suspend fun saveThemeSettings(settings: ThemeSettings) {
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[ThemeKeys.THEME_MODE] = when (settings.themeMode) {
                 ThemeMode.SYSTEM -> "system"
                 ThemeMode.LIGHT -> "light"
@@ -192,20 +199,20 @@ class SettingsRepository(private val context: Context) {
         val SORT = stringPreferencesKey("bookshelf_sort")       // "recent" | "title" | "created"
     }
 
-    val bookshelfLayout: Flow<String> = context.dataStore.data
+    val bookshelfLayout: Flow<String> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs -> prefs[ShelfKeys.LAYOUT] ?: "list" }
 
     suspend fun saveBookshelfLayout(layout: String) {
-        context.dataStore.edit { prefs -> prefs[ShelfKeys.LAYOUT] = layout }
+        store.edit { prefs -> prefs[ShelfKeys.LAYOUT] = layout }
     }
 
-    val bookshelfSort: Flow<String> = context.dataStore.data
+    val bookshelfSort: Flow<String> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs -> prefs[ShelfKeys.SORT] ?: "recent" }
 
     suspend fun saveBookshelfSort(sort: String) {
-        context.dataStore.edit { prefs -> prefs[ShelfKeys.SORT] = sort }
+        store.edit { prefs -> prefs[ShelfKeys.SORT] = sort }
     }
 
     // ── Reading Mode ──
@@ -214,12 +221,12 @@ class SettingsRepository(private val context: Context) {
         val MODE = stringPreferencesKey("reading_mode")
     }
 
-    val readingMode: Flow<String> = context.dataStore.data
+    val readingMode: Flow<String> = store.data
         .catch { emit(emptyPreferences()) }
         .map { prefs -> prefs[ModeKeys.MODE] ?: "zh" }
 
     suspend fun saveReadingMode(mode: String) {
-        context.dataStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[ModeKeys.MODE] = mode
         }
     }

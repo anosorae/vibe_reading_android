@@ -146,4 +146,6 @@ dependencies {
     testImplementation("androidx.compose.ui:ui-text")
     testImplementation("androidx.compose.ui:ui-unit")
     testImplementation("androidx.compose.ui:ui-graphics")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }

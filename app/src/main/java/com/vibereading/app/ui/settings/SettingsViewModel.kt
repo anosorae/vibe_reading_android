@@ -10,6 +10,7 @@ import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.domain.model.ThemeMode
 import com.vibereading.app.domain.model.ThemeSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -40,6 +41,7 @@ class SettingsViewModel(
     private val _editApiKey = MutableStateFlow("")
     private val _editApiBase = MutableStateFlow("")
     private val _editModel = MutableStateFlow("")
+    private var editDirty = false
 
     val editApiKey: StateFlow<String> = _editApiKey.asStateFlow()
     val editApiBase: StateFlow<String> = _editApiBase.asStateFlow()
@@ -49,9 +51,11 @@ class SettingsViewModel(
         viewModelScope.launch {
             settingsRepo.llmSettings.collect { ls ->
                 _uiState.update { it.copy(llmSettings = ls) }
-                if (_editApiKey.value.isEmpty()) _editApiKey.value = ls.apiKey
-                if (_editApiBase.value.isEmpty()) _editApiBase.value = ls.apiBase
-                if (_editModel.value.isEmpty()) _editModel.value = ls.model
+                if (!editDirty) {
+                    _editApiKey.value = ls.apiKey
+                    _editApiBase.value = ls.apiBase
+                    _editModel.value = ls.model
+                }
             }
         }
         viewModelScope.launch {
@@ -76,9 +80,9 @@ class SettingsViewModel(
         }
     }
 
-    fun updateApiKey(key: String) { _editApiKey.value = key }
-    fun updateApiBase(base: String) { _editApiBase.value = base }
-    fun updateModel(model: String) { _editModel.value = model }
+    fun updateApiKey(key: String) { editDirty = true; _editApiKey.value = key }
+    fun updateApiBase(base: String) { editDirty = true; _editApiBase.value = base }
+    fun updateModel(model: String) { editDirty = true; _editModel.value = model }
 
     fun updateChapterMaxChars(value: Int) {
         _uiState.update { it.copy(llmSettings = it.llmSettings.copy(chapterMaxChars = value)) }
@@ -118,39 +122,54 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepo.saveThemeSettings(next) }
     }
 
+    private fun currentEditedLlmSettings(): LlmSettings =
+        _uiState.value.llmSettings.copy(
+            apiKey = _editApiKey.value.trim(),
+            apiBase = _editApiBase.value.trim(),
+            model = _editModel.value.trim()
+        )
+
     fun saveLlmSettings() {
         viewModelScope.launch {
             _uiState.update { it.copy(isSaving = true) }
-            val current = _uiState.value.llmSettings
-            val newSettings = current.copy(
-                apiKey = _editApiKey.value,
-                apiBase = _editApiBase.value,
-                model = _editModel.value
-            )
-            settingsRepo.saveLlmSettings(newSettings)
-            _uiState.update { it.copy(isSaving = false, saved = true, testResult = null) }
+            try {
+                val newSettings = currentEditedLlmSettings()
+                _uiState.update { it.copy(llmSettings = newSettings) }
+                settingsRepo.saveLlmSettings(newSettings)
+                editDirty = false
+                _uiState.update { it.copy(isSaving = false, saved = true, testResult = null) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(isSaving = false, saved = false, testResult = e.message ?: "保存翻译设置失败", testSuccess = false)
+                }
+            }
         }
     }
 
     fun testConnection() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isTesting = true, testResult = null) }
-            // Save first
-            val current = _uiState.value.llmSettings
-            val newSettings = current.copy(
-                apiKey = _editApiKey.value,
-                apiBase = _editApiBase.value,
-                model = _editModel.value
-            )
-            settingsRepo.saveLlmSettings(newSettings)
-
-            val result = llmService.testConnection(newSettings)
-            _uiState.update {
-                it.copy(
-                    isTesting = false,
-                    testResult = result.getOrNull() ?: result.exceptionOrNull()?.message,
-                    testSuccess = result.isSuccess
-                )
+            _uiState.update { it.copy(isTesting = true, testResult = null, testSuccess = null) }
+            try {
+                val newSettings = currentEditedLlmSettings()
+                _uiState.update { it.copy(llmSettings = newSettings) }
+                settingsRepo.saveLlmSettings(newSettings)
+                val result = llmService.testConnection(newSettings)
+                if (result.isSuccess) editDirty = false
+                _uiState.update {
+                    it.copy(
+                        isTesting = false,
+                        testResult = result.getOrNull() ?: result.exceptionOrNull()?.message,
+                        testSuccess = result.isSuccess
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(isTesting = false, testResult = e.message ?: "测试连接失败", testSuccess = false)
+                }
             }
         }
     }

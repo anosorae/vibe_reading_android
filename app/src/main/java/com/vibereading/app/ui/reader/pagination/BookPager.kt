@@ -454,21 +454,32 @@ fun renderPageBitmap(
 
         // 末段段距不渲染（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx）
         val lastParaIdx = units.indexOfLast { it is PageUnit.Para }
+        // 与 Compose 布局保持同一整像素舍入口径：Modifier.padding 内部按 roundToPx(dp) 取整，
+        // 位图若用浮点 dp*density 累加，每段（双语 padding + 段距）会比真实页少 1~1.5px，
+        // 整页累积后正文逐段偏移（亚像素漂移）。间距统一先 round 成 Int 再累加。
+        val padPx = { v: Int -> with(density) { v.dp.roundToPx() } }
+        val paragraphSpacingInt = kotlin.math.round(pageStyle.paragraphSpacingPx).toInt()
 
         units.forEachIndexed { idx, unit ->
             when (unit) {
                 is PageUnit.Title -> {
-                    cursorY += ReaderMetrics.TITLE_TOP_DP * density.density
+                    cursorY += padPx(ReaderMetrics.TITLE_TOP_DP)
                     unit.sectionLayout?.let { layout ->
                         drawLayout(canvas, layout, sectionPaint, cursorY)
                         cursorY += layout.size.height.toFloat()
                     }
-                    cursorY += ReaderMetrics.SECTION_TITLE_GAP_DP * density.density
+                    // 只有卷名非空才有「卷名 → 章节名」间距（8dp）。必须与 Compose 页
+                    // ReadingChapterTitle（section != null）和排版器 measureTitleHeight
+                    // 的判定一致：无卷名章节的首页若无条件加这一段间距，位图标题会被
+                    // 凭空顶低 ~8dp，触发仿真卷页的瞬间整页文字向下跳一下。
+                    if (unit.sectionLayout != null) {
+                        cursorY += padPx(ReaderMetrics.SECTION_TITLE_GAP_DP)
+                    }
                     unit.titleLayout?.let { layout ->
                         drawLayout(canvas, layout, titlePaint, cursorY)
                         cursorY += layout.size.height.toFloat()
                     }
-                    cursorY += ReaderMetrics.TITLE_BOTTOM_DP * density.density
+                    cursorY += padPx(ReaderMetrics.TITLE_BOTTOM_DP)
                 }
 
                 is PageUnit.Para -> {
@@ -491,34 +502,37 @@ fun renderPageBitmap(
                             constraints = Constraints(minWidth = cw, maxWidth = cw)
                         )
                     } else unit.mainLayout
-                    // en 模式双语对：对齐 BilingualParagraph 的 4dp top/bottom padding
+                    // en 模式双语对：对齐 BilingualParagraph 的 4dp top/bottom padding（roundToPx）
                     if (hasTranslation) {
-                        cursorY += ReaderMetrics.BILINGUAL_PAD_DP * density.density
+                        cursorY += padPx(ReaderMetrics.BILINGUAL_PAD_DP)
                     }
                     layout?.let {
                         drawLayout(canvas, it, bodyPaint, cursorY)
                         cursorY += it.size.height.toFloat()
                     }
                     if (hasTranslation) {
-                        cursorY += ReaderMetrics.BILINGUAL_PAD_DP * density.density
+                        cursorY += padPx(ReaderMetrics.BILINGUAL_PAD_DP)
                         // 气泡指示器（对齐 BilingualParagraph 的 18×6dp 小矩形），
                         // 仅首片段 pairHead 显示，续段不重复
                         if (unit.pairHead) {
-                            val bubbleW = ReaderMetrics.BUBBLE_WIDTH_DP * density.density
-                            val bubbleH = ReaderMetrics.BUBBLE_HEIGHT_DP * density.density
-                            val bubbleX = contentWidthPx.toFloat() - bubbleW - ReaderMetrics.BUBBLE_END_DP * density.density
-                            val bubbleY = cursorY - bubbleH - ReaderMetrics.BUBBLE_BOTTOM_DP * density.density
+                            val bubbleW = padPx(ReaderMetrics.BUBBLE_WIDTH_DP)
+                            val bubbleH = padPx(ReaderMetrics.BUBBLE_HEIGHT_DP)
+                            val bubbleX = contentWidthPx - bubbleW - padPx(ReaderMetrics.BUBBLE_END_DP)
+                            val bubbleY = (cursorY - bubbleH - padPx(ReaderMetrics.BUBBLE_BOTTOM_DP)).toInt()
                             val bubblePaint = Paint().apply {
                                 isAntiAlias = true
                                 color = palette.sourceBubble
                             }
                             canvas.drawRect(
-                                Rect(bubbleX, bubbleY, bubbleX + bubbleW, bubbleY + bubbleH),
+                                Rect(
+                                    bubbleX.toFloat(), bubbleY.toFloat(),
+                                    (bubbleX + bubbleW).toFloat(), (bubbleY + bubbleH).toFloat()
+                                ),
                                 bubblePaint
                             )
                         }
                     }
-                    cursorY += if (unit.splitFirst || isLastPara) 0f else pageStyle.paragraphSpacingPx
+                    cursorY += if (unit.splitFirst || isLastPara) 0f else paragraphSpacingInt.toFloat()
                 }
             }
         }

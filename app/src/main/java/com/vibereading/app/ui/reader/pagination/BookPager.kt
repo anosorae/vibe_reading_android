@@ -107,14 +107,12 @@ class SimFlipState {
         direction = dir
         when (dir) {
             PageCurl.Direction.PREV -> {
-                // 上一页：不出现对角
-                if (startX > viewWidth / 2) {
-                    cornerX = startX
-                    cornerY = viewHeight
-                } else {
-                    cornerX = viewWidth - startX
-                    cornerY = viewHeight
-                }
+                // 上一页：卷角固定右下角（对齐 Legado setDirection(PREV) → calcCornerXY(…, viewHeight)
+                // 量化后恒为 viewWidth, viewHeight；也与 startSimFlip(PREV) 动画起点一致）。
+                // 不要用 viewWidth - startX 的浮点卷角：拖拽越过该角 x 后，已揭示的上一页
+                // 会在右侧被当前页重新盖回（渲染错位，与 NEXT 分支 9c33ec1 同类问题）。
+                cornerX = viewWidth
+                cornerY = viewHeight
             }
             PageCurl.Direction.NEXT -> {
                 if (viewWidth / 2 > startX) {

@@ -30,8 +30,12 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.ReaderPageGeometry
 import com.vibereading.app.ui.reader.components.BilingualParagraph
+import com.vibereading.app.ui.reader.components.ParagraphKey
 import com.vibereading.app.ui.reader.components.ReadingChapterTitle
+import com.vibereading.app.ui.reader.components.SelectableParagraphText
+import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.ui.theme.VibeColors
+import java.util.Locale
 
 /** 普通 HorizontalPager 的滑动开关；浮层不改变翻页手势本身。 */
 fun readerPagerScrollEnabled(flipMode: String): Boolean =
@@ -173,7 +177,8 @@ fun ReaderPager(
     paddingV: Int,
     statusBarPx: Int,
     navBarPx: Int,
-    simFlip: SimFlipState
+    simFlip: SimFlipState,
+    selectionState: TextSelectionState? = null
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -198,7 +203,8 @@ fun ReaderPager(
                     paddingH = paddingH,
                     paddingV = paddingV,
                     statusBarPx = statusBarPx,
-                    navBarPx = navBarPx
+                    navBarPx = navBarPx,
+                    selectionState = selectionState
                 )
             }
         }
@@ -268,7 +274,8 @@ fun PageRenderer(
     paddingH: Int,
     paddingV: Int,
     statusBarPx: Int,
-    navBarPx: Int
+    navBarPx: Int,
+    selectionState: TextSelectionState? = null
 ) {
     val density = LocalDensity.current
 
@@ -302,13 +309,14 @@ fun PageRenderer(
                         )
                         is PageUnit.Para -> {
                             val isLastPara = idx == lastParaIdx
+                            val key = ParagraphKey(unit.chapterId, unit.paraIndex)
                             if (mode == "zh") {
                                 // zh 模式：mainLayout 即中文排版，直接渲染 cnText（无气泡）
                                 val bodyStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
                                     lineHeight = (pageStyle.body.lineHeight.value +
                                         with(density) { unit.lineHeightExtraPx.toSp().value }).sp
                                 ) else pageStyle.body
-                                Text(
+                                SelectableParagraphText(
                                     text = unit.cnText,
                                     style = bodyStyle,
                                     color = palette.bodyText,
@@ -317,7 +325,11 @@ fun PageRenderer(
                                         .padding(
                                             bottom = if (unit.splitFirst || isLastPara) 0.dp
                                             else with(density) { pageStyle.paragraphSpacingPx.toDp() }
-                                        )
+                                        ),
+                                    selectionState = selectionState,
+                                    paragraphKey = key,
+                                    locale = Locale.CHINESE,
+                                    highlightColor = palette.selectionHighlight
                                 )
                             } else {
                                 // en 模式
@@ -330,7 +342,9 @@ fun PageRenderer(
                                         pageStyle = pageStyle,
                                         palette = palette,
                                         lineHeightExtraPx = unit.lineHeightExtraPx,
-                                        showSpacer = !isLastPara
+                                        showSpacer = !isLastPara,
+                                        selectionState = selectionState,
+                                        paragraphKey = key
                                     )
                                 } else {
                                     // 未翻译：原文直接显示（无气泡，避免原文=气泡内容重复）
@@ -338,7 +352,7 @@ fun PageRenderer(
                                         lineHeight = (pageStyle.body.lineHeight.value +
                                             with(density) { unit.lineHeightExtraPx.toSp().value }).sp
                                     ) else pageStyle.body
-                                    Text(
+                                    SelectableParagraphText(
                                         text = unit.cnText,
                                         style = bodyStyle,
                                         color = palette.bodyText,
@@ -347,7 +361,11 @@ fun PageRenderer(
                                             .padding(
                                                 bottom = if (unit.splitFirst || isLastPara) 0.dp
                                                 else with(density) { pageStyle.paragraphSpacingPx.toDp() }
-                                            )
+                                            ),
+                                        selectionState = selectionState,
+                                        paragraphKey = key,
+                                        locale = Locale.CHINESE,
+                                        highlightColor = palette.selectionHighlight
                                     )
                                 }
                             }

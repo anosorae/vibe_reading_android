@@ -13,6 +13,12 @@ local.properties
 # 外部参考源码（Legado 只读参考，不入库）
 /reference_code/
 
+# ECDICT 原始数据/中间产物（不入库；gzip 词典资产 ecdict.db.gz 需要入库）
+/tools/ecdict.csv
+/tools/ecdict.db
+/tools/*.part
+/tools/*.zip
+
 # ZCode 工具会话数据
 .zcode/
 

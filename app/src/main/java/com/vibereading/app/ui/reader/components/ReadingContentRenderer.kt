@@ -16,6 +16,7 @@ import com.vibereading.app.ui.reader.pagination.PageStyle
 import com.vibereading.app.ui.reader.pagination.ReaderMetrics
 import com.vibereading.app.ui.reader.content.ReadingParagraph
 import com.vibereading.app.domain.model.ReadingSettings
+import java.util.Locale
 
 @Composable
 fun ReadingChapterTitle(
@@ -61,7 +62,9 @@ fun ReadingParagraphItem(
     mode: String,
     pageStyle: PageStyle,
     palette: ReaderPalette,
-    showSpacer: Boolean = true
+    showSpacer: Boolean = true,
+    selectionState: TextSelectionState? = null,
+    paragraphKey: Any? = null
 ) {
     val translated = paragraph.translatedText?.takeIf { it.isNotBlank() }
     if (mode == "en" && translated != null) {
@@ -70,10 +73,13 @@ fun ReadingParagraphItem(
             chineseText = paragraph.sourceText,
             pageStyle = pageStyle,
             palette = palette,
-            showSpacer = showSpacer
+            showSpacer = showSpacer,
+            selectionState = selectionState,
+            paragraphKey = paragraphKey
         )
     } else {
-        Text(
+        // zh 模式或未翻译段落显示中文原文：按中文分词选词（词典为英→中，查词会提示仅支持英文）
+        SelectableParagraphText(
             text = if (mode == "en") translated ?: paragraph.sourceText else paragraph.sourceText,
             style = pageStyle.body,
             color = palette.bodyText,
@@ -81,7 +87,11 @@ fun ReadingParagraphItem(
                 .fillMaxWidth()
                 .padding(bottom = if (showSpacer) {
                     with(androidx.compose.ui.platform.LocalDensity.current) { pageStyle.paragraphSpacingPx.toDp() }
-                } else 0.dp)
+                } else 0.dp),
+            selectionState = selectionState,
+            paragraphKey = paragraphKey,
+            locale = Locale.CHINESE,
+            highlightColor = palette.selectionHighlight
         )
     }
 }

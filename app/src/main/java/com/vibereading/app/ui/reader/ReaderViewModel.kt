@@ -3,18 +3,22 @@ package com.vibereading.app.ui.reader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.vibereading.app.data.dict.DictDatabase
 import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.domain.model.DictEntry
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ReadingSettings
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import com.vibereading.app.domain.model.ReadingPosition
 
 data class ReaderUiState(
@@ -39,7 +43,10 @@ data class ReaderUiState(
     val nightMode: Boolean = false,
     val errorMessage: String? = null,
     val llmTestResult: String? = null,
-    val llmTestSuccess: Boolean? = null
+    val llmTestSuccess: Boolean? = null,
+    val dictQueryWord: String? = null, // 非空 = 词典弹窗可见
+    val dictEntry: DictEntry? = null,
+    val dictLoading: Boolean = false
 )
 
 class ReaderViewModel(
@@ -47,7 +54,8 @@ class ReaderViewModel(
     private val bookRepo: BookRepository,
     private val chapterRepo: ChapterRepository,
     private val settingsRepo: SettingsRepository,
-    private val translationService: TranslationService
+    private val translationService: TranslationService,
+    private val dictDatabase: DictDatabase? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -390,6 +398,26 @@ class ReaderViewModel(
         }
     }
 
+    // ── 离线词典查词（内嵌 ECDICT，读 IO 线程，毫秒级返回） ──
+
+    fun lookupDictWord(word: String) {
+        _uiState.update {
+            it.copy(dictQueryWord = word, dictEntry = null, dictLoading = true)
+        }
+        viewModelScope.launch {
+            val entry = withContext(Dispatchers.IO) { dictDatabase?.lookup(word) }
+            _uiState.update {
+                it.copy(dictEntry = entry, dictLoading = false)
+            }
+        }
+    }
+
+    fun dismissDictPopup() {
+        _uiState.update {
+            it.copy(dictQueryWord = null, dictEntry = null, dictLoading = false)
+        }
+    }
+
     override fun onCleared() {
         translationCoordinator.cancelImmediately()
         super.onCleared()
@@ -400,11 +428,14 @@ class ReaderViewModel(
         private val bookRepo: BookRepository,
         private val chapterRepo: ChapterRepository,
         private val settingsRepo: SettingsRepository,
-        private val translationService: TranslationService
+        private val translationService: TranslationService,
+        private val dictDatabase: DictDatabase? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return ReaderViewModel(bookId, bookRepo, chapterRepo, settingsRepo, translationService) as T
+            return ReaderViewModel(
+                bookId, bookRepo, chapterRepo, settingsRepo, translationService, dictDatabase
+            ) as T
         }
     }
 }

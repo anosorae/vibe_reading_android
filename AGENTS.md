@@ -8,6 +8,7 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - **JAVA_HOME 必须指向 JDK 17**，例如 `C:\Program Files\Microsoft\jdk-17.0.20.8-hotspot`；Android Studio 自带 JBR/JDK 25 不适配当前 Kotlin/Gradle 配置。
 - 构建 debug APK：`./gradlew.bat :app:assembleDebug`。
 - 单元测试：`./gradlew.bat :app:testDebugUnitTest`。
+- 词典资产已入库（`app/src/main/assets/dict/ecdict.dict`），日常构建无需重建；如需重建：`python tools/build_dict_db.py`（从 ECDICT 基础版 CSV 裁剪约 50 万词条 → 四列 SQLite → gzip 预压缩，约 18.7MB；`--keep-all` 保留全量 76 万）。asset 扩展名 `.dict` 是刻意的：AGP 会把 `.gz` 资产自动解压，`.dict` + `noCompress` 才能原样打包。
 - 每次代码改动后都必须完成：构建 APK → 按 `app/build/outputs/apk/debug/output-metadata.json` 选择设备 ABI → 安装 → 启动。x86_64 模拟器通常使用 `app-x86_64-debug.apk`，没有匹配设备时使用 `app-universal-debug.apk`。
 - Android 验证优先使用 android-emulator MCP：`android_preflight` → `android_discover_project` → `android_build_and_run` 或 `build_app` + `install_app` + `launch_app`。除非用户明确要求，不主动截图或执行额外 UI 自动化。
 - 单测使用 Robolectric 4.14/NATIVE 真实换行测量；断言结构化结果（offset 范围、切段拼接、双语原子性、页高和位置映射），不要固定易变的像素值。
@@ -17,17 +18,20 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 ## 目录结构
 
 - `app/src/main/java/com/vibereading/app/`
-  - `data/` — Room 本地库（`local/entity`、`local/dao`）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（Book/Chapter/Settings 仓库）
-  - `domain/model/` — 纯 Kotlin 领域模型，包括 `Book`、`Chapter`、`ReadingPosition`、`ReadingSettings`
+  - `data/` — Room 本地库（`local/entity`、`local/dao`）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（Book/Chapter/Settings 仓库）、`dict/`（`DictDatabase` 内嵌词典只读访问）
+  - `domain/model/` — 纯 Kotlin 领域模型，包括 `Book`、`Chapter`、`ReadingPosition`、`ReadingSettings`、`DictEntry`
   - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`；负责保留原文段落的 UTF-16 起止 offset
   - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`、`navigation`、`theme`
     - `reader/ReaderScreen.kt` — 阅读器容器、五种翻页交互、生命周期 flush、滚动/分页接线（页面协调）
     - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
     - `reader/ReaderChrome.kt` — 顶栏/底栏/翻译状态面板/章节标签等 chrome 组件
-    - `reader/ReaderViewModel.kt` — 初始化恢复、阅读位置状态、串行进度写入、翻译协调器接线
+    - `reader/ReaderViewModel.kt` — 初始化恢复、阅读位置状态、串行进度写入、翻译协调器接线、词典查词入口
     - `reader/TranslationCoordinator.kt` — 翻译状态机：单任务运行 + `translationRunId` 数据库级 stale 防护
     - `reader/components/ReadingContentRenderer.kt` — 分页与滚动共享的章节标题/正文/双语内容渲染
     - `reader/components/BilingualParagraph.kt` — 英文译文、原文气泡和 Popup
+    - `reader/components/TextSelection.kt` — 长按选词：`TextSelectionState`、`SelectableParagraphText`、`findWordBoundary`（BreakIterator 分词）
+    - `reader/components/SelectionToolbar.kt` — 选词工具栏（查词/复制）
+    - `reader/components/DictPopup.kt` — 词典查询结果弹窗
     - `reader/ReaderPalette.kt` — 亮/暗语义色板
     - `reader/ReaderGeometry.kt` — 页面几何和系统栏扣除公式
     - `reader/ChapterStatusUi.kt` — 章节状态到颜色映射
@@ -37,9 +41,10 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
     - `reader/pagination/PageCurl.kt` — Legado 仿真卷页几何移植
     - `reader/pagination/ReaderMetrics.kt` — 排版、标题、双语 padding、气泡尺寸共享常量
   - `VibeReadingApp.kt` — Application，持有 Room 单例
-- `app/src/test/java/` — LLM/SSE、设置、解析器、阅读位置、分页窗口和手势单测
+- `app/src/test/java/` — LLM/SSE、设置、解析器、阅读位置、分页窗口、手势、选词分词和词典查询单测
 - `docs/` — ADR 文档
 - `reference_code/legado-E/` — Legado 开源阅读器参考源码，**只读，禁止修改**。
+- `tools/build_dict_db.py` — 词典库构建脚本（CSV → 四列 SQLite → gzip 资产）
 
 ## 架构与分层规则
 
@@ -82,10 +87,12 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - SSE 必须持续拼接所有 `content` chunk 直到 `[DONE]`；`finish_reason="length"`、网络异常、解析异常、取消都不能保存为成功译文；流式状态栏正文不得设置固定 `maxLines` 或省略号。
 - 书架「已译章节数」只能从 `chapters` 表 DONE 状态派生（`BookDao.getBooksWithProgress()` 子查询），`books.translatedChapters` 缓存列已移除，禁止恢复。
 - 翻译终态写库必须走 `ChapterRepository.startTranslation/completeTranslation/failTranslation/cancelTranslation`（内部带 `translationRunId` 匹配）；切换阅读章节不应取消合法后台任务，只有开启新任务才替换旧任务。
+- 长按选词是瞬时 UI 交互（`TextSelectionState`）：翻页、滚动、切章/切模式、开浮层时清除；长按后的下一次点击只清选区（或关词典弹窗）不翻页。选词用 `SelectableParagraphText`（BreakIterator 分词 + 背景 SpanStyle 高亮，背景不参与测量不触发重排），普通点击不消费事件，外层翻页手势靠 `isConsumed` 跳过。
+- 词典查询走 `DictDatabase.lookup`（IO 线程，`ReaderViewModel.lookupDictWord` 入口）；词条小写存储 + 查询小写归一，`WHERE word = ?` 命中 BINARY 主键。资产 `assets/dict/ecdict.dict` 是 gzip 预压缩 SQLite（AGP 会解压 `.gz`，故用 `.dict` + `noCompress`），首次查词解压到 `databases/ecdict.db`（按 gz 头携带的期望尺寸判断是否需要更新）。
 
 ## 复用与内聚
 
-- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，章节状态颜色用 `chapterStatusColor`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`。
+- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，章节状态颜色用 `chapterStatusColor`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，词典访问用 `DictDatabase`。
 - 修改跨组件概念前先搜索其单一数据源；不要在组件内复制常量或重新解析章节文本。
 - 共享 Composable 优先复用 `ReadingChapterTitle`、`ReadingParagraphItem`、`BilingualParagraph`；新增视觉差异应通过参数表达，而不是复制组件。
 

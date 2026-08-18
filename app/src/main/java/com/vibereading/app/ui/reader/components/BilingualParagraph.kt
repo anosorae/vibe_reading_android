@@ -28,6 +28,7 @@ import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.content.ReadingParagraph
 import com.vibereading.app.ui.reader.pagination.PageStyle
 import com.vibereading.app.ui.reader.pagination.ReaderMetrics
+import java.util.Locale
 
 /**
  * 双语段落（滚动模式与分页模式共用）：英文 + 尾部气泡（点击弹窗查看中文原文）。
@@ -36,6 +37,7 @@ import com.vibereading.app.ui.reader.pagination.ReaderMetrics
  * - [lineHeightExtraPx]：分页模式底部对齐分配到每行的额外行高（px），滚动模式恒 0。
  * - [pairHead]：是否为双语对首片段——仅首片段显示气泡，续段不重复。
  * - [showSpacer]：是否在段尾加段距（分页末段不加，对齐排版器 buildPage 的 realUsed）。
+ * - [selectionState]/[paragraphKey]：长按选词状态与段落标识（英文译文参与选词）。
  */
 @Composable
 fun BilingualParagraph(
@@ -45,7 +47,9 @@ fun BilingualParagraph(
     palette: ReaderPalette,
     lineHeightExtraPx: Float = 0f,
     pairHead: Boolean = true,
-    showSpacer: Boolean = true
+    showSpacer: Boolean = true,
+    selectionState: TextSelectionState? = null,
+    paragraphKey: Any? = null
 ) {
     val density = LocalDensity.current
     // 分页模式 lineHeightExtraPx > 0 时调整行高，与 PageRenderer 的 Text 排版一致
@@ -55,7 +59,7 @@ fun BilingualParagraph(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            Text(
+            SelectableParagraphText(
                 text = englishText,
                 style = enStyle,
                 color = palette.bodyText,
@@ -64,7 +68,11 @@ fun BilingualParagraph(
                     .padding(
                         top = ReaderMetrics.BILINGUAL_PAD_DP.dp,
                         bottom = ReaderMetrics.BILINGUAL_PAD_DP.dp
-                    )
+                    ),
+                selectionState = selectionState,
+                paragraphKey = paragraphKey,
+                locale = Locale.ENGLISH,
+                highlightColor = palette.selectionHighlight
             )
             if (chineseText.isNotBlank() && pairHead) {
                 SourceBubble(chineseText = chineseText, pageStyle = pageStyle, palette = palette)

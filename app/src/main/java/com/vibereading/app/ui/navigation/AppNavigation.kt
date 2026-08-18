@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.vibereading.app.data.dict.DictDatabase
 import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
@@ -36,6 +37,8 @@ fun AppNavigation() {
     val chapterRepo = remember { ChapterRepository(db.chapterDao()) }
     val settingsRepo = remember { SettingsRepository(application) }
     val translationService = remember { LlmApiService() }
+    // 内嵌 ECDICT 词典（惰性打开：首次查词才拷贝 asset + SQLite 打开）
+    val dictDatabase = remember { DictDatabase.open(application) }
 
     NavHost(navController = navController, startDestination = Routes.BOOKSHELF) {
 
@@ -56,7 +59,9 @@ fun AppNavigation() {
         ) { entry ->
             val bookId = entry.arguments?.getLong("bookId") ?: return@composable
             val vm: ReaderViewModel = viewModel(
-                factory = ReaderViewModel.Factory(bookId, bookRepo, chapterRepo, settingsRepo, translationService)
+                factory = ReaderViewModel.Factory(
+                    bookId, bookRepo, chapterRepo, settingsRepo, translationService, dictDatabase
+                )
             )
             ReaderScreen(
                 vm = vm,

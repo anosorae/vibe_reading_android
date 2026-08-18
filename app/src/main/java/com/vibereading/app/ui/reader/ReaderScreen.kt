@@ -2,6 +2,7 @@ package com.vibereading.app.ui.reader
 
 import android.app.Activity
 import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -17,13 +18,16 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -35,9 +39,12 @@ import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
+import com.vibereading.app.ui.reader.components.DictPopup
 import com.vibereading.app.ui.reader.components.PageInfoOverlays
 import com.vibereading.app.ui.reader.components.LlmSettingsSheet
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
+import com.vibereading.app.ui.reader.components.SelectionToolbar
+import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.ui.reader.pagination.*
 import com.vibereading.app.ui.theme.ReaderBgPresets
 import kotlinx.coroutines.launch
@@ -67,6 +74,9 @@ fun ReaderScreen(
     val accentColor = MaterialTheme.colorScheme.primary
     // 语义色板：把 isDark 亮/暗三元集中一处（正文/标题/气泡/弹窗共用）
     val palette = remember(isDark) { ReaderPalette.of(isDark) }
+    // 剪贴板与 Toast（选词复制）
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
 
     // Build catalog groups
     val catalogGroups = remember(state.chapters) {
@@ -171,6 +181,10 @@ fun ReaderScreen(
     val pagerState = rememberPagerState(initialPage = 0) { window.pageCount }
     val scope = rememberCoroutineScope()
     val simFlip = remember { SimFlipState() }
+    // 长按选词状态（瞬时交互：翻页/滚动/切章/开浮层时清除）
+    val selectionState = remember { TextSelectionState() }
+    // 词典弹窗锚点（查词时从选区位置捕获，选区清除后弹窗仍停在该处）
+    var dictAnchor by remember { mutableStateOf(Offset.Zero) }
 
     // mode 切换时清除仿真卷页旧位图，避免反面显示旧模式文字
     LaunchedEffect(state.mode) {
@@ -471,6 +485,29 @@ fun ReaderScreen(
     // （闭包是手势协程启动时快照的旧引用，直接读 readingSettings.oneHandMode 会读到
     //  开启设置前的旧值导致开关无效；与 overlayVisible 同款模式，不加入 key）
     val oneHandMode by rememberUpdatedState(readingSettings.oneHandMode)
+    // 词典弹窗打开中：下一次点击只关弹窗不翻页（与选区清除同款交互）
+    val isDictPopupOpen by rememberUpdatedState(state.dictQueryWord != null)
+
+    // ── 选区/词典弹窗生命周期：翻页、滚动、切章、切模式、开浮层时清除 ──
+    LaunchedEffect(isPagerMode, scrollState, pagerState) {
+        val scrolling = if (isPagerMode) {
+            snapshotFlow { pagerState.isScrollInProgress }
+        } else {
+            snapshotFlow { scrollState.isScrollInProgress }
+        }
+        scrolling.collect { inProgress ->
+            if (inProgress) {
+                selectionState.clear()
+                vm.dismissDictPopup()
+            }
+        }
+    }
+    LaunchedEffect(pagerState.currentPage, state.mode, state.activeChapterId, state.chapters) {
+        selectionState.clear()
+    }
+    LaunchedEffect(state.toolbarVisible, state.catalogVisible, state.settingsVisible, state.llmSettingsVisible) {
+        if (anyOverlayVisible) selectionState.clear()
+    }
 
     // 页面离开/进入后台时，把内存中的最新原文位置同步到 Room。
     DisposableEffect(lifecycleOwner) {
@@ -556,6 +593,10 @@ fun ReaderScreen(
                         simFlip.onDown(downX, downY)
                         simFlip.calcCornerXY(downX, viewW, viewH)
                         simFlip.curl.setViewSize(viewW, viewH)
+                        // 已有选区时：DOWN 即清除（新长按可立即重新选词），本次手势结束时不再翻页
+                        val hadSelectionAtDown = selectionState.isSelecting
+                        if (hadSelectionAtDown) selectionState.clear()
+                        val hadDictAtDown = isDictPopupOpen
 
                         var curlActive = false
                         var gestureStartedWithOverlay = overlayVisible
@@ -565,6 +606,16 @@ fun ReaderScreen(
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
                                 // ── UP ──
+                                if (hadDictAtDown) {
+                                    // 词典弹窗打开中：只关弹窗，不翻页
+                                    vm.dismissDictPopup()
+                                    break
+                                }
+                                if (hadSelectionAtDown) {
+                                    // 选区已在 DOWN 清除；若本次是新的长按选词（内层已消费），
+                                    // 新选区保持不动。这里只确保不触发翻页
+                                    break
+                                }
                                 if (curlActive) {
                                     // 抬手：启动 Scroller 式动画（cancel 回弹 / complete 完成）
                                     val cur = pagerState.currentPage
@@ -589,6 +640,8 @@ fun ReaderScreen(
                                 break
                             }
                             // ── MOVE ──
+                            // 内层（选词长按）已消费的事件不再驱动卷页，防止长按后拖动误触发
+                            if (change.isConsumed) break
                             val focusX = change.position.x
                             val focusY = change.position.y
                             if (!simFlip.isMoved) {
@@ -652,10 +705,24 @@ fun ReaderScreen(
                         val downY = down.position.y
                         val slopSquare = 30f * 30f
                         var moved = false
+                        // 已有选区时：DOWN 即清除（新长按可立即重新选词），本次手势结束时不再翻页
+                        val hadSelectionAtDown = selectionState.isSelecting
+                        if (hadSelectionAtDown) selectionState.clear()
+                        val hadDictAtDown = isDictPopupOpen
                         while (true) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
+                                if (hadDictAtDown) {
+                                    // 词典弹窗打开中：只关弹窗，不翻页
+                                    vm.dismissDictPopup()
+                                    break
+                                }
+                                if (hadSelectionAtDown) {
+                                    // 选区已在 DOWN 清除；若本次是新的长按选词（内层已消费），
+                                    // 新选区保持不动。这里只确保不触发翻页
+                                    break
+                                }
                                 if (!moved && !change.isConsumed) {
                                     val x = down.position.x
                                     val third = size.width / 3f
@@ -710,7 +777,8 @@ fun ReaderScreen(
                         paddingV = readingSettings.paddingV,
                         statusBarPx = statusBarPx,
                         navBarPx = navBarPx,
-                        simFlip = simFlip
+                        simFlip = simFlip,
+                        selectionState = selectionState
                     )
                 }
             }
@@ -732,7 +800,8 @@ fun ReaderScreen(
                         onJumpChapter = { id ->
                             pendingJumpChapter = id
                             vm.navigateTo(id, 0)
-                        }
+                        },
+                        selectionState = selectionState
                     )
                 }
             }
@@ -823,6 +892,37 @@ fun ReaderScreen(
             navBarPx = navBarPx,
             visible = showStatusPanel
         )
+
+        // ── 长按选词工具栏（无选区时隐藏；弹窗为独立 focusable 窗口） ──
+        if (selectionState.isSelecting) {
+            SelectionToolbar(
+                selectionState = selectionState,
+                palette = palette,
+                onLookup = { word ->
+                    dictAnchor = selectionState.popupPosition
+                    selectionState.clear()
+                    vm.lookupDictWord(word)
+                },
+                onCopy = { word ->
+                    clipboard.setText(AnnotatedString(word))
+                    Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+                    selectionState.clear()
+                }
+            )
+        }
+
+        // ── 词典查询结果弹窗 ──
+        state.dictQueryWord?.let { queryWord ->
+            DictPopup(
+                queryWord = queryWord,
+                entry = state.dictEntry,
+                loading = state.dictLoading,
+                anchor = dictAnchor,
+                palette = palette,
+                pageStyle = pageStyle,
+                onDismiss = { vm.dismissDictPopup() }
+            )
+        }
     }
 
     // ── Catalog bottom sheet ──

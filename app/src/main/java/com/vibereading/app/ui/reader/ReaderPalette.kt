@@ -14,7 +14,8 @@ data class ReaderPalette(
     val sourceBubble: Color,    // 原文气泡半透明色块
     val popupBg: Color,         // 原文弹窗背景
     val cnText: Color,          // 弹窗中文原文 / 弱化提示文字
-    val popupBorder: Color      // 弹窗左侧描边
+    val popupBorder: Color,     // 弹窗左侧描边
+    val selectionHighlight: Color // 长按选词高亮背景（与气泡同色系，仅背景不影响排版）
 ) {
     companion object {
         fun of(isDark: Boolean): ReaderPalette = if (isDark) {
@@ -24,7 +25,8 @@ data class ReaderPalette(
                 sourceBubble = VibeColors.SiennaLight.copy(alpha = 0.25f),
                 popupBg = VibeDarkColors.Surface,
                 cnText = VibeColors.Stone,
-                popupBorder = VibeColors.Sand.copy(alpha = 0.3f)
+                popupBorder = VibeColors.Sand.copy(alpha = 0.3f),
+                selectionHighlight = VibeColors.SiennaLight.copy(alpha = 0.3f)
             )
         } else {
             ReaderPalette(
@@ -33,7 +35,8 @@ data class ReaderPalette(
                 sourceBubble = VibeColors.Sienna.copy(alpha = 0.3f),
                 popupBg = VibeColors.Parchment,
                 cnText = VibeColors.WarmGray,
-                popupBorder = VibeColors.Sand
+                popupBorder = VibeColors.Sand,
+                selectionHighlight = VibeColors.Sienna.copy(alpha = 0.2f)
             )
         }
     }

@@ -109,6 +109,13 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // 词典资产已 gzip 预压缩（tools/build_dict_db.py），扩展名用 .dict 避免
+        // AGP 对 .gz 资产自动解压；noCompress 原样打包避免 AAPT 二次 deflate 膨胀
+        // （实测默认 deflate 20.3MB → 原样打包 18.7MB）
+        noCompress += "dict"
+    }
+
     testOptions {
         unitTests {
             // Robolectric 单测走真实 Android 类，避免 mockable jar 抛 "not mocked"

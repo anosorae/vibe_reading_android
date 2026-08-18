@@ -14,6 +14,8 @@ import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.ReadingChapterTitle
 import com.vibereading.app.ui.reader.components.ReadingParagraphItem
+import com.vibereading.app.ui.reader.components.ParagraphKey
+import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.content.ReadingParagraph
 import com.vibereading.app.ui.reader.pagination.PageStyle
@@ -85,7 +87,8 @@ fun ScrollReader(
     paddingV: Int,
     statusBarPx: Int,
     navBarPx: Int,
-    onJumpChapter: (Long) -> Unit
+    onJumpChapter: (Long) -> Unit,
+    selectionState: TextSelectionState? = null
 ) {
     val density = LocalDensity.current
     // 内容区顶部/底部扣除系统栏高度（用缓存值，沉浸式切换不触发滚动内容跳动）
@@ -118,7 +121,9 @@ fun ScrollReader(
                     paragraph = item.paragraph,
                     mode = state.mode,
                     pageStyle = pageStyle,
-                    palette = palette
+                    palette = palette,
+                    selectionState = selectionState,
+                    paragraphKey = ParagraphKey(item.chapterId, item.paragraph.index)
                 )
             }
         }

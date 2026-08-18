@@ -40,6 +40,9 @@
 | **正式回复 (Final Content)** | SSE `delta.content` 按顺序拼接形成的正式译文；`Done.text` 才能持久化 | 思考过程 |
 | **流式翻译状态栏 (Streaming Status Bar)** | 翻译面板顶部固定显示阶段和字符数；思考内容与正式回复在下方独立滚动 | 流式内容区 |
 | **输出长度截断 (Length Truncation)** | `finish_reason="length"` 表示模型未完整生成；即使收到 `[DONE]` 也必须失败，不能保存为已翻译 | 正常停止 |
+| **选词 (Word Selection)** | 长按正文触发：`TextLayoutResult.getOffsetForPosition` 命中字符 → `BreakIterator` 分词 → 高亮选区 + 工具栏（查词/复制）。瞬时 UI 状态，翻页/滚动/切章/开浮层时清除 | 选区高亮 |
+| **查词 (Dict Lookup)** | 工具栏「查词」→ 离线查询内嵌 ECDICT 库 → 弹窗显示音标/词性/中文释义；未收录时提示（中文词提示"仅支持英文查词"） | 选词 |
+| **词典库 (Dict Database)** | 内嵌 ECDICT 精简版 SQLite（约 50 万常用词条，只含 word/phonetic/translation/pos 四列）；构建时 gzip 预压缩为 `assets/dict/ecdict.dict`，首次查词解压到内部存储 | 在线词典 |
 
 ## 共享实现概念
 
@@ -55,6 +58,8 @@
 | 排版共享常量 | `ReaderMetrics` |
 | 翻译状态机 | `TranslationCoordinator`（注入 `TranslationService`） |
 | 翻译网络服务 | `TranslationService`（`LlmApiService` 实现） |
+| 选词状态与分词 | `TextSelectionState` + `SelectableParagraphText` + `findWordBoundary` |
+| 词典数据访问 | `DictDatabase`（只读 SQLite，asset 解压后打开） |
 
 ## 关键边界（决策摘要）
 
@@ -72,6 +77,9 @@
 - **主题独立性**：全局 `ThemeSettings` 的 dark/light 与配色只控制应用主题；阅读器页面背景、正文和气泡颜色由阅读设置及 `ReaderPalette` 控制。
 - **翻译流可靠性**：持续拼接所有 `content` chunk 直到 `[DONE]`；思考字段单独生成 `Thinking`；网络、解析、取消和长度截断不得静默保存为成功译文。
 - **翻译写入的 stale 防护**：翻译开始、完成、失败、取消都以 `translationRunId` 为数据库级匹配条件（`ChapterDao.*TranslationRun`）；切换阅读章节不取消合法后台任务，新任务替换旧任务时旧任务的迟到写入被拒绝。
+- **选词是瞬时交互**：选区/工具栏/词典弹窗不持久化；翻页、滚动、切换章节或模式、打开浮层时清除。长按后的下一次点击只清除选区（或关闭词典弹窗）不翻页，再点才正常翻页。长按命中后 consume 本次手势剩余事件，防止外层把抬起当作点按翻页。
+- **词典库构建与打包**：`tools/build_dict_db.py` 从 ECDICT 基础版 CSV 裁剪（词频存在或词长≤14）构建四列 SQLite，统一小写存储（BINARY 主键 + 查询小写归一覆盖大小写，无 NOCASE 索引）；gzip 预压缩（自定义头携带解压尺寸）为 `assets/dict/ecdict.dict`，APK `noCompress` 原样打包（约 18.7MB）；运行时首次查词解压到 `databases/ecdict.db` 后只读打开，之后按 gz 头声明的尺寸判断是否需要更新。
+- **选词高亮是视觉叠加**：选区背景 SpanStyle 不参与文本测量，不改变分页/滚动排版结果。
 
 ## 交互规则
 

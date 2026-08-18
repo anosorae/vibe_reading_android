@@ -75,6 +75,10 @@ class SimFlipState {
     var targetBitmap: Bitmap? by mutableStateOf(null)
     var bgColor by mutableIntStateOf(0xFFFFFFFF.toInt())
 
+    // 自动动画完成后将落地的目标页；-1 表示回弹/无翻页。
+    // 新触摸打断动画时据此把翻页稳妥落地（snap），避免动画中途消失且翻页不生效（突兀）。
+    var settleTarget by mutableIntStateOf(-1)
+
     // ── 手势状态（对齐 Legado PageDelegate）──
     var isMoved by mutableStateOf(false)
     var isCancel by mutableStateOf(false)
@@ -151,7 +155,17 @@ class SimFlipState {
         targetBitmap = null
         isRunning = false
         isMoved = false
+        settleTarget = -1
     }
+}
+
+/**
+ * 打断自动卷页动画时应落地的目标页；-1 表示无需翻页（回弹进行中 / 已回到当前页 / 无动画在跑）。
+ * 新触摸打断动画时,把「未完成的翻页」提交到动画本要到达的页，而不是让动画中途凭空消失。
+ */
+fun simFlipSettlePage(simFlip: SimFlipState, currentPage: Int, pageCount: Int): Int {
+    val t = simFlip.settleTarget
+    return if (t in 0 until pageCount && t != currentPage) t else -1
 }
 
 /**

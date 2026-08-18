@@ -316,6 +316,7 @@ fun ReaderScreen(
         simFlip.isRunning = true
         simFlip.isMoved = true
         simFlip.isCancel = false
+        simFlip.settleTarget = next
 
         // Scroller 式动画（对齐 Legado onAnimStart）
         simFlipJob = scope.launch {
@@ -357,6 +358,8 @@ fun ReaderScreen(
     fun simFlipAnimStart(cur: Int, target: Int) {
         simFlipJob?.cancel()
         simFlip.isRunning = true
+        // 记录本动画将要落地的页（打断时提交用）；回弹/越界不做翻页
+        simFlip.settleTarget = if (!simFlip.isCancel && target in 0 until window.pageCount) target else -1
         val wf = screenWidthPx.toFloat()
         val hf = screenHeightPx.toFloat()
         simFlipJob = scope.launch {
@@ -633,10 +636,23 @@ fun ReaderScreen(
                         val slopSquare = 30f * 30f // 对齐 Legado pageSlopSquare2
 
                         // DOWN: 记录起点，reset 状态，计算角落
-                        // 先取消上一次未完成的动画协程（快速连滑时旧动画仍在更新 touchX/Y）
+                        // 有新触摸打断自动动画时：先把未完成的翻页稳妥落地（瞬时跳到动画目标页），
+                        // 再做清理——否则动画会在中途直接消失、翻页也不生效（突兀）。
+                        val hadRunningAnim = simFlipJob != null
                         simFlipJob?.cancel()
                         simFlipJob = null
+                        val settle = if (hadRunningAnim) {
+                            simFlipSettlePage(simFlip, pagerState.currentPage, window.pageCount)
+                        } else -1
                         simFlip.cleanup()
+                        if (settle >= 0) {
+                            // requestScrollToPage = 无动画瞬时落地（internal snapToItem 的公开入口）
+                            try {
+                                pagerState.requestScrollToPage(settle)
+                            } catch (_: Exception) {
+                                // 窗口重建等罕见竞态：放弃接管分页器
+                            }
+                        }
                         val downX = down.position.x
                         val downY = down.position.y
                         simFlip.onDown(downX, downY)

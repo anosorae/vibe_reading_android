@@ -45,4 +45,28 @@ class SimFlipStateTest {
             assertEquals("startX=$startX 卷角必须为右下角", 2400f, state.cornerY)
         }
     }
+
+    @Test
+    fun cleanup_resetsSettleTarget() {
+        val state = SimFlipState()
+        state.settleTarget = 7
+        state.cleanup()
+        assertEquals(-1, state.settleTarget)
+    }
+
+    @Test
+    fun settlePage_commitsRunningAnimationTarget() {
+        val state = SimFlipState()
+        // 动画进行中被打断：应提交到动画本要落地的页
+        state.settleTarget = 5
+        assertEquals(5, simFlipSettlePage(state, currentPage = 3, pageCount = 10))
+        // 已在该页：无需再翻
+        assertEquals(-1, simFlipSettlePage(state, currentPage = 5, pageCount = 10))
+        // 回弹/无动画（settleTarget = -1）：不翻页
+        state.settleTarget = -1
+        assertEquals(-1, simFlipSettlePage(state, currentPage = 3, pageCount = 10))
+        // 越界目标页：按停留不翻处理
+        state.settleTarget = 12
+        assertEquals(-1, simFlipSettlePage(state, currentPage = 3, pageCount = 10))
+    }
 }

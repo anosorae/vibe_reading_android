@@ -50,13 +50,17 @@ class BookWindow(
 
     // ── 窗口维护 ──
 
-    /** 同步把窗口中心移到 [chapterId]：补排窗口 [c-1, c, c+1] 缺失章节并重建索引空间。 */
-    fun recenterSync(chapterId: Long) {
+    /**
+     * 同步把窗口中心移到 [chapterId]：补排窗口 [c-1, c, c+1] 缺失章节并重建索引空间。
+     * [includeNeighbors]=false 时只保证中心章排版（打开书籍首帧提速），
+     * 邻居章由 [paginateNeighbors] 后台排版后再次调用本方法幂等扩展。
+     */
+    fun recenterSync(chapterId: Long, includeNeighbors: Boolean = true) {
         val idx = chapters.indexOfFirst { it.id == chapterId }
         if (idx < 0) return
         centerChapterId = chapterId
-        val from = (idx - 1).coerceAtLeast(0)
-        val to = (idx + 1).coerceAtMost(chapters.size - 1)
+        val from = if (includeNeighbors) (idx - 1).coerceAtLeast(0) else idx
+        val to = if (includeNeighbors) (idx + 1).coerceAtMost(chapters.size - 1) else idx
         synchronized(lock) {
             for (i in from..to) {
                 val cid = chapters[i].id
@@ -69,6 +73,34 @@ class BookWindow(
             val keep = (idx - 2).coerceAtLeast(0)..(idx + 2).coerceAtMost(chapters.size - 1)
             val keepIds = keep.map { chapters[it].id }.toSet()
             paginators.keys.retainAll(keepIds)
+        }
+    }
+
+    /** 窗口中心章 ±1 是否都已排版（后台扩展前的幂等检查）。 */
+    fun hasNeighbors(chapterId: Long): Boolean {
+        val idx = chapters.indexOfFirst { it.id == chapterId }
+        if (idx < 0) return false
+        val from = (idx - 1).coerceAtLeast(0)
+        val to = (idx + 1).coerceAtMost(chapters.size - 1)
+        synchronized(lock) {
+            for (i in from..to) {
+                if (chapters[i].id !in paginators) return false
+            }
+        }
+        return true
+    }
+
+    /** 后台排版中心章 ±1（不重建索引空间；完成后主线程 [recenterSync] 幂等扩展）。 */
+    suspend fun paginateNeighbors(chapterId: Long) = withContext(Dispatchers.Default) {
+        val idx = chapters.indexOfFirst { it.id == chapterId }
+        if (idx < 0) return@withContext
+        val from = (idx - 1).coerceAtLeast(0)
+        val to = (idx + 1).coerceAtMost(chapters.size - 1)
+        synchronized(lock) {
+            for (i in from..to) {
+                val cid = chapters[i].id
+                if (cid !in paginators) paginators[cid] = buildPaginator(cid, backgroundMeasurer())
+            }
         }
     }
 

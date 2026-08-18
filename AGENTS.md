@@ -67,7 +67,8 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
   - `cover`：同一 Pager 页施加覆盖滑入。
   - `no_anim`：同一 Pager 页瞬时切换。
   - `simulation`：同一 Pager 页使用 PageCurl 仿真卷页。
-- 分页模式的 `BookWindow` 是当前章 ±1 的全量排版窗口；窗口页索引是运行时扁平索引，不是持久化进度。窗口重建、样式变化、模式切换和译文更新必须按 `chapterId + offset` 恢复。
+- 分页模式的 `BookWindow` 是当前章 ±1 的全量排版窗口；打开书籍/切章首帧只同步排版中心章（`recenterSync(includeNeighbors = false)`），±1 章由 `paginateNeighbors` 后台排版后幂等扩展窗口并保持当前视觉页（`hasNeighbors` 避免重复排版）。窗口页索引是运行时扁平索引，不是持久化进度。窗口重建、样式变化、模式切换和译文更新必须按 `chapterId + offset` 恢复。
+- 滚动内容 `scrollChunks` 惰性构建：分页模式不解析全书（打开书籍提速），首次进入滚动模式时构建并跨模式缓存，章节内容变化时重置；滚动模式构建期间显示加载指示。
 - 分页 `PageUnit`/`TextPage` 必须携带来源段落范围；长中文段按行切分不能丢字符；英文双语对默认不可拆，超高时按英文行切分但所有片段仍绑定同一中文原文范围。
 - 标题、正文、段距、双语气泡必须由 `ReadingContentRenderer`、`PageStyle`、`ReaderMetrics` 和 `BilingualParagraph` 共享；不要为滚动或分页新增独立标题字号、段距或段落拆分逻辑。
 

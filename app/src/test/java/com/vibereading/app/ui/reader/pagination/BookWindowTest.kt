@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
 import com.vibereading.app.domain.model.Chapter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -17,6 +18,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import androidx.compose.ui.text.font.createFontFamilyResolver
+import kotlinx.coroutines.test.runTest
 
 /**
  * BookWindow 章窗口模型单测：窗口 = 当前章 ±1，远跳 O(1)、跨章连续索引、
@@ -74,6 +76,35 @@ class BookWindowTest {
         val c3 = w.pageCountInChapter(3)
         val c4 = w.pageCountInChapter(4)
         assertEquals("窗口扁平页数 = 三章页数之和", c2 + c3 + c4, w.pageCount)
+    }
+
+    @Test
+    fun recenter_withoutNeighbors_buildsCenterOnly() {
+        val w = window()
+        w.recenterSync(3, includeNeighbors = false)
+        assertEquals("窗口应只含中心章", listOf(3L), w.windowChapterIds)
+        assertTrue("中心章已排版", w.pageCountInChapter(3) > 0)
+        assertEquals("邻居章未排版", 0, w.pageCountInChapter(2))
+        assertEquals("邻居章未排版", 0, w.pageCountInChapter(4))
+        assertFalse("邻居未就绪", w.hasNeighbors(3))
+    }
+
+    @Test
+    fun paginateNeighbors_thenRecenter_expandsWindow() = runTest {
+        val w = window()
+        w.recenterSync(3, includeNeighbors = false)
+        w.paginateNeighbors(3)
+        assertTrue("后台排版后邻居就绪", w.hasNeighbors(3))
+        assertEquals("未重建索引空间前窗口仍只有中心章", listOf(3L), w.windowChapterIds)
+        w.recenterSync(3) // 幂等扩展：邻居已在 paginators，只重建索引空间
+        assertEquals("扩展后窗口含 3 章", listOf(2L, 3L, 4L), w.windowChapterIds)
+    }
+
+    @Test
+    fun recenter_full_buildsNeighborsImmediately() {
+        val w = window()
+        w.recenterSync(3)
+        assertTrue("默认 recenter 应包含邻居", w.hasNeighbors(3))
     }
 
     @Test

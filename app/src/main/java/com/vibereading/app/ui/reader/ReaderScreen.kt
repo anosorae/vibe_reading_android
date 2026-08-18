@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
@@ -173,7 +174,8 @@ fun ReaderScreen(
             backgroundMeasurer = { bgMeasurer },
             displayDensity = density.density
         ).also { w ->
-            state.activeChapterId?.let { w.recenterSync(it) }
+            // 打开书籍首帧只同步排版中心章（±1 章由下方后台扩展），避免整窗口阻塞 UI
+            state.activeChapterId?.let { w.recenterSync(it, includeNeighbors = false) }
         }
     }
     // 仿真卷页尺寸 = 全屏（对齐 Legado：位图/覆盖层/手势均使用全屏坐标系）
@@ -213,7 +215,7 @@ fun ReaderScreen(
             else -> window.offsetOfPage(pagerState.currentPage)?.first ?: (state.position?.offset ?: 0)
         }
         windowSliding = true
-        window.recenterSync(target)
+        window.recenterSync(target, includeNeighbors = false)
         // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
         val idx = window.indexOf(target, sourceOffset.toLong())
             ?: window.indexOf(target, 0)
@@ -224,6 +226,24 @@ fun ReaderScreen(
         windowSliding = false
         pagerJumpTarget = null
         scope.launch { window.preloadNeighbors(target) }
+    }
+
+    // 打开/切章后：后台排版中心章 ±1，完成后主线程扩展窗口并保持当前视觉页
+    // （recenterSync 幂等：邻居已在 paginators 时只重建索引空间，不重复排版）
+    LaunchedEffect(window, state.activeChapterId) {
+        if (!isPagerMode) return@LaunchedEffect
+        val target = state.activeChapterId ?: return@LaunchedEffect
+        if (!window.hasNeighbors(target)) {
+            window.paginateNeighbors(target) // 后台排版，不阻塞 UI
+        }
+        // 以当前视觉页为准扩展（用户翻页不被打断；切章会取消本协程由新实例处理）
+        val curChapter = window.chapterOfPage(pagerState.currentPage)
+        val curOffset = window.offsetOfPage(pagerState.currentPage)?.first
+        window.recenterSync(target)
+        val newIdx = window.indexOf(curChapter ?: target, curOffset?.toLong() ?: 0L)
+            ?: window.indexOf(target, 0)
+            ?: 0
+        if (pagerState.currentPage != newIdx) pagerState.scrollToPage(newIdx)
     }
 
     // 分页模式：翻页时保存「章 + 章内页」进度；翻入新章同步 activeChapter（触发窗口滑动）
@@ -410,9 +430,15 @@ fun ReaderScreen(
         }
     }
 
-    // 滚动模式跨章滚动状态
-    val scrollChunks = remember(state.chapters, state.mode, pageStyle.titleMode) {
-        buildScrollChunks(state.chapters, pageStyle.titleMode)
+    // 滚动模式跨章滚动状态：分页模式不解析全书（打开书籍提速），
+    // 首次进入滚动模式时构建并跨模式缓存；章节内容变化时重置
+    var scrollChunks by remember(state.chapters, pageStyle.titleMode) {
+        mutableStateOf(emptyList<ScrollItem>())
+    }
+    LaunchedEffect(!isPagerMode, scrollChunks.isEmpty()) {
+        if (!isPagerMode && scrollChunks.isEmpty()) {
+            scrollChunks = buildScrollChunks(state.chapters, pageStyle.titleMode)
+        }
     }
     val scrollState = rememberLazyListState()
     // 程序化跳章标记（目录/上下章按钮设置，滚动跟踪不响应）
@@ -785,6 +811,14 @@ fun ReaderScreen(
             else -> {
                 if (state.chapters.isEmpty()) {
                     EmptyReaderHint(isDark)
+                } else if (scrollChunks.isEmpty()) {
+                    // 滚动内容解析中（全书构建），先显示轻量加载，完成后自动填充
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = accentColor)
+                    }
                 } else {
                     ScrollReader(
                         chapters = state.chapters,

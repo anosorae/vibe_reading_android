@@ -344,6 +344,9 @@ fun ReaderScreen(
             ) {
                 simFlip.touchX = startTouchX + (endX - startTouchX) * value
                 simFlip.touchY = startTouchY + (endY - startTouchY) * value
+                // 动画帧也必须调用 adjustTouchY，保持与手势阶段相同的 Y 吸顶/吸底规则，
+                // 否则回弹动画末尾 touchY 偏离调整值，卷页几何跳变（右上角突然卷页）
+                simFlip.adjustTouchY(hf)
             }
             // 动画完成 → 翻页
             if (pagerState.currentPage != next) {
@@ -396,6 +399,9 @@ fun ReaderScreen(
             ) {
                 simFlip.touchX = startTouchX + (endX - startTouchX) * value
                 simFlip.touchY = startTouchY + (endY - startTouchY) * value
+                // 动画帧也必须调用 adjustTouchY，保持与手势阶段相同的 Y 吸顶/吸底规则，
+                // 否则回弹动画末尾 touchY 偏离调整值，卷页几何跳变（右上角突然卷页）
+                simFlip.adjustTouchY(hf)
             }
             if (!simFlip.isCancel && target in 0 until window.pageCount) {
                 if (pagerState.currentPage != target) {

@@ -120,7 +120,10 @@ def gen_rows(csv_path: str, keep_all: bool, stats: list):
                 if not has_frq and len(word) > KEEP_FRQ_OR_LEN:
                     stats[0] += 1
                     continue
-            yield word, row[COL_PHONETIC].strip(), row[COL_TRANSLATION].strip(), row[COL_POS].strip()
+            # ECDICT CSV 的多义项分隔是字面 "\n"（反斜杠+n 两个字符），
+            # 归一为真实换行，弹窗渲染时才能正确断行
+            translation = row[COL_TRANSLATION].strip().replace("\\n", "\n").strip()
+            yield word, row[COL_PHONETIC].strip(), translation, row[COL_POS].strip()
 
 
 def build_from_csv(csv_path: str, out_path: str, keep_all: bool) -> int:

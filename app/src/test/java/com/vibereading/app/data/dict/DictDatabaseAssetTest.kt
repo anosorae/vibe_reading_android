@@ -29,6 +29,11 @@ class DictDatabaseAssetTest {
         assertEquals("abandon", abandon!!.word)
         assertTrue("abandon 应有音标", !abandon.phonetic.isNullOrBlank())
         assertTrue("abandon 应有中文释义", !abandon.translation.isNullOrBlank())
+        // 多义项分隔必须是真实换行（构建期已把字面 "\n" 归一），弹窗才能正确断行
+        assertTrue(
+            "释义应以真实换行分隔多义项",
+            abandon.translation!!.contains('\n')
+        )
 
         // 大小写与常见词
         assertEquals("world", dict.lookup("WORLD")!!.word)

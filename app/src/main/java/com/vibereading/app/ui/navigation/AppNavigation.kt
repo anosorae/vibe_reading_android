@@ -11,6 +11,7 @@ import com.vibereading.app.data.dict.DictDatabase
 import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
+import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.ui.bookshelf.BookshelfScreen
 import com.vibereading.app.ui.bookshelf.BookshelfViewModel
@@ -36,9 +37,15 @@ fun AppNavigation() {
     val bookRepo = remember { BookRepository(db.bookDao()) }
     val chapterRepo = remember { ChapterRepository(db.chapterDao()) }
     val settingsRepo = remember { SettingsRepository(application) }
+    val llmProfileRepo = remember { LlmProfileRepository(db.llmProfileDao(), settingsRepo) }
     val translationService = remember { LlmApiService() }
     // 内嵌 ECDICT 词典（惰性打开：首次查词才拷贝 asset + SQLite 打开）
     val dictDatabase = remember { DictDatabase.open(application) }
+
+    // 首次启动迁移：DataStore LLM 键 → Room llm_profiles 表
+    LaunchedEffect(Unit) {
+        llmProfileRepo.ensureDefaultProfile()
+    }
 
     NavHost(navController = navController, startDestination = Routes.BOOKSHELF) {
 
@@ -60,7 +67,7 @@ fun AppNavigation() {
             val bookId = entry.arguments?.getLong("bookId") ?: return@composable
             val vm: ReaderViewModel = viewModel(
                 factory = ReaderViewModel.Factory(
-                    bookId, bookRepo, chapterRepo, settingsRepo, translationService, dictDatabase
+                    bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase
                 )
             )
             ReaderScreen(
@@ -71,7 +78,7 @@ fun AppNavigation() {
 
         composable(Routes.SETTINGS) {
             val vm: SettingsViewModel = viewModel(
-                factory = SettingsViewModel.Factory(settingsRepo)
+                factory = SettingsViewModel.Factory(settingsRepo, llmProfileRepo)
             )
             SettingsScreen(
                 vm = vm,

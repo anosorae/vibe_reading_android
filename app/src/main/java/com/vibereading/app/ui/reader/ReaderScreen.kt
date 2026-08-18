@@ -1014,6 +1014,8 @@ fun ReaderScreen(
     if (state.llmSettingsVisible) {
         LlmSettingsSheet(
             llmSettings = state.llmSettings,
+            profiles = state.profiles,
+            activeProfileId = state.activeProfileId,
             editApiKey = vm.editApiKey.collectAsState().value,
             editApiBase = vm.editApiBase.collectAsState().value,
             editModel = vm.editModel.collectAsState().value,
@@ -1028,6 +1030,7 @@ fun ReaderScreen(
             onUpdateContextChapters = vm::updateLlmContextChapters,
             onUpdateContextMaxChars = vm::updateLlmContextMaxChars,
             onToggleThinking = vm::updateLlmThinking,
+            onSwitchProfile = vm::switchProfile,
             onSave = vm::saveLlmSettings,
             onTest = vm::testLlmConnection,
             onDismiss = { vm.dismissLlmSettings() }

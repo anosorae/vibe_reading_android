@@ -36,7 +36,7 @@ class AppDatabaseMigrationTest {
         try {
             // 用 Room + MIGRATION_5_6 打开：Room 严格校验迁移结果与当前实体 schema 一致
             val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-                .addMigrations(AppDatabase.MIGRATION_5_6)
+                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7)
                 .build()
             runBlocking {
                 val book = db.bookDao().getBookById(1L)!!
@@ -68,6 +68,7 @@ class AppDatabaseMigrationTest {
         AppDatabase.MIGRATION_3_4.migrate(db)
         AppDatabase.MIGRATION_4_5.migrate(db)
         AppDatabase.MIGRATION_5_6.migrate(db)
+        AppDatabase.MIGRATION_6_7.migrate(db)
 
         try {
             // v5→v6 后：lastReadPage（v3 加入）被 lastReadOffset 替代，translatedChapters 被移除

@@ -130,9 +130,7 @@ class LlmApiService : TranslationService {
                 "max_tokens" to 16000,
                 "stream" to true
             )
-            if (settings.enableThinking) {
-                requestMap["extra_body"] = mapOf("thinking" to mapOf("type" to "enabled"))
-            }
+            requestMap["thinking"] = mapOf("type" to if (settings.enableThinking) "enabled" else "disabled")
 
             val request = Request.Builder()
                 .url(chatCompletionsUrl(settings.apiBase))
@@ -177,7 +175,7 @@ class LlmApiService : TranslationService {
                             finishReason = streamChoice?.finish_reason ?: finishReason
                             val delta = streamChoice?.delta
                             val reasoning = delta?.reasoning_content ?: delta?.reasoning ?: delta?.thinking
-                            if (settings.enableThinking && !reasoning.isNullOrEmpty()) {
+                            if (!reasoning.isNullOrEmpty()) {
                                 emit(TranslationEvent.Thinking(reasoning))
                             }
                             val content = delta?.content
@@ -208,13 +206,14 @@ class LlmApiService : TranslationService {
 
     override suspend fun testConnection(settings: LlmSettings): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val requestMap = mapOf(
+            val requestMap = mutableMapOf<String, Any>(
                 "model" to settings.model,
                 "messages" to listOf(mapOf("role" to "user", "content" to "Say hi in one word.")),
                 "temperature" to 0.1,
                 "max_tokens" to 10,
                 "stream" to false
             )
+            requestMap["thinking"] = mapOf("type" to if (settings.enableThinking) "enabled" else "disabled")
             val request = Request.Builder()
                 .url(chatCompletionsUrl(settings.apiBase))
                 .addHeader("Authorization", "Bearer ${settings.apiKey}")

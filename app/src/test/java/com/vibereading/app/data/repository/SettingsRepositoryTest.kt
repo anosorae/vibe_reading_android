@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import java.io.File
@@ -44,43 +44,45 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun `empty api base falls back to default`() = runBlocking {
-        repository.saveLlmSettings(LlmSettings(apiKey = " key ", apiBase = " / ", model = " model "))
-        val settings = repository.llmSettings.first()
-        assertEquals("key", settings.apiKey)
-        assertTrue(settings.apiBase.startsWith("http://") || settings.apiBase.startsWith("https://"))
-        assertEquals("model", settings.model)
+    fun `migrateLlmKeysToProfile returns null when no keys exist`() = runBlocking {
+        val result = repository.migrateLlmKeysToProfile()
+        assertNull(result)
     }
 
     @Test
-    fun `llm settings round trip clamps context chapters`() = runBlocking {
-        repository.saveLlmSettings(
-            LlmSettings(
-                apiKey = "key",
-                apiBase = "https://example.com/v1/",
-                model = "model",
-                contextChapters = 99,
-                enableThinking = true
-            )
-        )
-        val settings = repository.llmSettings.first()
-        assertEquals("https://example.com/v1", settings.apiBase)
-        assertEquals(3, settings.contextChapters)
+    fun `migrateLlmKeysToProfile reads existing DataStore keys`() = runBlocking {
+        // 先写入旧格式的 LLM 键
+        store.updateData { prefs ->
+            val mutable = prefs.toMutablePreferences()
+            mutable[stringPreferencesKey("api_key")] = "  test-key  "
+            mutable[stringPreferencesKey("api_base")] = "  https://api.example.com/v1/  "
+            mutable[stringPreferencesKey("model")] = "  gpt-4  "
+            mutable[booleanPreferencesKey("enable_thinking")] = true
+            mutable.toPreferences()
+        }
+        val result = repository.migrateLlmKeysToProfile()
+        assertNotNull(result)
+        val settings = result!!
+        assertEquals("test-key", settings.apiKey)
+        assertEquals("https://api.example.com/v1", settings.apiBase) // 去尾斜线
+        assertEquals("gpt-4", settings.model)
         assertEquals(true, settings.enableThinking)
     }
 
     @Test
-    fun `repositories can use isolated stores`() = runBlocking {
-        val otherScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        val otherFile = File.createTempFile("vibe-settings-other", ".preferences_pb")
-        try {
-            val otherStore = PreferenceDataStoreFactory.create(scope = otherScope, produceFile = { otherFile })
-            val other = SettingsRepository(RuntimeEnvironment.getApplication(), otherStore)
-            repository.saveLlmSettings(LlmSettings(apiKey = "first"))
-            assertNotEquals("first", other.llmSettings.first().apiKey)
-        } finally {
-            otherScope.cancel()
-            otherFile.delete()
+    fun `clearMigratedLlmKeys removes old keys and sets migrated flag`() = runBlocking {
+        // 先写入旧键
+        store.updateData { prefs ->
+            val mutable = prefs.toMutablePreferences()
+            mutable[stringPreferencesKey("api_key")] = "key"
+            mutable.toPreferences()
         }
+        repository.clearMigratedLlmKeys()
+        // 再次迁移应该返回 null（已标记迁移）
+        val result = repository.migrateLlmKeysToProfile()
+        assertNull(result)
     }
 }
+
+private fun stringPreferencesKey(name: String) = androidx.datastore.preferences.core.stringPreferencesKey(name)
+private fun booleanPreferencesKey(name: String) = androidx.datastore.preferences.core.booleanPreferencesKey(name)

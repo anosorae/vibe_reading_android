@@ -22,17 +22,20 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.ui.theme.VibeColors
 
 /**
- * 阅读器内翻译设置面板：API Key / Base / Model / 章节上限 / 上下文增强 / 思考模式 / 保存 / 测试连接。
+ * 阅读器内翻译设置面板：配置选择 + API Key / Base / Model / 章节上限 / 上下文增强 / 思考模式 / 保存 / 测试连接。
  * 编辑字段由外部 ViewModel 持有，面板只负责渲染与回调。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LlmSettingsSheet(
     llmSettings: LlmSettings,
+    profiles: List<LlmProfile>,
+    activeProfileId: Long?,
     editApiKey: String,
     editApiBase: String,
     editModel: String,
@@ -47,6 +50,7 @@ fun LlmSettingsSheet(
     onUpdateContextChapters: (Int) -> Unit,
     onUpdateContextMaxChars: (Int) -> Unit,
     onToggleThinking: (Boolean) -> Unit,
+    onSwitchProfile: (Long) -> Unit,
     onSave: () -> Unit,
     onTest: () -> Unit,
     onDismiss: () -> Unit
@@ -55,6 +59,9 @@ fun LlmSettingsSheet(
 
     // 折叠区：高级选项
     var advancedExpanded by remember { mutableStateOf(false) }
+
+    // 配置选择下拉
+    var profileMenuExpanded by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -74,6 +81,56 @@ fun LlmSettingsSheet(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
+
+            // ── 配置选择下拉 ──
+            val activeProfile = profiles.find { it.id == activeProfileId }
+            ExposedDropdownMenuBox(
+                expanded = profileMenuExpanded,
+                onExpandedChange = { profileMenuExpanded = !profileMenuExpanded }
+            ) {
+                OutlinedTextField(
+                    value = activeProfile?.name?.ifEmpty { "未命名" } ?: "未选择",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("当前配置") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = profileMenuExpanded) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                    shape = RoundedCornerShape(8.dp),
+                    singleLine = true
+                )
+                ExposedDropdownMenu(
+                    expanded = profileMenuExpanded,
+                    onDismissRequest = { profileMenuExpanded = false }
+                ) {
+                    profiles.forEach { profile ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        profile.name.ifEmpty { "未命名" },
+                                        fontWeight = if (profile.id == activeProfileId) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        profile.model,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onSwitchProfile(profile.id)
+                                profileMenuExpanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
 
             // API Key
             OutlinedTextField(

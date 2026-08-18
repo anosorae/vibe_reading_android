@@ -61,7 +61,7 @@ class LlmApiServiceTest {
     }
 
     @Test
-    fun `reasoning delta is ignored when thinking is disabled`() = runTest {
+    fun `reasoning delta is always surfaced regardless of thinking setting`() = runTest {
         server.enqueue(
             MockResponse()
                 .setHeader("Content-Type", "text/event-stream")
@@ -73,7 +73,8 @@ class LlmApiServiceTest {
         )
 
         val events = service.translateStream(settings(enableThinking = false), "Title", "Paragraph").toList()
-        assertTrue(events.none { it is TranslationEvent.Thinking })
+        // 即使 enableThinking=false，如果模型仍返回了 reasoning 内容也展示
+        assertTrue(events.contains(TranslationEvent.Thinking("thinking")))
         assertTrue(events.contains(TranslationEvent.Chunk("answer")))
         assertTrue(events.contains(TranslationEvent.Done("answer")))
     }

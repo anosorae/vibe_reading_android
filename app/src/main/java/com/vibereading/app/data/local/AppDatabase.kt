@@ -6,17 +6,20 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.vibereading.app.data.local.dao.BookDao
 import com.vibereading.app.data.local.dao.ChapterDao
+import com.vibereading.app.data.local.dao.LlmProfileDao
 import com.vibereading.app.data.local.entity.BookEntity
 import com.vibereading.app.data.local.entity.ChapterEntity
+import com.vibereading.app.data.local.entity.LlmProfileEntity
 
 @Database(
-    entities = [BookEntity::class, ChapterEntity::class],
-    version = 6,
+    entities = [BookEntity::class, ChapterEntity::class, LlmProfileEntity::class],
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun chapterDao(): ChapterDao
+    abstract fun llmProfileDao(): LlmProfileDao
 
     companion object {
         @Volatile
@@ -109,6 +112,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v6→v7：新增 llm_profiles 表，支持多 LLM 配置切换。 */
+        val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS llm_profiles (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL DEFAULT '',
+                        apiKey TEXT NOT NULL DEFAULT '',
+                        apiBase TEXT NOT NULL DEFAULT 'https://api.deepseek.com',
+                        model TEXT NOT NULL DEFAULT 'deepseek-v4-flash',
+                        chapterMaxChars INTEGER NOT NULL DEFAULT 20000,
+                        enableContextBoost INTEGER NOT NULL DEFAULT 0,
+                        contextChapters INTEGER NOT NULL DEFAULT 1,
+                        contextMaxChars INTEGER NOT NULL DEFAULT 30000,
+                        enableThinking INTEGER NOT NULL DEFAULT 0,
+                        isActive INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -116,7 +140,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "vibe_reading"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                 INSTANCE = instance
                 instance

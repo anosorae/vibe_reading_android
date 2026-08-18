@@ -12,6 +12,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -24,9 +28,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.AppAccent
+import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.ThemeMode
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import com.vibereading.app.ui.theme.VibeColors
@@ -42,6 +48,7 @@ fun SettingsScreen(
     val editApiKey by vm.editApiKey.collectAsState()
     val editApiBase by vm.editApiBase.collectAsState()
     val editModel by vm.editModel.collectAsState()
+    val editName by vm.editName.collectAsState()
 
     val accentColor = if (state.theme.accent == AppAccent.WEREAD) WereadColors.Accent else VibeColors.Sienna
 
@@ -172,25 +179,52 @@ fun SettingsScreen(
                 }
 
                 if (llmExpanded) {
-                    Spacer(Modifier.height(8.dp))
-                    LlmForm(
-                        state = state,
-                        editApiKey = editApiKey,
-                        editApiBase = editApiBase,
-                        editModel = editModel,
+                    Spacer(Modifier.height(12.dp))
+
+                    // ── 配置列表 ──
+                    ProfileList(
+                        profiles = state.profiles,
+                        activeProfileId = state.activeProfileId,
                         accentColor = accentColor,
-                        onUpdateApiKey = vm::updateApiKey,
-                        onUpdateApiBase = vm::updateApiBase,
-                        onUpdateModel = vm::updateModel,
-                        onUpdateChapterMaxChars = vm::updateChapterMaxChars,
-                        onToggleContextBoost = vm::updateContextBoost,
-                        onUpdateContextChapters = vm::updateContextChapters,
-                        onUpdateContextMaxChars = vm::updateContextMaxChars,
-                        onToggleThinking = vm::updateThinking,
-                        onToggleShowApiKey = vm::toggleShowApiKey,
-                        onSave = vm::saveLlmSettings,
-                        onTest = vm::testConnection
+                        onSelect = vm::selectProfile,
+                        onEdit = vm::editProfile,
+                        onDelete = vm::deleteProfile,
+                        onAdd = vm::addProfile
                     )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // ── 编辑表单（仅编辑/新建时显示） ──
+                    if (state.editingProfile != null) {
+                        LlmProfileForm(
+                            state = state,
+                            editName = editName,
+                            editApiKey = editApiKey,
+                            editApiBase = editApiBase,
+                            editModel = editModel,
+                            accentColor = accentColor,
+                            onUpdateName = vm::updateEditName,
+                            onUpdateApiKey = vm::updateEditApiKey,
+                            onUpdateApiBase = vm::updateEditApiBase,
+                            onUpdateModel = vm::updateEditModel,
+                            onUpdateChapterMaxChars = vm::updateChapterMaxChars,
+                            onToggleContextBoost = vm::updateContextBoost,
+                            onUpdateContextChapters = vm::updateContextChapters,
+                            onUpdateContextMaxChars = vm::updateContextMaxChars,
+                            onToggleThinking = vm::updateThinking,
+                            onToggleShowApiKey = vm::toggleShowApiKey,
+                            onSave = vm::saveProfile,
+                            onTest = vm::testConnection,
+                            onCancel = vm::cancelEdit
+                        )
+                    } else {
+                        // 非编辑模式：点击"添加"或选中某配置的编辑按钮进入编辑
+                        Text(
+                            "点击  +  添加新配置，或点击配置的编辑图标修改",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -214,6 +248,374 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+/** 配置档案列表：名称 + 模型，活跃配置高亮，可切换/编辑/删除 */
+@Composable
+private fun ProfileList(
+    profiles: List<LlmProfile>,
+    activeProfileId: Long?,
+    accentColor: Color,
+    onSelect: (Long) -> Unit,
+    onEdit: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
+    onAdd: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        profiles.forEach { profile ->
+            val isActive = profile.id == activeProfileId
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onSelect(profile.id) }
+                    .background(
+                        if (isActive) accentColor.copy(alpha = 0.08f) else Color.Transparent,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .then(
+                        if (isActive) Modifier.border(1.5.dp, accentColor, RoundedCornerShape(8.dp))
+                        else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 活跃标记
+                if (isActive) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = "当前使用",
+                        tint = accentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                // 名称
+                Text(
+                    profile.name.ifEmpty { "未命名" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                // 模型
+                Text(
+                    profile.model,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.width(4.dp))
+                // 编辑
+                IconButton(
+                    onClick = { onEdit(profile.id) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Filled.Edit, "编辑", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // 删除（仅多配置时）
+                if (profiles.size > 1) {
+                    IconButton(
+                        onClick = { onDelete(profile.id) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Filled.Delete, "删除", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                    }
+                }
+            }
+        }
+
+        // 添加按钮
+        OutlinedButton(
+            onClick = onAdd,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accentColor)
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("添加配置")
+        }
+    }
+}
+
+/** 配置编辑表单：名称 + API Key / Base / Model / 高级选项 + 保存/测试 */
+@Composable
+private fun LlmProfileForm(
+    state: SettingsUiState,
+    editName: String,
+    editApiKey: String,
+    editApiBase: String,
+    editModel: String,
+    accentColor: Color,
+    onUpdateName: (String) -> Unit,
+    onUpdateApiKey: (String) -> Unit,
+    onUpdateApiBase: (String) -> Unit,
+    onUpdateModel: (String) -> Unit,
+    onUpdateChapterMaxChars: (Int) -> Unit,
+    onToggleContextBoost: (Boolean) -> Unit,
+    onUpdateContextChapters: (Int) -> Unit,
+    onUpdateContextMaxChars: (Int) -> Unit,
+    onToggleThinking: (Boolean) -> Unit,
+    onToggleShowApiKey: () -> Unit,
+    onSave: () -> Unit,
+    onTest: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val ep = state.editingProfile ?: return
+    val isnew = state.isNewProfile
+
+    // 折叠区：高级选项
+    var advancedExpanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // 标题
+        Text(
+            if (isnew) "新建配置" else "编辑配置",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = accentColor
+        )
+
+        // 配置名称
+        OutlinedTextField(
+            value = editName,
+            onValueChange = onUpdateName,
+            label = { Text("配置名称") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            singleLine = true
+        )
+
+        // API Key
+        OutlinedTextField(
+            value = editApiKey,
+            onValueChange = onUpdateApiKey,
+            label = { Text("API Key") },
+            visualTransformation = if (state.showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = onToggleShowApiKey) {
+                    Icon(
+                        if (state.showApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = if (state.showApiKey) "隐藏" else "显示"
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            singleLine = true
+        )
+
+        // API Base
+        OutlinedTextField(
+            value = editApiBase,
+            onValueChange = onUpdateApiBase,
+            label = { Text("API Base URL") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            singleLine = true
+        )
+
+        // Model
+        OutlinedTextField(
+            value = editModel,
+            onValueChange = onUpdateModel,
+            label = { Text("模型") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            singleLine = true
+        )
+
+        // ── 高级选项折叠组 ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { advancedExpanded = !advancedExpanded }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("高级选项", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            val rotation by animateFloatAsState(
+                targetValue = if (advancedExpanded) 90f else 0f,
+                label = "chevron"
+            )
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .rotate(rotation)
+                    .size(20.dp)
+            )
+        }
+
+        if (advancedExpanded) {
+            // Chapter max chars
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "${ep.chapterMaxChars}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentColor
+                )
+            }
+            Slider(
+                value = ep.chapterMaxChars.toFloat(),
+                onValueChange = { onUpdateChapterMaxChars(it.toInt()) },
+                valueRange = 1000f..200000f,
+                steps = 19,
+                colors = SliderDefaults.colors(activeTrackColor = accentColor)
+            )
+
+            // Context boost toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("上下文增强翻译", style = MaterialTheme.typography.bodyMedium)
+                    Text("包含前几章英译作为上下文", fontSize = 12.sp, color = VibeColors.WarmGray)
+                }
+                Switch(
+                    checked = ep.enableContextBoost,
+                    onCheckedChange = onToggleContextBoost,
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                )
+            }
+
+            // Context boost sub-settings
+            if (ep.enableContextBoost) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("上下文章节数", style = MaterialTheme.typography.bodySmall)
+                            Text("${ep.contextChapters}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                        }
+                        Slider(
+                            value = ep.contextChapters.toFloat(),
+                            onValueChange = { onUpdateContextChapters(it.toInt()) },
+                            valueRange = 1f..3f,
+                            steps = 1,
+                            colors = SliderDefaults.colors(activeTrackColor = accentColor)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("总字符限制", style = MaterialTheme.typography.bodySmall)
+                            Text("${ep.contextMaxChars}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                        }
+                        Slider(
+                            value = ep.contextMaxChars.toFloat(),
+                            onValueChange = { onUpdateContextMaxChars(it.toInt()) },
+                            valueRange = 5000f..500000f,
+                            colors = SliderDefaults.colors(activeTrackColor = accentColor)
+                        )
+                    }
+                }
+            }
+
+            // Thinking mode toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("思考模式", style = MaterialTheme.typography.bodyMedium)
+                    Text("允许模型输出思考过程", fontSize = 12.sp, color = VibeColors.WarmGray)
+                }
+                Switch(
+                    checked = ep.enableThinking,
+                    onCheckedChange = onToggleThinking,
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                )
+            }
+        }
+
+        // Action buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Button(
+                onClick = onSave,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                enabled = !state.isSaving
+            ) {
+                Text("保存")
+            }
+            OutlinedButton(
+                onClick = onTest,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(8.dp),
+                enabled = !state.isTesting
+            ) {
+                if (state.isTesting) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text("测试连接")
+            }
+        }
+
+        // Cancel button
+        OutlinedButton(
+            onClick = onCancel,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text("取消")
+        }
+
+        // Test result
+        if (state.testResult != null) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (state.testSuccess == true) VibeColors.SageLight else VibeColors.RedMuted.copy(alpha = 0.1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (state.testSuccess == true) "✓ 连接成功" else "✗ 连接失败",
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (state.testSuccess == true) VibeColors.Sage else VibeColors.RedMuted
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        state.testResult ?: "",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
@@ -289,216 +691,5 @@ private fun AccentPreview(
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-}
-
-@Composable
-private fun LlmForm(
-    state: SettingsUiState,
-    editApiKey: String,
-    editApiBase: String,
-    editModel: String,
-    accentColor: Color,
-    onUpdateApiKey: (String) -> Unit,
-    onUpdateApiBase: (String) -> Unit,
-    onUpdateModel: (String) -> Unit,
-    onUpdateChapterMaxChars: (Int) -> Unit,
-    onToggleContextBoost: (Boolean) -> Unit,
-    onUpdateContextChapters: (Int) -> Unit,
-    onUpdateContextMaxChars: (Int) -> Unit,
-    onToggleThinking: (Boolean) -> Unit,
-    onToggleShowApiKey: () -> Unit,
-    onSave: () -> Unit,
-    onTest: () -> Unit
-) {
-    val ls = state.llmSettings
-
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // API Key
-        OutlinedTextField(
-            value = editApiKey,
-            onValueChange = onUpdateApiKey,
-            label = { Text("API Key") },
-            visualTransformation = if (state.showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = onToggleShowApiKey) {
-                    Icon(
-                        if (state.showApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (state.showApiKey) "隐藏" else "显示"
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
-        )
-
-        // API Base
-        OutlinedTextField(
-            value = editApiBase,
-            onValueChange = onUpdateApiBase,
-            label = { Text("API Base URL") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
-        )
-
-        // Model
-        OutlinedTextField(
-            value = editModel,
-            onValueChange = onUpdateModel,
-            label = { Text("模型") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
-        )
-
-        // Chapter max chars
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "${ls.chapterMaxChars}",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = accentColor
-            )
-        }
-        Slider(
-            value = ls.chapterMaxChars.toFloat(),
-            onValueChange = { onUpdateChapterMaxChars(it.toInt()) },
-            valueRange = 1000f..200000f,
-            steps = 19,
-            colors = SliderDefaults.colors(activeTrackColor = accentColor)
-        )
-
-        // Context boost toggle
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("上下文增强翻译", style = MaterialTheme.typography.bodyMedium)
-                Text("包含前几章英译作为上下文", fontSize = 12.sp, color = VibeColors.WarmGray)
-            }
-            Switch(
-                checked = ls.enableContextBoost,
-                onCheckedChange = onToggleContextBoost,
-                colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
-            )
-        }
-
-        // Context boost sub-settings
-        if (ls.enableContextBoost) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("上下文章节数", style = MaterialTheme.typography.bodySmall)
-                        Text("${ls.contextChapters}", fontWeight = FontWeight.SemiBold, color = accentColor)
-                    }
-                    Slider(
-                        value = ls.contextChapters.toFloat(),
-                        onValueChange = { onUpdateContextChapters(it.toInt()) },
-                        valueRange = 1f..3f,
-                        steps = 1,
-                        colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("总字符限制", style = MaterialTheme.typography.bodySmall)
-                        Text("${ls.contextMaxChars}", fontWeight = FontWeight.SemiBold, color = accentColor)
-                    }
-                    Slider(
-                        value = ls.contextMaxChars.toFloat(),
-                        onValueChange = { onUpdateContextMaxChars(it.toInt()) },
-                        valueRange = 5000f..500000f,
-                        colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                    )
-                }
-            }
-        }
-
-        // Thinking mode toggle
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("思考模式", style = MaterialTheme.typography.bodyMedium)
-                Text("允许模型输出思考过程", fontSize = 12.sp, color = VibeColors.WarmGray)
-            }
-            Switch(
-                checked = ls.enableThinking,
-                onCheckedChange = onToggleThinking,
-                colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
-            )
-        }
-
-        // Action buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = onSave,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                enabled = !state.isSaving
-            ) {
-                Text("保存")
-            }
-            OutlinedButton(
-                onClick = onTest,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp),
-                enabled = !state.isTesting
-            ) {
-                if (state.isTesting) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(4.dp))
-                }
-                Text("测试连接")
-            }
-        }
-
-        // Test result
-        if (state.testResult != null) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if (state.testSuccess == true) VibeColors.SageLight else VibeColors.RedMuted.copy(alpha = 0.1f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (state.testSuccess == true) "✓ 连接成功" else "✗ 连接失败",
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (state.testSuccess == true) VibeColors.Sage else VibeColors.RedMuted
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        state.testResult ?: "",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
     }
 }

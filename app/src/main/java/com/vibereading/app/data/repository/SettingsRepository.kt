@@ -12,6 +12,7 @@ import com.vibereading.app.domain.model.ThemeMode
 import com.vibereading.app.domain.model.ThemeSettings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
@@ -21,7 +22,9 @@ class SettingsRepository(
     private val store: DataStore<Preferences> = context.dataStore
 ) {
 
-    // ── LLM Settings ──
+    // ── LLM 迁移辅助 ──
+    // LLM 配置已迁移到 Room llm_profiles 表。
+    // 以下仅用于首次启动时读取旧 DataStore 键并创建默认 profile。
 
     private object LlmKeys {
         val API_KEY = stringPreferencesKey("api_key")
@@ -32,37 +35,45 @@ class SettingsRepository(
         val CONTEXT_CHAPTERS = intPreferencesKey("context_chapters")
         val CONTEXT_MAX_CHARS = intPreferencesKey("context_max_chars")
         val ENABLE_THINKING = booleanPreferencesKey("enable_thinking")
+        val MIGRATED = booleanPreferencesKey("llm_migrated_to_room")
     }
 
     private val defaultApiBase: String
         get() = BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/').ifEmpty { "https://api.deepseek.com" }
 
-    val llmSettings: Flow<LlmSettings> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            LlmSettings(
-                apiKey = prefs[LlmKeys.API_KEY]?.trim() ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
-                apiBase = prefs[LlmKeys.API_BASE]?.trim()?.trimEnd('/')?.ifEmpty { defaultApiBase } ?: defaultApiBase,
-                model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { "deepseek-v4-flash" },
-                chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 20000,
-                enableContextBoost = prefs[LlmKeys.ENABLE_CONTEXT_BOOST] ?: false,
-                contextChapters = prefs[LlmKeys.CONTEXT_CHAPTERS]?.coerceIn(1, 3) ?: 1,
-                contextMaxChars = prefs[LlmKeys.CONTEXT_MAX_CHARS] ?: 30000,
-                enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: false
-            )
-        }
+    /**
+     * 读取 DataStore 中的旧 LLM 键，返回 [LlmSettings] 用于创建默认 profile。
+     * 如果已经迁移过（MIGRATED 标记存在）则返回 null。
+     */
+    suspend fun migrateLlmKeysToProfile(): LlmSettings? {
+        val prefs = store.data.first()
+        if (prefs[LlmKeys.MIGRATED] == true) return null
+        val hasAnyKey = prefs.contains(LlmKeys.API_KEY) || prefs.contains(LlmKeys.API_BASE) || prefs.contains(LlmKeys.MODEL)
+        if (!hasAnyKey) return null
+        return LlmSettings(
+            apiKey = prefs[LlmKeys.API_KEY]?.trim() ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
+            apiBase = prefs[LlmKeys.API_BASE]?.trim()?.trimEnd('/')?.ifEmpty { defaultApiBase } ?: defaultApiBase,
+            model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { "deepseek-v4-flash" },
+            chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 20000,
+            enableContextBoost = prefs[LlmKeys.ENABLE_CONTEXT_BOOST] ?: false,
+            contextChapters = prefs[LlmKeys.CONTEXT_CHAPTERS]?.coerceIn(1, 3) ?: 1,
+            contextMaxChars = prefs[LlmKeys.CONTEXT_MAX_CHARS] ?: 30000,
+            enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: false
+        )
+    }
 
-    suspend fun saveLlmSettings(settings: LlmSettings) {
-        val apiBase = settings.apiBase.trim().trimEnd('/').ifEmpty { defaultApiBase }
+    /** 标记迁移完成，清除旧 DataStore LLM 键 */
+    suspend fun clearMigratedLlmKeys() {
         store.edit { prefs ->
-            prefs[LlmKeys.API_KEY] = settings.apiKey.trim()
-            prefs[LlmKeys.API_BASE] = apiBase
-            prefs[LlmKeys.MODEL] = settings.model.trim()
-            prefs[LlmKeys.CHAPTER_MAX_CHARS] = settings.chapterMaxChars
-            prefs[LlmKeys.ENABLE_CONTEXT_BOOST] = settings.enableContextBoost
-            prefs[LlmKeys.CONTEXT_CHAPTERS] = settings.contextChapters.coerceIn(1, 3)
-            prefs[LlmKeys.CONTEXT_MAX_CHARS] = settings.contextMaxChars
-            prefs[LlmKeys.ENABLE_THINKING] = settings.enableThinking
+            prefs.remove(LlmKeys.API_KEY)
+            prefs.remove(LlmKeys.API_BASE)
+            prefs.remove(LlmKeys.MODEL)
+            prefs.remove(LlmKeys.CHAPTER_MAX_CHARS)
+            prefs.remove(LlmKeys.ENABLE_CONTEXT_BOOST)
+            prefs.remove(LlmKeys.CONTEXT_CHAPTERS)
+            prefs.remove(LlmKeys.CONTEXT_MAX_CHARS)
+            prefs.remove(LlmKeys.ENABLE_THINKING)
+            prefs[LlmKeys.MIGRATED] = true
         }
     }
 

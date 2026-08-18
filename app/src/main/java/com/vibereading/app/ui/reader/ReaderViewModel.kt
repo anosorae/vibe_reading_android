@@ -7,11 +7,16 @@ import com.vibereading.app.data.dict.DictDatabase
 import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
+import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.DictEntry
+import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ReadingSettings
+import com.vibereading.app.domain.model.ReadingPosition
+import com.vibereading.app.domain.model.toLlmProfile
+import com.vibereading.app.domain.model.toLlmSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -19,7 +24,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import com.vibereading.app.domain.model.ReadingPosition
 
 data class ReaderUiState(
     val bookTitle: String = "",
@@ -36,6 +40,8 @@ data class ReaderUiState(
     val mode: String = "zh",          // "zh" or "en"
     val readingSettings: ReadingSettings = ReadingSettings(),
     val llmSettings: LlmSettings = LlmSettings(),
+    val profiles: List<LlmProfile> = emptyList(),
+    val activeProfileId: Long? = null,
     val catalogVisible: Boolean = false,
     val toolbarVisible: Boolean = false,
     val settingsVisible: Boolean = false,
@@ -54,6 +60,7 @@ class ReaderViewModel(
     private val bookRepo: BookRepository,
     private val chapterRepo: ChapterRepository,
     private val settingsRepo: SettingsRepository,
+    private val llmProfileRepo: LlmProfileRepository,
     private val translationService: TranslationService,
     private val dictDatabase: DictDatabase? = null
 ) : ViewModel() {
@@ -152,14 +159,25 @@ class ReaderViewModel(
                 _uiState.update { it.copy(nightMode = night) }
             }
         }
+        // LLM 设置从 llmProfileRepo 读取（替代原 settingsRepo.llmSettings）
         viewModelScope.launch {
-            settingsRepo.llmSettings.collect { ls ->
+            llmProfileRepo.activeLlmSettings.collect { ls ->
                 _uiState.update { it.copy(llmSettings = ls) }
                 if (!llmEditDirty) {
                     _editApiKey.value = ls.apiKey
                     _editApiBase.value = ls.apiBase
                     _editModel.value = ls.model
                 }
+            }
+        }
+        viewModelScope.launch {
+            llmProfileRepo.profiles.collect { list ->
+                _uiState.update { it.copy(profiles = list) }
+            }
+        }
+        viewModelScope.launch {
+            llmProfileRepo.activeProfile.collect { profile ->
+                _uiState.update { it.copy(activeProfileId = profile?.id) }
             }
         }
     }
@@ -290,7 +308,16 @@ class ReaderViewModel(
         viewModelScope.launch { settingsRepo.saveNightMode(new) }
     }
 
-    // ── LLM settings (翻译设置面板) ──
+    // ── Profile 切换 ──
+
+    /** 切换活跃配置（即时生效，下次翻译用新配置） */
+    fun switchProfile(id: Long) {
+        viewModelScope.launch {
+            llmProfileRepo.setActive(id)
+        }
+    }
+
+    // ── LLM settings (翻译设置面板 — 编辑当前活跃配置) ──
 
     /** 打开面板时从最新持久化值填充；已有草稿则保持不变。 */
     fun initLlmEditFields() {
@@ -339,12 +366,18 @@ class ReaderViewModel(
             model = _editModel.value.trim()
         )
 
+    /** 保存当前活跃配置的编辑 */
     fun saveLlmSettings() {
         viewModelScope.launch {
             val newSettings = currentEditedLlmSettings()
             try {
                 _uiState.update { it.copy(llmSettings = newSettings, llmTestResult = null, llmTestSuccess = null) }
-                settingsRepo.saveLlmSettings(newSettings)
+                // 更新 Room 中的活跃 profile
+                val activeId = _uiState.value.activeProfileId ?: return@launch
+                val profile = _uiState.value.profiles.find { it.id == activeId }
+                    ?: return@launch
+                val updated = newSettings.toLlmProfile(name = profile.name, id = activeId)
+                llmProfileRepo.updateProfileWithActiveState(updated, isActive = true)
                 llmEditDirty = false
             } catch (e: CancellationException) {
                 throw e
@@ -360,7 +393,15 @@ class ReaderViewModel(
             val newSettings = currentEditedLlmSettings()
             try {
                 _uiState.update { it.copy(llmSettings = newSettings) }
-                settingsRepo.saveLlmSettings(newSettings)
+                // 先保存再测试
+                val activeId = _uiState.value.activeProfileId
+                if (activeId != null) {
+                    val profile = _uiState.value.profiles.find { it.id == activeId }
+                    if (profile != null) {
+                        val updated = newSettings.toLlmProfile(name = profile.name, id = activeId)
+                        llmProfileRepo.updateProfileWithActiveState(updated, isActive = true)
+                    }
+                }
                 val result = translationService.testConnection(newSettings)
                 _uiState.update {
                     it.copy(
@@ -428,13 +469,14 @@ class ReaderViewModel(
         private val bookRepo: BookRepository,
         private val chapterRepo: ChapterRepository,
         private val settingsRepo: SettingsRepository,
+        private val llmProfileRepo: LlmProfileRepository,
         private val translationService: TranslationService,
         private val dictDatabase: DictDatabase? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ReaderViewModel(
-                bookId, bookRepo, chapterRepo, settingsRepo, translationService, dictDatabase
+                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase
             ) as T
         }
     }

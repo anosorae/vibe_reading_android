@@ -898,8 +898,8 @@ fun ReaderScreen(
             }
         }
 
-        // ── 页眉/页脚（视觉覆盖层，仅分页模式；浮层打开 / 翻译中隐藏，避免与顶栏/底部栏重叠）──
-        if (isPagerMode && window.pageCount > 0 && !overlayVisible && !state.isStreaming) {
+        // ── 页眉/页脚（视觉覆盖层，仅分页模式；顶栏/底栏隐藏，底部面板不遮挡）──
+        if (isPagerMode && window.pageCount > 0 && !state.toolbarVisible) {
             PageInfoOverlays(
                 window = window,
                 chapters = state.chapters,
@@ -908,7 +908,8 @@ fun ReaderScreen(
                 palette = palette,
                 padH = readingSettings.paddingH,
                 padV = readingSettings.paddingV,
-                overlayContentGap = readingSettings.overlayContentGap,
+                headerContentGap = readingSettings.headerContentGap,
+                footerContentGap = readingSettings.footerContentGap,
                 statusBarPx = statusBarPx,
                 navBarPx = navBarPx,
                 cutoutLeftPx = cutoutLeftPx,

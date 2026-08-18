@@ -88,7 +88,9 @@ class SettingsRepository(
         val PAGE_FLIP_MODE = stringPreferencesKey("page_flip_mode")
         val PADDING_H = intPreferencesKey("padding_h")
         val PADDING_V = intPreferencesKey("padding_v")
-        val OVERLAY_CONTENT_GAP = intPreferencesKey("overlay_content_gap")
+        val OVERLAY_CONTENT_GAP = intPreferencesKey("overlay_content_gap")  // 旧版兼容
+        val HEADER_CONTENT_GAP = intPreferencesKey("header_content_gap")
+        val FOOTER_CONTENT_GAP = intPreferencesKey("footer_content_gap")
         val LETTER_SPACING = floatPreferencesKey("letter_spacing")
         val JUSTIFY = booleanPreferencesKey("justify")
         val INDENT_EM = floatPreferencesKey("indent_em")
@@ -113,7 +115,8 @@ class SettingsRepository(
                 pageFlipMode = prefs[ReadingKeys.PAGE_FLIP_MODE] ?: ReadingSettings.FLIP_PAGER,
                 paddingH = prefs[ReadingKeys.PADDING_H] ?: 22,
                 paddingV = prefs[ReadingKeys.PADDING_V] ?: 20,
-                overlayContentGap = prefs[ReadingKeys.OVERLAY_CONTENT_GAP] ?: 20,
+                headerContentGap = prefs[ReadingKeys.HEADER_CONTENT_GAP] ?: prefs[ReadingKeys.OVERLAY_CONTENT_GAP] ?: 20,
+                footerContentGap = prefs[ReadingKeys.FOOTER_CONTENT_GAP] ?: prefs[ReadingKeys.OVERLAY_CONTENT_GAP] ?: 20,
                 letterSpacing = prefs[ReadingKeys.LETTER_SPACING] ?: 0f,
                 justify = prefs[ReadingKeys.JUSTIFY] ?: true,
                 indentEm = prefs[ReadingKeys.INDENT_EM] ?: 2f,
@@ -136,7 +139,8 @@ class SettingsRepository(
             prefs[ReadingKeys.PAGE_FLIP_MODE] = settings.pageFlipMode
             prefs[ReadingKeys.PADDING_H] = settings.paddingH
             prefs[ReadingKeys.PADDING_V] = settings.paddingV
-            prefs[ReadingKeys.OVERLAY_CONTENT_GAP] = settings.overlayContentGap
+            prefs[ReadingKeys.HEADER_CONTENT_GAP] = settings.headerContentGap
+            prefs[ReadingKeys.FOOTER_CONTENT_GAP] = settings.footerContentGap
             prefs[ReadingKeys.LETTER_SPACING] = settings.letterSpacing
             prefs[ReadingKeys.JUSTIFY] = settings.justify
             prefs[ReadingKeys.INDENT_EM] = settings.indentEm

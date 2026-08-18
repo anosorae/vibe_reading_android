@@ -46,11 +46,11 @@ fun ReaderSettingsSheet(
         ReaderBgPresets.DarkNight
     )
     val flipModes = listOf(
-        ReadingSettings.FLIP_SCROLL to "上下",
         ReadingSettings.FLIP_PAGER to "平移",
+        ReadingSettings.FLIP_SIMULATION to "仿真",
         ReadingSettings.FLIP_COVER to "覆盖",
         ReadingSettings.FLIP_NO_ANIM to "无动画",
-        ReadingSettings.FLIP_SIMULATION to "仿真"
+        ReadingSettings.FLIP_SCROLL to "上下"
     )
     // 自定义字体：SAF 选择 TTF/OTF，持久化 content:// URI（跨重启恢复）
     val context = LocalContext.current
@@ -94,7 +94,7 @@ fun ReaderSettingsSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("阅读设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
@@ -222,12 +222,20 @@ fun ReaderSettingsSheet(
             ) { onUpdate(settings.copy(paddingV = it.toInt())) }
 
             SettingSliderRow(
-                title = "页眉页脚间距",
-                value = settings.overlayContentGap.toFloat(),
-                display = "${settings.overlayContentGap}dp",
+                title = "页眉间距",
+                value = settings.headerContentGap.toFloat(),
+                display = "${settings.headerContentGap}dp",
                 range = 0f..50f,
                 accentColor = accentColor
-            ) { onUpdate(settings.copy(overlayContentGap = it.toInt())) }
+            ) { onUpdate(settings.copy(headerContentGap = it.toInt())) }
+
+            SettingSliderRow(
+                title = "页脚间距",
+                value = settings.footerContentGap.toFloat(),
+                display = "${settings.footerContentGap}dp",
+                range = 0f..50f,
+                accentColor = accentColor
+            ) { onUpdate(settings.copy(footerContentGap = it.toInt())) }
 
             SettingSliderRow(
                 title = "字间距",
@@ -327,22 +335,20 @@ private fun SettingSliderRow(
     step: Float = 0f,
     onValueChange: (Float) -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(display, fontWeight = FontWeight.SemiBold, color = accentColor, fontSize = 13.sp)
-        }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, fontSize = 12.sp, modifier = Modifier.width(72.dp))
         Slider(
             value = value,
             onValueChange = onValueChange,
             valueRange = range,
             steps = if (step > 0f) ((range.endInclusive - range.start) / step).toInt() - 1 else 0,
             colors = SliderDefaults.colors(activeTrackColor = accentColor),
-            modifier = Modifier.height(28.dp)
+            modifier = Modifier.weight(1f).height(24.dp)
         )
+        Text(display, fontWeight = FontWeight.SemiBold, color = accentColor, fontSize = 12.sp,
+            modifier = Modifier.width(52.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
     }
 }

@@ -51,7 +51,8 @@ fun PageInfoOverlays(
     palette: ReaderPalette,
     padH: Int,
     padV: Int,
-    overlayContentGap: Int = 20,
+    headerContentGap: Int = 20,
+    footerContentGap: Int = 20,
     statusBarPx: Int,
     navBarPx: Int,
     cutoutLeftPx: Int = 0,
@@ -118,7 +119,7 @@ fun PageInfoOverlays(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(
-                    top = contentTopDp - overlayContentGap.dp - overlayTextHeightDp,
+                    top = contentTopDp - headerContentGap.dp - overlayTextHeightDp,
                     start = maxOf(padH.dp, cutoutLeftDp)
                 )
         )
@@ -132,7 +133,7 @@ fun PageInfoOverlays(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
-                    bottom = contentBottomDp - overlayContentGap.dp - overlayTextHeightDp,
+                    bottom = contentBottomDp - footerContentGap.dp - overlayTextHeightDp,
                     start = maxOf(padH.dp, cutoutLeftDp)
                 )
         )
@@ -145,7 +146,7 @@ fun PageInfoOverlays(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(
-                    bottom = contentBottomDp - overlayContentGap.dp - overlayTextHeightDp,
+                    bottom = contentBottomDp - footerContentGap.dp - overlayTextHeightDp,
                     end = maxOf(padH.dp, cutoutRightDp)
                 )
         )

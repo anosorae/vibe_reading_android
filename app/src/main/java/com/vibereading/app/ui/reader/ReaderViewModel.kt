@@ -268,28 +268,37 @@ class ReaderViewModel(
     }
 
     fun toggleCatalog() {
-        _uiState.update { it.copy(catalogVisible = !it.catalogVisible) }
+        _uiState.update {
+            val opening = !it.catalogVisible
+            it.copy(catalogVisible = true, toolbarVisible = if (opening) false else it.toolbarVisible)
+        }
     }
 
     fun dismissCatalog() {
-        _uiState.update { it.copy(catalogVisible = false) }
+        _uiState.update { it.copy(catalogVisible = false, toolbarVisible = true) }
     }
 
     fun toggleSettings() {
-        _uiState.update { it.copy(settingsVisible = !it.settingsVisible) }
+        _uiState.update {
+            val opening = !it.settingsVisible
+            it.copy(settingsVisible = true, toolbarVisible = if (opening) false else it.toolbarVisible)
+        }
     }
 
     fun dismissSettings() {
-        _uiState.update { it.copy(settingsVisible = false) }
+        _uiState.update { it.copy(settingsVisible = false, toolbarVisible = true) }
     }
 
     fun toggleLlmSettings() {
-        _uiState.update { it.copy(llmSettingsVisible = !it.llmSettingsVisible) }
+        _uiState.update {
+            val opening = !it.llmSettingsVisible
+            it.copy(llmSettingsVisible = true, toolbarVisible = if (opening) false else it.toolbarVisible)
+        }
     }
 
     fun dismissLlmSettings() {
         llmEditDirty = false
-        _uiState.update { it.copy(llmSettingsVisible = false, editingProfileId = null, llmTestResult = null, llmTestSuccess = null) }
+        _uiState.update { it.copy(llmSettingsVisible = false, editingProfileId = null, llmTestResult = null, llmTestSuccess = null, toolbarVisible = true) }
     }
 
     fun dismissAllOverlays() {

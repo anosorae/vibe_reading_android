@@ -10,7 +10,8 @@ data class ReadingSettings(
     // ── B 类参数（对齐 Legado ReadBookConfig） ──
     val paddingH: Int = 22,            // 页内左右边距（dp，Legado 微信读书预设 22）
     val paddingV: Int = 20,            // 页内上下边距（dp，正文区上下留白）
-    val overlayContentGap: Int = 20,   // 页眉/页脚与正文内容区间距（dp）
+    val headerContentGap: Int = 20,    // 页眉与正文内容区间距（dp）
+    val footerContentGap: Int = 20,    // 页脚与正文内容区间距（dp）
     val letterSpacing: Float = 0f,     // 字间距（em，-0.5~0.5，与字号成比例；Legado 预设 0.1）
     val justify: Boolean = true,       // 两端对齐（对齐 Legado textFullJustify 全局默认开）
     val indentEm: Float = 2f,          // 首行缩进（em，两全角空格 ≈ 2em）

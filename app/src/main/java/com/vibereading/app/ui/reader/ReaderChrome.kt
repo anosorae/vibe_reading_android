@@ -288,11 +288,11 @@ private fun BottomAction(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 2.dp)
     ) {
-        Icon(icon, contentDescription = label, tint = tint.copy(alpha = alpha), modifier = Modifier.size(22.dp))
-        Spacer(Modifier.height(2.dp))
-        Text(label, fontSize = 11.sp, color = tint.copy(alpha = alpha))
+        Icon(icon, contentDescription = label, tint = tint.copy(alpha = alpha), modifier = Modifier.size(18.dp))
+        Spacer(Modifier.height(1.dp))
+        Text(label, fontSize = 10.sp, color = tint.copy(alpha = alpha))
     }
 }
 

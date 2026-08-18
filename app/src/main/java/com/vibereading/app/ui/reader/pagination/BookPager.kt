@@ -79,6 +79,10 @@ class SimFlipState {
     // 新触摸打断动画时据此把翻页稳妥落地（snap），避免动画中途消失且翻页不生效（突兀）。
     var settleTarget by mutableIntStateOf(-1)
 
+    // 本手势 DOWN 是否刚打断并提交了一次翻页：打断后该手势的左右点按视为「打断确认」，
+    // 不再重复翻页（否则 PREV 右滑被打断后又被点按翻回原页，右下角反复卷页乱闪、反直觉）。
+    var downSettledFlip by mutableStateOf(false)
+
     // ── 手势状态（对齐 Legado PageDelegate）──
     var isMoved by mutableStateOf(false)
     var isCancel by mutableStateOf(false)
@@ -93,6 +97,7 @@ class SimFlipState {
         isMoved = false
         isCancel = false
         isRunning = false
+        downSettledFlip = false
         direction = PageCurl.Direction.NEXT
         startX = x
         startY = y

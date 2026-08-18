@@ -55,6 +55,16 @@ class SimFlipStateTest {
     }
 
     @Test
+    fun onDown_resetsDownSettledFlip() {
+        // 打断标记只属于发起打断的那个手势自身：新手势 DOWN 必须重置，
+        // 否则上一次打断的 flag 会误吞下一次正常点按的翻页。
+        val state = SimFlipState()
+        state.downSettledFlip = true
+        state.onDown(x = 10f, y = 10f)
+        assertEquals(false, state.downSettledFlip)
+    }
+
+    @Test
     fun settlePage_commitsRunningAnimationTarget() {
         val state = SimFlipState()
         // 动画进行中被打断：应提交到动画本要落地的页

@@ -656,6 +656,8 @@ fun ReaderScreen(
                         val downX = down.position.x
                         val downY = down.position.y
                         simFlip.onDown(downX, downY)
+                        // 本次 DOWN 打断了动画并提交翻页：该手势的左右点按只作「打断确认」，不再翻页
+                        simFlip.downSettledFlip = settle >= 0
                         simFlip.calcCornerXY(downX, viewW, viewH)
                         simFlip.curl.setViewSize(viewW, viewH)
                         // 已有选区时：DOWN 即清除（新长按可立即重新选词），本次手势结束时不再翻页
@@ -693,12 +695,20 @@ fun ReaderScreen(
                                     if (overlayVisible) {
                                         vm.dismissAllOverlays()
                                     } else {
+                                        // 本手势 DOWN 已打断并提交了一次翻页：左右点按视为「打断确认」，
+                                        // 不再重复翻页（否则 PREV 右滑被打断后又被点按翻回原页，右下角
+                                        // 反复卷页乱闪、反直觉）；中间 1/3 仍可开关工具栏。
+                                        val flipConsumed = simFlip.downSettledFlip
                                         // 单手模式：左 1/3 点击也翻下一页（左手拇指够不到右侧）
                                         val leftGoNext = oneHandMode
                                         when {
-                                            x < third -> goPage(pagerState.currentPage + if (leftGoNext) 1 else -1)
+                                            x < third -> {
+                                                if (!flipConsumed) goPage(pagerState.currentPage + if (leftGoNext) 1 else -1)
+                                            }
                                             x < third * 2 -> vm.toggleToolbar()
-                                            else -> goPage(pagerState.currentPage + 1)
+                                            else -> {
+                                                if (!flipConsumed) goPage(pagerState.currentPage + 1)
+                                            }
                                         }
                                     }
                                 }

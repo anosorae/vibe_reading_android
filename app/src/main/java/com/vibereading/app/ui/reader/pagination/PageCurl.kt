@@ -378,8 +378,10 @@ class PageCurl(
     private fun calcPoints() {
         mMiddleX = (mTouchX + mCornerX) / 2
         mMiddleY = (mTouchY + mCornerY) / 2
-        mBezierControl1.x =
-            mMiddleX - (mCornerY - mMiddleY) * (mCornerY - mMiddleY) / (mCornerX - mMiddleX)
+        // 防止 mTouchX == mCornerX 时 mMiddleX == mCornerX 导致分母为 0
+        val dxCorner = mCornerX - mMiddleX
+        mBezierControl1.x = if (dxCorner == 0f) mMiddleX
+            else mMiddleX - (mCornerY - mMiddleY) * (mCornerY - mMiddleY) / dxCorner
         mBezierControl1.y = mCornerY
         mBezierControl2.x = mCornerX
 
@@ -410,7 +412,8 @@ class PageCurl(
                 mMiddleY = (mTouchY + mCornerY) / 2
 
                 mBezierControl1.x =
-                    mMiddleX - (mCornerY - mMiddleY) * (mCornerY - mMiddleY) / (mCornerX - mMiddleX)
+                    if (mCornerX == mMiddleX) mMiddleX
+                    else mMiddleX - (mCornerY - mMiddleY) * (mCornerY - mMiddleY) / (mCornerX - mMiddleX)
                 mBezierControl1.y = mCornerY
 
                 mBezierControl2.x = mCornerX
@@ -450,16 +453,54 @@ class PageCurl(
         mBezierVertex2.y = (2 * mBezierControl2.y + mBezierStart2.y + mBezierEnd2.y) / 4
     }
 
-    /**
-     * 求解直线P1P2和直线P3P4的交点坐标
+/**
+     * 求解直线P1P2和直线P3P4的交点坐标（带除零保护）。
+     * - 垂直线（dx==0）：单独处理，避免 Infinity
+     * - 平行线（a1==a2）：无交点，返回四点中心，避免 NaN
      */
     private fun getCross(P1: PointF, P2: PointF, P3: PointF, P4: PointF): PointF {
         val crossP = PointF()
-        // 二元函数通式： y=ax+b
-        val a1 = (P2.y - P1.y) / (P2.x - P1.x)
-        val b1 = (P1.x * P2.y - P2.x * P1.y) / (P1.x - P2.x)
-        val a2 = (P4.y - P3.y) / (P4.x - P3.x)
-        val b2 = (P3.x * P4.y - P4.x * P3.y) / (P3.x - P4.x)
+        val dx1 = P2.x - P1.x
+        val dy1 = P2.y - P1.y
+        val dx2 = P4.x - P3.x
+        val dy2 = P4.y - P3.y
+
+        // 两条都是垂直线：平行无交点，取 X 中点
+        if (dx1 == 0f && dx2 == 0f) {
+            crossP.x = P1.x
+            crossP.y = (P1.y + P2.y + P3.y + P4.y) / 4f
+            return crossP
+        }
+        // P1P2 垂直：x 固定，代入 P3P4 方程求 y
+        if (dx1 == 0f) {
+            crossP.x = P1.x
+            val a2 = dy2 / dx2
+            val b2 = P3.y - a2 * P3.x
+            crossP.y = a2 * crossP.x + b2
+            return crossP
+        }
+        // P3P4 垂直：x 固定，代入 P1P2 方程求 y
+        if (dx2 == 0f) {
+            crossP.x = P3.x
+            val a1 = dy1 / dx1
+            val b1 = P1.y - a1 * P1.x
+            crossP.y = a1 * crossP.x + b1
+            return crossP
+        }
+
+        // 一般情况：y = ax + b
+        val a1 = dy1 / dx1
+        val b1 = P1.y - a1 * P1.x
+        val a2 = dy2 / dx2
+        val b2 = P3.y - a2 * P3.x
+
+        // 平行线：无交点，取四点中心，避免 NaN
+        if (a1 == a2) {
+            crossP.x = (P1.x + P2.x + P3.x + P4.x) / 4f
+            crossP.y = (P1.y + P2.y + P3.y + P4.y) / 4f
+            return crossP
+        }
+
         crossP.x = (b2 - b1) / (a1 - a2)
         crossP.y = a1 * crossP.x + b1
         return crossP

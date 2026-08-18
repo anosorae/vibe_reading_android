@@ -3,6 +3,7 @@ package com.vibereading.app.ui.reader
 import android.app.Activity
 import android.graphics.Bitmap
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -183,6 +184,8 @@ fun ReaderScreen(
     val pagerState = rememberPagerState(initialPage = 0) { window.pageCount }
     val scope = rememberCoroutineScope()
     val simFlip = remember { SimFlipState() }
+    // 仿真卷页动画协程句柄：新手势/切模式时取消旧动画，防止新旧 touchX/Y 互相干扰
+    var simFlipJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     // 长按选词状态（瞬时交互：翻页/滚动/切章/开浮层时清除）
     val selectionState = remember { TextSelectionState() }
     // 词典弹窗锚点（查词时从选区位置捕获，选区清除后弹窗仍停在该处）
@@ -190,6 +193,8 @@ fun ReaderScreen(
 
     // mode 切换时清除仿真卷页旧位图，避免反面显示旧模式文字
     LaunchedEffect(state.mode) {
+        simFlipJob?.cancel()
+        simFlipJob = null
         simFlip.cleanup()
     }
 
@@ -272,6 +277,7 @@ fun ReaderScreen(
     /** 启动仿真卷页自动动画（对齐 Legado Scroller 式：cancel 回弹 / complete 完成）。 */
     fun startSimFlip(cur: Int, next: Int, goingNext: Boolean) {
         if (simFlip.isRunning) return
+        simFlipJob?.cancel()
         val pair = curlBitmaps(cur, next)
         if (pair == null) {
             scope.launch { if (pagerState.currentPage != next) pagerState.scrollToPage(next) }
@@ -312,14 +318,14 @@ fun ReaderScreen(
         simFlip.isCancel = false
 
         // Scroller 式动画（对齐 Legado onAnimStart）
-        scope.launch {
+        simFlipJob = scope.launch {
             val startTouchX = simFlip.touchX
             val startTouchY = simFlip.touchY
             // complete: 滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
             val dx = if (goingNext) {
                 if (simFlip.cornerX > 0f) -(wf + startTouchX) else wf - startTouchX
             } else {
-                wf - startTouchX
+                wf + wf - startTouchX   // PREV: 往右滚过屏幕，越过右边缘
             }
             val dy = if (simFlip.cornerY > 0f) (hf - startTouchY) else (1f - startTouchY)
             val animationSpeed = 600 // ms，对齐 Legado defaultAnimationSpeed 量级
@@ -343,33 +349,32 @@ fun ReaderScreen(
                 pagerState.scrollToPage(next)
             }
             simFlip.cleanup()
+            simFlipJob = null
         }
     }
 
     /** 仿真卷页抬手动画（对齐 Legado SimulationPageDelegate.onAnimStart：cancel 回弹 / complete 完成）。 */
     fun simFlipAnimStart(cur: Int, target: Int) {
+        simFlipJob?.cancel()
         simFlip.isRunning = true
         val wf = screenWidthPx.toFloat()
         val hf = screenHeightPx.toFloat()
-        scope.launch {
+        simFlipJob = scope.launch {
             val startTouchX = simFlip.touchX
             val startTouchY = simFlip.touchY
             val dx: Float
             val dy: Float
             if (simFlip.isCancel) {
-                // 回弹：滚回屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart isCancel）
-                dx = if (startTouchX > wf / 2) {
-                    wf - startTouchX   // touch 在右半 → 滚回右边
-                } else {
-                    -startTouchX       // touch 在左半 → 滚回左边
-                }
-                dy = if (simFlip.cornerY > 0f) hf - startTouchY else -startTouchY
+                // 回弹：滚回手势起点（对齐 Legado SimulationPageDelegate.onAnimStart isCancel）
+                // 不能按半屏宽度猜测边缘——PREV 起点在左侧却会错误滚到右边
+                dx = simFlip.startX - startTouchX
+                dy = simFlip.startY - startTouchY
             } else {
                 // 完成：滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
                 if (simFlip.direction == PageCurl.Direction.NEXT) {
                     dx = -(wf + startTouchX)     // NEXT: 往左滚过屏幕
                 } else {
-                    dx = wf - startTouchX         // PREV: 往右滚过屏幕
+                    dx = wf + wf - startTouchX   // PREV: 往右滚过屏幕，越过右边缘
                 }
                 dy = if (simFlip.cornerY > 0f) hf - startTouchY else 1f - startTouchY
             }
@@ -395,6 +400,7 @@ fun ReaderScreen(
                 }
             }
             simFlip.cleanup()
+            simFlipJob = null
         }
     }
 
@@ -565,6 +571,19 @@ fun ReaderScreen(
         }
     }
 
+    // 系统返回键：恢复系统栏 + 存储进度 + 返回（对齐工具栏返回按钮行为）
+    BackHandler {
+        immersiveActivity?.window?.let { window ->
+            val controller = WindowCompat.getInsetsController(window, immersiveView)
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+        }
+        flushScope.launch {
+            vm.flushProgress()
+            onBack()
+        }
+    }
+
     // 对齐 Legado：toolBarHide + hideStatusBar/hideNavigationBar 双条件控制
     // WindowCompat.getInsetsController 内部按 API 级别走 window.insetsController（R+）
     // 或 systemUiVisibility flags（legacy），对齐 Legado 双路径但用统一 compat 接口
@@ -614,6 +633,10 @@ fun ReaderScreen(
                         val slopSquare = 30f * 30f // 对齐 Legado pageSlopSquare2
 
                         // DOWN: 记录起点，reset 状态，计算角落
+                        // 先取消上一次未完成的动画协程（快速连滑时旧动画仍在更新 touchX/Y）
+                        simFlipJob?.cancel()
+                        simFlipJob = null
+                        simFlip.cleanup()
                         val downX = down.position.x
                         val downY = down.position.y
                         simFlip.onDown(downX, downY)
@@ -804,7 +827,9 @@ fun ReaderScreen(
                         statusBarPx = statusBarPx,
                         navBarPx = navBarPx,
                         simFlip = simFlip,
-                        selectionState = selectionState
+                        // 卷页动画进行中禁用长按选词：用户手指在做翻页手势，
+                        // 此时 SelectableParagraphText 若仍接收长按会误触发查词
+                        selectionState = if (simFlip.isRunning) null else selectionState
                     )
                 }
             }
@@ -872,6 +897,12 @@ fun ReaderScreen(
                 activeChapterStatus = state.activeChapter?.status,
                 barColor = bgColor,
                 onBack = {
+                    // 离开前恢复系统栏，避免书架布局跳动
+                    immersiveActivity?.window?.let { window ->
+                        val controller = WindowCompat.getInsetsController(window, immersiveView)
+                        controller.show(WindowInsetsCompat.Type.systemBars())
+                        controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+                    }
                     flushScope.launch {
                         vm.flushProgress()
                         onBack()

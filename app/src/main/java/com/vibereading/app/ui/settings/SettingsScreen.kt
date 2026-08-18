@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.ThemeMode
+import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.WereadColors
 
@@ -47,9 +48,14 @@ fun SettingsScreen(
     // 折叠区：翻译设置
     var llmExpanded by remember { mutableStateOf(true) }
 
+    // 稳定系统栏 insets：沉浸式切换时不归零，防止布局跳动
+    val stableInsets = LocalStableSystemBarInsets.current
+
     Scaffold(
+        contentWindowInsets = stableInsets,
         topBar = {
             TopAppBar(
+                windowInsets = stableInsets,
                 title = { Text("设置", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

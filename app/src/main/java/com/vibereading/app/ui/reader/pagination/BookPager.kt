@@ -128,19 +128,21 @@ class SimFlipState {
         }
     }
 
-    /** 垂直位置调整（对齐 Legado SimulationPageDelegate.onTouch MOVE） */
-    fun adjustTouchY(viewHeight: Float) {
-        if ((startY > viewHeight / 3 && startY < viewHeight * 2 / 3)
-            || direction == PageCurl.Direction.PREV
-        ) {
-            touchY = viewHeight
+/** 垂直位置调整（对齐 Legado SimulationPageDelegate.onTouch MOVE）。
+         *  PREV 方向卷页角固定右下，触摸点强制到底部；
+         *  NEXT 方向按 startY 区间分段：上中段吸顶、中下段吸底、其余保持手势原值。 */
+        fun adjustTouchY(viewHeight: Float) {
+            when (direction) {
+                PageCurl.Direction.PREV -> touchY = viewHeight
+                PageCurl.Direction.NEXT -> {
+                    when {
+                        startY > viewHeight / 3 && startY < viewHeight / 2 -> touchY = 1f
+                        startY >= viewHeight / 2 && startY < viewHeight * 2 / 3 -> touchY = viewHeight
+                        // else：保持手势跟踪的原始 Y 值
+                    }
+                }
+            }
         }
-        if (startY > viewHeight / 3 && startY < viewHeight / 2
-            && direction == PageCurl.Direction.NEXT
-        ) {
-            touchY = 1f
-        }
-    }
 
     /** 清除位图并停止动画 */
     fun cleanup() {

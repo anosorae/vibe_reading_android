@@ -1,5 +1,6 @@
 package com.vibereading.app.ui.bookshelf
 
+import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,13 +35,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.BookShelfItem
+import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.WereadColors
 
@@ -79,9 +85,25 @@ fun BookshelfScreen(
         }
     }
 
+    // 从阅读器返回时确保系统栏恢复（安全网：阅读器 onDispose 异步延迟时的兜底）
+    val restoreView = LocalView.current
+    val restoreActivity = context as? Activity
+    LaunchedEffect(Unit) {
+        restoreActivity?.window?.let { window ->
+            val controller = WindowCompat.getInsetsController(window, restoreView)
+            controller.show(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+        }
+    }
+
+    // 稳定系统栏 insets：沉浸式切换时不归零，防止从阅读器返回时布局跳动
+    val stableInsets = LocalStableSystemBarInsets.current
+
     Scaffold(
+        contentWindowInsets = stableInsets,
         topBar = {
             TopAppBar(
+                windowInsets = stableInsets,
                 title = {
                     if (searchExpanded) {
                         OutlinedTextField(

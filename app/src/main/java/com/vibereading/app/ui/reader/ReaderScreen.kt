@@ -217,7 +217,9 @@ fun ReaderScreen(
         val sourceOffset = when {
             isProgrammatic -> pagerJumpOffset
             !initialSeekDone -> state.position?.offset ?: 0
-            else -> window.offsetOfPage(pagerState.currentPage)?.first ?: (state.position?.offset ?: 0)
+            // 窗口重建时 pagerState.currentPage 是旧窗口页索引，映射到新窗口会错位；
+            // 始终使用 state.position 的 offset 作为主源（由翻页进度写入，始终可靠）。
+            else -> state.position?.offset ?: 0
         }
         windowSliding = true
         window.recenterSync(target, includeNeighbors = false)
@@ -241,9 +243,10 @@ fun ReaderScreen(
         if (!window.hasNeighbors(target)) {
             window.paginateNeighbors(target) // 后台排版，不阻塞 UI
         }
-        // 以当前视觉页为准扩展（用户翻页不被打断；切章会取消本协程由新实例处理）
-        val curChapter = window.chapterOfPage(pagerState.currentPage)
-        val curOffset = window.offsetOfPage(pagerState.currentPage)?.first
+        // 窗口重建时 pagerState.currentPage 是旧索引，用新窗口取偏移会错位；
+        // 以 state.position 为准（由翻页进度写入，始终可靠）。
+        val curChapter = state.activeChapterId
+        val curOffset = state.position?.offset
         window.recenterSync(target)
         val newIdx = window.indexOf(curChapter ?: target, curOffset?.toLong() ?: 0L)
             ?: window.indexOf(target, 0)
@@ -252,7 +255,9 @@ fun ReaderScreen(
     }
 
     // 分页模式：翻页时保存「章 + 章内页」进度；翻入新章同步 activeChapter（触发窗口滑动）
-    LaunchedEffect(pagerState.currentPage, window, isPagerMode) {
+    // 不含 window 键：窗口重建时 pagerState.currentPage 是旧索引，用新窗口取偏移会污染 position；
+    // 窗口重建后的位置恢复由上方 recenterSync LaunchedEffect 负责。
+    LaunchedEffect(pagerState.currentPage, isPagerMode) {
         if (!isPagerMode || !initialSeekDone || windowSliding) return@LaunchedEffect
         val cp = window.chapterOfPage(pagerState.currentPage) ?: return@LaunchedEffect
         val offset = window.offsetOfPage(pagerState.currentPage)?.first ?: return@LaunchedEffect

@@ -169,6 +169,10 @@ class ReaderViewModel(
                     _editApiBase.value = ls.apiBase
                     _editModel.value = ls.model
                 }
+                // 配置变更后重新评估当前章节是否需要翻译
+                if (_uiState.value.mode == "en") {
+                    _uiState.value.activeChapterId?.let { maybeTranslateChapter(it) }
+                }
             }
         }
         viewModelScope.launch {
@@ -504,7 +508,7 @@ class ReaderViewModel(
         val settings = _uiState.value.llmSettings
         if (settings.apiKey.isBlank()) return
         when (chapter.status) {
-            Chapter.STATUS_PENDING, Chapter.STATUS_FAILED ->
+            Chapter.STATUS_PENDING, Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG ->
                 translationCoordinator.translate(chapter, settings)
         }
     }

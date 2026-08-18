@@ -131,7 +131,15 @@ class LlmApiService : TranslationService {
                 "max_tokens" to 16000,
                 "stream" to true
             )
-            requestMap["thinking"] = mapOf("type" to if (settings.enableThinking) "enabled" else "disabled")
+            // 思考模式：同时发送 OpenAI 兼容格式和 Qwen chat_template_kwargs 格式，
+            // 以兼容不同 API 后端（DashScope / vLLM / Ollama 等）。
+            if (settings.enableThinking) {
+                requestMap["thinking"] = mapOf("type" to "enabled")
+                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to true)
+            } else {
+                requestMap["thinking"] = mapOf("type" to "disabled")
+                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to false)
+            }
 
             val request = Request.Builder()
                 .url(chatCompletionsUrl(settings.apiBase))
@@ -215,7 +223,13 @@ class LlmApiService : TranslationService {
                 "max_tokens" to 10,
                 "stream" to false
             )
-            requestMap["thinking"] = mapOf("type" to if (settings.enableThinking) "enabled" else "disabled")
+            if (settings.enableThinking) {
+                requestMap["thinking"] = mapOf("type" to "enabled")
+                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to true)
+            } else {
+                requestMap["thinking"] = mapOf("type" to "disabled")
+                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to false)
+            }
             val request = Request.Builder()
                 .url(chatCompletionsUrl(settings.apiBase))
                 .addHeader("Authorization", "Bearer ${settings.apiKey}")

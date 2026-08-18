@@ -181,21 +181,33 @@ fun SettingsScreen(
                 if (llmExpanded) {
                     Spacer(Modifier.height(12.dp))
 
-                    // ── 配置列表 ──
-                    ProfileList(
-                        profiles = state.profiles,
-                        activeProfileId = state.activeProfileId,
-                        accentColor = accentColor,
-                        onSelect = vm::selectProfile,
-                        onEdit = vm::editProfile,
-                        onDelete = vm::deleteProfile,
-                        onAdd = vm::addProfile
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // ── 编辑表单（仅编辑/新建时显示） ──
                     if (state.editingProfile != null) {
+                        // ── 编辑配置二级页面 ──
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { vm.cancelEdit() }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回",
+                                tint = accentColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "返回配置列表",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = accentColor,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
                         LlmProfileForm(
                             state = state,
                             editName = editName,
@@ -207,25 +219,184 @@ fun SettingsScreen(
                             onUpdateApiKey = vm::updateEditApiKey,
                             onUpdateApiBase = vm::updateEditApiBase,
                             onUpdateModel = vm::updateEditModel,
-                            onUpdateChapterMaxChars = vm::updateChapterMaxChars,
-                            onToggleContextBoost = vm::updateContextBoost,
-                            onUpdateContextChapters = vm::updateContextChapters,
-                            onUpdateContextMaxChars = vm::updateContextMaxChars,
-                            onToggleThinking = vm::updateThinking,
                             onToggleShowApiKey = vm::toggleShowApiKey,
                             onSave = vm::saveProfile,
                             onTest = vm::testConnection,
                             onCancel = vm::cancelEdit
                         )
                     } else {
-                        // 非编辑模式：点击"添加"或选中某配置的编辑按钮进入编辑
-                        Text(
-                            "点击  +  添加新配置，或点击配置的编辑图标修改",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        // ── 配置列表 ──
+                        ProfileList(
+                            profiles = state.profiles,
+                            activeProfileId = state.activeProfileId,
+                            accentColor = accentColor,
+                            onSelect = vm::selectProfile,
+                            onEdit = vm::editProfile,
+                            onDelete = vm::deleteProfile,
+                            onAdd = vm::addProfile
                         )
                     }
                 }
+            }
+
+            // ── 翻译参数 ──
+            SectionHeader("翻译参数")
+            SectionCard {
+                val ls = state.llmSettings
+
+                // 单章字符上限
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "${ls.chapterMaxChars}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accentColor
+                    )
+                }
+                Slider(
+                    value = ls.chapterMaxChars.toFloat(),
+                    onValueChange = { vm.updateChapterMaxChars(it.toInt()) },
+                    valueRange = 1000f..200000f,
+                    steps = 19,
+                    colors = SliderDefaults.colors(activeTrackColor = accentColor)
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                // 上下文增强翻译
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("上下文增强翻译", style = MaterialTheme.typography.bodyMedium)
+                        Text("包含前几章英译作为上下文", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    }
+                    Switch(
+                        checked = ls.enableContextBoost,
+                        onCheckedChange = { vm.updateContextBoost(it) },
+                        colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                    )
+                }
+
+                // 上下文增强子设置
+                if (ls.enableContextBoost) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("上下文章节数", style = MaterialTheme.typography.bodySmall)
+                                Text("${ls.contextChapters}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                            }
+                            Slider(
+                                value = ls.contextChapters.toFloat(),
+                                onValueChange = { vm.updateContextChapters(it.toInt()) },
+                                valueRange = 1f..3f,
+                                steps = 1,
+                                colors = SliderDefaults.colors(activeTrackColor = accentColor)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("总字符限制", style = MaterialTheme.typography.bodySmall)
+                                Text("${ls.contextMaxChars}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                            }
+                            Slider(
+                                value = ls.contextMaxChars.toFloat(),
+                                onValueChange = { vm.updateContextMaxChars(it.toInt()) },
+                                valueRange = 5000f..500000f,
+                                colors = SliderDefaults.colors(activeTrackColor = accentColor)
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                // 思考模式
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("思考模式", style = MaterialTheme.typography.bodyMedium)
+                        Text("允许模型输出思考过程", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    }
+                    Switch(
+                        checked = ls.enableThinking,
+                        onCheckedChange = { vm.updateThinking(it) },
+                        colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                    )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                // 采样温度
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("采样温度", style = MaterialTheme.typography.bodyMedium)
+                        Text("越高输出越随机，越低越确定；建议与 top_p 二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    }
+                    Text(
+                        String.format("%.1f", ls.temperature),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accentColor
+                    )
+                }
+                Slider(
+                    value = ls.temperature,
+                    onValueChange = { vm.updateTemperature(it) },
+                    valueRange = 0f..2f,
+                    steps = 19,
+                    colors = SliderDefaults.colors(activeTrackColor = accentColor)
+                )
+
+                // Top P
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Top P", style = MaterialTheme.typography.bodyMedium)
+                        Text("仅考虑前 top_p 概率的 token；建议与采样温度二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    }
+                    Text(
+                        String.format("%.1f", ls.topP),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = accentColor
+                    )
+                }
+                Slider(
+                    value = ls.topP,
+                    onValueChange = { vm.updateTopP(it) },
+                    valueRange = 0f..1f,
+                    steps = 9,
+                    colors = SliderDefaults.colors(activeTrackColor = accentColor)
+                )
             }
 
             // ── 关于 ──
@@ -344,7 +515,7 @@ private fun ProfileList(
     }
 }
 
-/** 配置编辑表单：名称 + API Key / Base / Model / 高级选项 + 保存/测试 */
+/** 配置编辑表单：名称 + API Key / Base / Model + 保存/测试 */
 @Composable
 private fun LlmProfileForm(
     state: SettingsUiState,
@@ -357,21 +528,12 @@ private fun LlmProfileForm(
     onUpdateApiKey: (String) -> Unit,
     onUpdateApiBase: (String) -> Unit,
     onUpdateModel: (String) -> Unit,
-    onUpdateChapterMaxChars: (Int) -> Unit,
-    onToggleContextBoost: (Boolean) -> Unit,
-    onUpdateContextChapters: (Int) -> Unit,
-    onUpdateContextMaxChars: (Int) -> Unit,
-    onToggleThinking: (Boolean) -> Unit,
     onToggleShowApiKey: () -> Unit,
     onSave: () -> Unit,
     onTest: () -> Unit,
     onCancel: () -> Unit
 ) {
-    val ep = state.editingProfile ?: return
     val isnew = state.isNewProfile
-
-    // 折叠区：高级选项
-    var advancedExpanded by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // 标题
@@ -430,131 +592,6 @@ private fun LlmProfileForm(
             shape = RoundedCornerShape(8.dp),
             singleLine = true
         )
-
-        // ── 高级选项折叠组 ──
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { advancedExpanded = !advancedExpanded }
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("高级选项", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            val rotation by animateFloatAsState(
-                targetValue = if (advancedExpanded) 90f else 0f,
-                label = "chevron"
-            )
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .rotate(rotation)
-                    .size(20.dp)
-            )
-        }
-
-        if (advancedExpanded) {
-            // Chapter max chars
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "${ep.chapterMaxChars}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accentColor
-                )
-            }
-            Slider(
-                value = ep.chapterMaxChars.toFloat(),
-                onValueChange = { onUpdateChapterMaxChars(it.toInt()) },
-                valueRange = 1000f..200000f,
-                steps = 19,
-                colors = SliderDefaults.colors(activeTrackColor = accentColor)
-            )
-
-            // Context boost toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("上下文增强翻译", style = MaterialTheme.typography.bodyMedium)
-                    Text("包含前几章英译作为上下文", fontSize = 12.sp, color = VibeColors.WarmGray)
-                }
-                Switch(
-                    checked = ep.enableContextBoost,
-                    onCheckedChange = onToggleContextBoost,
-                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
-                )
-            }
-
-            // Context boost sub-settings
-            if (ep.enableContextBoost) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("上下文章节数", style = MaterialTheme.typography.bodySmall)
-                            Text("${ep.contextChapters}", fontWeight = FontWeight.SemiBold, color = accentColor)
-                        }
-                        Slider(
-                            value = ep.contextChapters.toFloat(),
-                            onValueChange = { onUpdateContextChapters(it.toInt()) },
-                            valueRange = 1f..3f,
-                            steps = 1,
-                            colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("总字符限制", style = MaterialTheme.typography.bodySmall)
-                            Text("${ep.contextMaxChars}", fontWeight = FontWeight.SemiBold, color = accentColor)
-                        }
-                        Slider(
-                            value = ep.contextMaxChars.toFloat(),
-                            onValueChange = { onUpdateContextMaxChars(it.toInt()) },
-                            valueRange = 5000f..500000f,
-                            colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                        )
-                    }
-                }
-            }
-
-            // Thinking mode toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("思考模式", style = MaterialTheme.typography.bodyMedium)
-                    Text("允许模型输出思考过程", fontSize = 12.sp, color = VibeColors.WarmGray)
-                }
-                Switch(
-                    checked = ep.enableThinking,
-                    onCheckedChange = onToggleThinking,
-                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
-                )
-            }
-        }
 
         // Action buttons
         Row(

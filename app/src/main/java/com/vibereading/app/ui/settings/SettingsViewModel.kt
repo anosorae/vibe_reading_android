@@ -235,25 +235,66 @@ class SettingsViewModel(
     fun updateEditModel(model: String) { editDirty = true; _editModel.value = model }
     fun updateEditName(name: String) { editDirty = true; _editName.value = name }
 
+    // ── 翻译参数（解绑自 LLM 配置，即时持久化到活跃 profile） ──
+
     fun updateChapterMaxChars(value: Int) {
-        val ep = _uiState.value.editingProfile ?: return
-        _uiState.update { it.copy(editingProfile = ep.copy(chapterMaxChars = value)) }
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(chapterMaxChars = value)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(chapterMaxChars = value), isActive = true)
+        }
     }
     fun updateContextBoost(enabled: Boolean) {
-        val ep = _uiState.value.editingProfile ?: return
-        _uiState.update { it.copy(editingProfile = ep.copy(enableContextBoost = enabled)) }
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableContextBoost = enabled)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableContextBoost = enabled), isActive = true)
+        }
     }
     fun updateContextChapters(value: Int) {
-        val ep = _uiState.value.editingProfile ?: return
-        _uiState.update { it.copy(editingProfile = ep.copy(contextChapters = value.coerceIn(1, 3))) }
+        val clamped = value.coerceIn(1, 3)
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextChapters = clamped)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(contextChapters = clamped), isActive = true)
+        }
     }
     fun updateContextMaxChars(value: Int) {
-        val ep = _uiState.value.editingProfile ?: return
-        _uiState.update { it.copy(editingProfile = ep.copy(contextMaxChars = value)) }
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextMaxChars = value)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(contextMaxChars = value), isActive = true)
+        }
     }
     fun updateThinking(enabled: Boolean) {
-        val ep = _uiState.value.editingProfile ?: return
-        _uiState.update { it.copy(editingProfile = ep.copy(enableThinking = enabled)) }
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableThinking = enabled)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableThinking = enabled), isActive = true)
+        }
+    }
+    fun updateTemperature(value: Float) {
+        val clamped = value.coerceIn(0f, 2f)
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(temperature = clamped)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(temperature = clamped), isActive = true)
+        }
+    }
+    fun updateTopP(value: Float) {
+        val clamped = value.coerceIn(0f, 1f)
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(topP = clamped)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(topP = clamped), isActive = true)
+        }
     }
 
     fun toggleShowApiKey() {

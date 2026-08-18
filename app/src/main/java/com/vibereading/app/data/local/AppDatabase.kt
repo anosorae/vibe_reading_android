@@ -13,7 +13,7 @@ import com.vibereading.app.data.local.entity.LlmProfileEntity
 
 @Database(
     entities = [BookEntity::class, ChapterEntity::class, LlmProfileEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -133,6 +133,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v7→v8：llm_profiles 增加 temperature / topP 列。 */
+        val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE llm_profiles ADD COLUMN temperature REAL NOT NULL DEFAULT 0.6")
+                db.execSQL("ALTER TABLE llm_profiles ADD COLUMN topP REAL NOT NULL DEFAULT 1.0")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -140,7 +148,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "vibe_reading"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                 INSTANCE = instance
                 instance

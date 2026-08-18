@@ -48,6 +48,7 @@ data class ReaderUiState(
     val llmSettingsVisible: Boolean = false,
     val nightMode: Boolean = false,
     val errorMessage: String? = null,
+    val editingProfileId: Long? = null,     // 非空 = 翻译设置面板中正在编辑某个配置
     val llmTestResult: String? = null,
     val llmTestSuccess: Boolean? = null,
     val dictQueryWord: String? = null, // 非空 = 词典弹窗可见
@@ -287,7 +288,8 @@ class ReaderViewModel(
     }
 
     fun dismissLlmSettings() {
-        _uiState.update { it.copy(llmSettingsVisible = false) }
+        llmEditDirty = false
+        _uiState.update { it.copy(llmSettingsVisible = false, editingProfileId = null, llmTestResult = null, llmTestSuccess = null) }
     }
 
     fun dismissAllOverlays() {
@@ -317,6 +319,26 @@ class ReaderViewModel(
         }
     }
 
+    /** 进入编辑某个配置的 API 设置 */
+    fun editProfileInSheet(id: Long) {
+        val profile = _uiState.value.profiles.find { it.id == id } ?: return
+        llmEditDirty = true
+        _editApiKey.value = profile.apiKey
+        _editApiBase.value = profile.apiBase
+        _editModel.value = profile.model
+        _uiState.update { it.copy(editingProfileId = id, llmTestResult = null, llmTestSuccess = null) }
+    }
+
+    /** 退出编辑，回到配置列表 */
+    fun cancelProfileEditInSheet() {
+        llmEditDirty = false
+        _uiState.update { it.copy(editingProfileId = null, llmTestResult = null, llmTestSuccess = null) }
+        val ls = _uiState.value.llmSettings
+        _editApiKey.value = ls.apiKey
+        _editApiBase.value = ls.apiBase
+        _editModel.value = ls.model
+    }
+
     // ── LLM settings (翻译设置面板 — 编辑当前活跃配置) ──
 
     /** 打开面板时从最新持久化值填充；已有草稿则保持不变。 */
@@ -343,20 +365,66 @@ class ReaderViewModel(
         _editModel.value = model
     }
 
+    // ── 翻译参数（解绑自 LLM 配置，即时持久化到活跃 profile） ──
+
     fun updateLlmChapterMaxChars(value: Int) {
         _uiState.update { it.copy(llmSettings = it.llmSettings.copy(chapterMaxChars = value)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(chapterMaxChars = value), isActive = true)
+        }
     }
     fun updateLlmContextBoost(enabled: Boolean) {
         _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableContextBoost = enabled)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableContextBoost = enabled), isActive = true)
+        }
     }
     fun updateLlmContextChapters(value: Int) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextChapters = value.coerceIn(1, 3))) }
+        val clamped = value.coerceIn(1, 3)
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextChapters = clamped)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(contextChapters = clamped), isActive = true)
+        }
     }
     fun updateLlmContextMaxChars(value: Int) {
         _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextMaxChars = value)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(contextMaxChars = value), isActive = true)
+        }
     }
     fun updateLlmThinking(enabled: Boolean) {
         _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableThinking = enabled)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableThinking = enabled), isActive = true)
+        }
+    }
+    fun updateLlmTemperature(value: Float) {
+        val clamped = value.coerceIn(0f, 2f)
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(temperature = clamped)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(temperature = clamped), isActive = true)
+        }
+    }
+    fun updateLlmTopP(value: Float) {
+        val clamped = value.coerceIn(0f, 1f)
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(topP = clamped)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(topP = clamped), isActive = true)
+        }
     }
 
     private fun currentEditedLlmSettings(): LlmSettings =
@@ -366,19 +434,20 @@ class ReaderViewModel(
             model = _editModel.value.trim()
         )
 
-    /** 保存当前活跃配置的编辑 */
+    /** 保存当前编辑的配置 */
     fun saveLlmSettings() {
         viewModelScope.launch {
             val newSettings = currentEditedLlmSettings()
             try {
                 _uiState.update { it.copy(llmSettings = newSettings, llmTestResult = null, llmTestSuccess = null) }
-                // 更新 Room 中的活跃 profile
-                val activeId = _uiState.value.activeProfileId ?: return@launch
-                val profile = _uiState.value.profiles.find { it.id == activeId }
+                val editId = _uiState.value.editingProfileId ?: return@launch
+                val profile = _uiState.value.profiles.find { it.id == editId }
                     ?: return@launch
-                val updated = newSettings.toLlmProfile(name = profile.name, id = activeId)
-                llmProfileRepo.updateProfileWithActiveState(updated, isActive = true)
+                val updated = newSettings.toLlmProfile(name = profile.name, id = editId)
+                val isActive = editId == _uiState.value.activeProfileId
+                llmProfileRepo.updateProfileWithActiveState(updated, isActive = isActive)
                 llmEditDirty = false
+                _uiState.update { it.copy(editingProfileId = null) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -392,16 +461,18 @@ class ReaderViewModel(
             _uiState.update { it.copy(llmTestResult = null, llmTestSuccess = null) }
             val newSettings = currentEditedLlmSettings()
             try {
-                _uiState.update { it.copy(llmSettings = newSettings) }
                 // 先保存再测试
-                val activeId = _uiState.value.activeProfileId
-                if (activeId != null) {
-                    val profile = _uiState.value.profiles.find { it.id == activeId }
+                val editId = _uiState.value.editingProfileId
+                if (editId != null) {
+                    val profile = _uiState.value.profiles.find { it.id == editId }
                     if (profile != null) {
-                        val updated = newSettings.toLlmProfile(name = profile.name, id = activeId)
-                        llmProfileRepo.updateProfileWithActiveState(updated, isActive = true)
+                        val updated = newSettings.toLlmProfile(name = profile.name, id = editId)
+                        val isActive = editId == _uiState.value.activeProfileId
+                        llmProfileRepo.updateProfileWithActiveState(updated, isActive = isActive)
+                        if (isActive) _uiState.update { it.copy(llmSettings = newSettings) }
                     }
                 }
+                llmEditDirty = false
                 val result = translationService.testConnection(newSettings)
                 _uiState.update {
                     it.copy(
@@ -409,7 +480,6 @@ class ReaderViewModel(
                         llmTestSuccess = result.isSuccess
                     )
                 }
-                if (result.isSuccess) llmEditDirty = false
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

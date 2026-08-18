@@ -126,7 +126,8 @@ class LlmApiService : TranslationService {
                     mapOf("role" to "system", "content" to SYSTEM_PROMPT),
                     mapOf("role" to "user", "content" to userPrompt)
                 ),
-                "temperature" to 0.3,
+                "temperature" to settings.temperature.coerceIn(0f, 2f),
+                "top_p" to settings.topP.coerceIn(0f, 1f),
                 "max_tokens" to 16000,
                 "stream" to true
             )
@@ -209,7 +210,8 @@ class LlmApiService : TranslationService {
             val requestMap = mutableMapOf<String, Any>(
                 "model" to settings.model,
                 "messages" to listOf(mapOf("role" to "user", "content" to "Say hi in one word.")),
-                "temperature" to 0.1,
+                "temperature" to settings.temperature.coerceIn(0f, 2f),
+                "top_p" to settings.topP.coerceIn(0f, 1f),
                 "max_tokens" to 10,
                 "stream" to false
             )

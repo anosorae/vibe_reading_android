@@ -45,5 +45,7 @@ data class LlmSettings(
     val enableContextBoost: Boolean = false,
     val contextChapters: Int = 1,
     val contextMaxChars: Int = 30000,
-    val enableThinking: Boolean = false
+    val enableThinking: Boolean = false,
+    val temperature: Float = 0.6f,
+    val topP: Float = 1f
 )

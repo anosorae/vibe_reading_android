@@ -14,7 +14,9 @@ data class LlmProfile(
     val enableContextBoost: Boolean = false,
     val contextChapters: Int = 1,
     val contextMaxChars: Int = 30000,
-    val enableThinking: Boolean = false
+    val enableThinking: Boolean = false,
+    val temperature: Float = 0.6f,
+    val topP: Float = 1f
 )
 
 /** 配置档案 → 翻译管线传输对象 */
@@ -26,7 +28,9 @@ fun LlmProfile.toLlmSettings(): LlmSettings = LlmSettings(
     enableContextBoost = enableContextBoost,
     contextChapters = contextChapters.coerceIn(1, 3),
     contextMaxChars = contextMaxChars,
-    enableThinking = enableThinking
+    enableThinking = enableThinking,
+    temperature = temperature.coerceIn(0f, 2f),
+    topP = topP.coerceIn(0f, 1f)
 )
 
 /** 翻译管线传输对象 → 配置档案（用于 DataStore 旧数据迁移） */
@@ -40,5 +44,7 @@ fun LlmSettings.toLlmProfile(name: String, id: Long = 0): LlmProfile = LlmProfil
     enableContextBoost = enableContextBoost,
     contextChapters = contextChapters,
     contextMaxChars = contextMaxChars,
-    enableThinking = enableThinking
+    enableThinking = enableThinking,
+    temperature = temperature,
+    topP = topP
 )

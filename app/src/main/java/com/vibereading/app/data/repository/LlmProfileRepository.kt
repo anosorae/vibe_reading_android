@@ -76,7 +76,9 @@ class LlmProfileRepository(
         enableContextBoost = enableContextBoost,
         contextChapters = contextChapters,
         contextMaxChars = contextMaxChars,
-        enableThinking = enableThinking
+        enableThinking = enableThinking,
+        temperature = temperature,
+        topP = topP
     )
 
     private fun LlmProfile.toEntity(isActive: Boolean): LlmProfileEntity = LlmProfileEntity(
@@ -90,6 +92,8 @@ class LlmProfileRepository(
         contextChapters = contextChapters.coerceIn(1, 3),
         contextMaxChars = contextMaxChars,
         enableThinking = enableThinking,
+        temperature = temperature.coerceIn(0f, 2f),
+        topP = topP.coerceIn(0f, 1f),
         isActive = isActive
     )
 }

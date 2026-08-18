@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vibereading.app.data.dict.DictDatabase
+import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
@@ -11,6 +12,7 @@ import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.DictEntry
+import com.vibereading.app.domain.model.WordExplanation
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ReadingSettings
@@ -53,7 +55,11 @@ data class ReaderUiState(
     val llmTestSuccess: Boolean? = null,
     val dictQueryWord: String? = null, // 非空 = 词典弹窗可见
     val dictEntry: DictEntry? = null,
-    val dictLoading: Boolean = false
+    val dictLoading: Boolean = false,
+    val explainWord: String? = null,   // 非空 = 解释弹窗可见
+    val explainResult: WordExplanation? = null,
+    val explainLoading: Boolean = false,
+    val explainError: String? = null
 )
 
 class ReaderViewModel(
@@ -63,7 +69,8 @@ class ReaderViewModel(
     private val settingsRepo: SettingsRepository,
     private val llmProfileRepo: LlmProfileRepository,
     private val translationService: TranslationService,
-    private val dictDatabase: DictDatabase? = null
+    private val dictDatabase: DictDatabase? = null,
+    private val llmApiService: LlmApiService? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -542,6 +549,47 @@ class ReaderViewModel(
         }
     }
 
+    // ── LLM 词语解释（选词「解释」按钮） ──
+
+    fun explainWord(word: String, paragraphText: String) {
+        val service = llmApiService
+        if (service == null) {
+            _uiState.update {
+                it.copy(explainWord = word, explainResult = null, explainLoading = false,
+                    explainError = "LLM 服务不可用")
+            }
+            return
+        }
+        val settings = _uiState.value.llmSettings
+        if (settings.apiKey.isBlank()) {
+            _uiState.update {
+                it.copy(explainWord = word, explainResult = null, explainLoading = false,
+                    explainError = "请先配置 API Key")
+            }
+            return
+        }
+        _uiState.update {
+            it.copy(explainWord = word, explainResult = null, explainLoading = true, explainError = null)
+        }
+        viewModelScope.launch {
+            val result = service.explainWord(settings, word, paragraphText)
+            _uiState.update {
+                if (result.isSuccess) {
+                    it.copy(explainResult = result.getOrNull(), explainLoading = false, explainError = null)
+                } else {
+                    it.copy(explainResult = null, explainLoading = false,
+                        explainError = result.exceptionOrNull()?.message ?: "解释失败")
+                }
+            }
+        }
+    }
+
+    fun dismissExplainPopup() {
+        _uiState.update {
+            it.copy(explainWord = null, explainResult = null, explainLoading = false, explainError = null)
+        }
+    }
+
     override fun onCleared() {
         translationCoordinator.cancelImmediately()
         super.onCleared()
@@ -554,12 +602,13 @@ class ReaderViewModel(
         private val settingsRepo: SettingsRepository,
         private val llmProfileRepo: LlmProfileRepository,
         private val translationService: TranslationService,
-        private val dictDatabase: DictDatabase? = null
+        private val dictDatabase: DictDatabase? = null,
+        private val llmApiService: LlmApiService? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ReaderViewModel(
-                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase
+                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService
             ) as T
         }
     }

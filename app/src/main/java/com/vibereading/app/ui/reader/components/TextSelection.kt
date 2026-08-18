@@ -41,12 +41,16 @@ class TextSelectionState {
         private set
     var popupPosition by mutableStateOf(Offset.Zero)
         private set
+    /** 长按所在段落的全文，供「解释」按钮读取上下文。 */
+    var paragraphText by mutableStateOf("")
+        private set
 
-    fun select(key: Any?, text: String, range: IntRange, position: Offset) {
+    fun select(key: Any?, text: String, range: IntRange, position: Offset, paragraphText: String = "") {
         paragraphKey = key
         selectedText = text
         selectionRange = range
         popupPosition = position
+        this.paragraphText = paragraphText
         isSelecting = true
     }
 
@@ -55,6 +59,7 @@ class TextSelectionState {
         selectedText = ""
         selectionRange = null
         paragraphKey = null
+        paragraphText = ""
     }
 }
 
@@ -157,7 +162,8 @@ fun SelectableParagraphText(
                                 key = paragraphKey,
                                 text = word,
                                 range = wordRange,
-                                position = windowPosition + pressPosition
+                                position = windowPosition + pressPosition,
+                                paragraphText = text
                             )
                         }
                     }

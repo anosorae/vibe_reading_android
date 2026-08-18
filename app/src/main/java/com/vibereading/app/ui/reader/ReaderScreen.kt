@@ -42,6 +42,7 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.DictPopup
+import com.vibereading.app.ui.reader.components.ExplainPopup
 import com.vibereading.app.ui.reader.components.PageInfoOverlays
 import com.vibereading.app.ui.reader.components.LlmSettingsSheet
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
@@ -531,8 +532,8 @@ fun ReaderScreen(
     // （闭包是手势协程启动时快照的旧引用，直接读 readingSettings.oneHandMode 会读到
     //  开启设置前的旧值导致开关无效；与 overlayVisible 同款模式，不加入 key）
     val oneHandMode by rememberUpdatedState(readingSettings.oneHandMode)
-    // 词典弹窗打开中：下一次点击只关弹窗不翻页（与选区清除同款交互）
-    val isDictPopupOpen by rememberUpdatedState(state.dictQueryWord != null)
+    // 词典/解释弹窗打开中：下一次点击只关弹窗不翻页（与选区清除同款交互）
+    val isDictPopupOpen by rememberUpdatedState(state.dictQueryWord != null || state.explainWord != null)
 
     // ── 选区/词典弹窗生命周期：翻页、滚动、切章、切模式、开浮层时清除 ──
     LaunchedEffect(isPagerMode, scrollState, pagerState) {
@@ -545,14 +546,19 @@ fun ReaderScreen(
             if (inProgress) {
                 selectionState.clear()
                 vm.dismissDictPopup()
+                vm.dismissExplainPopup()
             }
         }
     }
     LaunchedEffect(pagerState.currentPage, state.mode, state.activeChapterId, state.chapters) {
         selectionState.clear()
+        vm.dismissExplainPopup()
     }
     LaunchedEffect(state.toolbarVisible, state.catalogVisible, state.settingsVisible, state.llmSettingsVisible) {
-        if (anyOverlayVisible) selectionState.clear()
+        if (anyOverlayVisible) {
+            selectionState.clear()
+            vm.dismissExplainPopup()
+        }
     }
 
     // 页面离开/进入后台时，把内存中的最新原文位置同步到 Room。
@@ -685,8 +691,9 @@ fun ReaderScreen(
                             if (!change.pressed) {
                                 // ── UP ──
                                 if (hadDictAtDown) {
-                                    // 词典弹窗打开中：只关弹窗，不翻页
+                                    // 词典/解释弹窗打开中：只关弹窗，不翻页
                                     vm.dismissDictPopup()
+                                    vm.dismissExplainPopup()
                                     break
                                 }
                                 if (hadSelectionAtDown) {
@@ -800,8 +807,9 @@ fun ReaderScreen(
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
                                 if (hadDictAtDown) {
-                                    // 词典弹窗打开中：只关弹窗，不翻页
+                                    // 词典/解释弹窗打开中：只关弹窗，不翻页
                                     vm.dismissDictPopup()
+                                    vm.dismissExplainPopup()
                                     break
                                 }
                                 if (hadSelectionAtDown) {
@@ -1006,6 +1014,12 @@ fun ReaderScreen(
                     selectionState.clear()
                     vm.lookupDictWord(word)
                 },
+                onExplain = { word ->
+                    dictAnchor = selectionState.popupPosition
+                    val paraText = selectionState.paragraphText
+                    selectionState.clear()
+                    vm.explainWord(word, paraText)
+                },
                 onCopy = { word ->
                     clipboard.setText(AnnotatedString(word))
                     Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
@@ -1024,6 +1038,20 @@ fun ReaderScreen(
                 palette = palette,
                 pageStyle = pageStyle,
                 onDismiss = { vm.dismissDictPopup() }
+            )
+        }
+
+        // ── LLM 词语解释弹窗 ──
+        state.explainWord?.let { word ->
+            ExplainPopup(
+                queryWord = word,
+                result = state.explainResult,
+                loading = state.explainLoading,
+                error = state.explainError,
+                anchor = dictAnchor,
+                palette = palette,
+                pageStyle = pageStyle,
+                onDismiss = { vm.dismissExplainPopup() }
             )
         }
     }

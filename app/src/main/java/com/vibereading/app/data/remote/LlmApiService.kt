@@ -2,6 +2,7 @@ package com.vibereading.app.data.remote
 
 import com.google.gson.Gson
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.domain.model.WordExplanation
 import com.vibereading.app.domain.parser.ReadingContentParser.splitParagraphs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +68,29 @@ class LlmApiService : TranslationService {
 
 严禁输出任何解释、标题、注释或额外内容。"""
 
+        const val EXPLAIN_SYSTEM_PROMPT = """你是一个面向语言学习者的词典助手。
+
+## 目标
+根据给定的词语及其周围段落，生成简洁的词典条目，以 JSON 格式输出。
+
+## 规则
+1. 聚焦于最匹配所提供段落内容的含义。
+2. 将词条规范化为其基本/标准形式。
+3. 保持释义精确且适合学习者。
+4. phonetic 字段必须使用该语言的标准标注（如英语用 IPA，中文用拼音，日语用罗马字）。
+5. pos 字段使用英文（noun, verb, adjective 等）。
+6. inflections 字段列出词形变化（如 run: runs, running, ran；big: bigger, biggest），名词列出复数，动词列出时态，形容词列出比较级/最高级。
+7. synonyms 字段列出 2–5 个近义词，逗号分隔。
+8. antonyms 字段列出 1–3 个反义词，逗号分隔；若无则留空。
+9. collocations 字段列出 2–4 个常见搭配或短语，分号分隔。
+10. difficulty 字段必须是 CEFR 等级（A1, A2, B1, B2, C1, 或 C2）。
+11. 如果某个字段未知，返回空字符串而非猜测。
+12. 除非需要保留原文形式，所有文本字段均使用中文作答。
+
+## 输出格式
+严格输出以下 JSON，不要输出任何其他内容：
+{"lemma":"","phonetic":"","pos":"","definition":"","inflections":"","synonyms":"","antonyms":"","collocations":"","difficulty":""}"""
+
         fun chatCompletionsUrl(apiBase: String): String {
             val base = apiBase.trim().trimEnd('/')
             require(base.isNotEmpty()) { "API Base URL 不能为空" }
@@ -78,6 +102,11 @@ class LlmApiService : TranslationService {
             require(parsed.host.isNotBlank()) { "API Base URL 缺少主机名" }
             return if (base.endsWith("/v1")) "$base/chat/completions"
             else "$base/v1/chat/completions"
+        }
+
+        fun buildExplainUserPrompt(word: String, paragraphContext: String): String {
+            val escaped = paragraphContext.replace("\"", "\\\"").replace("\n", " ")
+            return """Selection="$word", Paragraphs="$escaped", 目标语言=中文"""
         }
     }
 
@@ -256,5 +285,81 @@ class LlmApiService : TranslationService {
         } catch (e: Exception) {
             Result.failure(Exception(e.message ?: "请求配置无效"))
         }
+    }
+
+    /**
+     * 调用 LLM 解释单词用法（非流式）。
+     * 返回解析后的 [WordExplanation]，失败时返回带错误信息的 Result。
+     */
+    suspend fun explainWord(
+        settings: LlmSettings,
+        word: String,
+        paragraphContext: String
+    ): Result<WordExplanation> = withContext(Dispatchers.IO) {
+        try {
+            val requestMap = mutableMapOf<String, Any>(
+                "model" to settings.model,
+                "messages" to listOf(
+                    mapOf("role" to "system", "content" to EXPLAIN_SYSTEM_PROMPT),
+                    mapOf("role" to "user", "content" to buildExplainUserPrompt(word, paragraphContext))
+                ),
+                "temperature" to 0.3f,
+                "top_p" to 0.9f,
+                "max_tokens" to 1024,
+                "stream" to false
+            )
+            if (settings.enableThinking) {
+                requestMap["thinking"] = mapOf("type" to "enabled")
+                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to true)
+            } else {
+                requestMap["thinking"] = mapOf("type" to "disabled")
+                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to false)
+            }
+            val request = Request.Builder()
+                .url(chatCompletionsUrl(settings.apiBase))
+                .addHeader("Authorization", "Bearer ${settings.apiKey}")
+                .addHeader("Content-Type", "application/json")
+                .post(gson.toJson(requestMap).toRequestBody(jsonMediaType))
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string()?.take(200) ?: "Unknown"
+                    return@withContext Result.failure<WordExplanation>(Exception("API 错误 ${response.code}: $errorBody"))
+                }
+                val body = response.body?.string() ?: return@withContext Result.failure(Exception("空响应"))
+                try {
+                    val resp = gson.fromJson(body, ChatCompletionResponse::class.java)
+                    val content = resp.choices?.firstOrNull()?.message?.content
+                        ?: return@withContext Result.failure(Exception("模型返回内容为空"))
+                    // 提取 JSON：模型可能在外层包裹 markdown 代码块
+                    val json = extractJson(content)
+                    val explanation = gson.fromJson(json, WordExplanation::class.java)
+                    Result.success(explanation)
+                } catch (e: Exception) {
+                    Result.failure(Exception("解析解释结果失败: ${e.message}"))
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: java.io.IOException) {
+            Result.failure(Exception("网络错误: ${e.message}"))
+        } catch (e: Exception) {
+            Result.failure(Exception(e.message ?: "解释请求失败"))
+        }
+    }
+
+    /** 从可能含 markdown 代码块的文本中提取 JSON 字符串。 */
+    private fun extractJson(text: String): String {
+        val trimmed = text.trim()
+        // 尝试提取 ```json ... ``` 代码块
+        val codeBlockMatch = Regex("```(?:json)?\\s*\\n?([\\s\\S]*?)\\n?```").find(trimmed)
+        if (codeBlockMatch != null) return codeBlockMatch.groupValues[1].trim()
+        // 如果直接以 { 开头，整体当作 JSON
+        if (trimmed.startsWith("{")) return trimmed
+        // 尝试找第一个 { 到最后一个 } 之间的内容
+        val start = trimmed.indexOf('{')
+        val end = trimmed.lastIndexOf('}')
+        if (start >= 0 && end > start) return trimmed.substring(start, end + 1)
+        return trimmed
     }
 }

@@ -25,7 +25,7 @@ import com.vibereading.app.ui.reader.ReaderPalette
 import kotlin.math.roundToInt
 
 /**
- * 选词工具栏（对齐 Legado TextActionMenu）：显示在长按点上方，提供「查词 / 复制」。
+ * 选词工具栏（对齐 Legado TextActionMenu）：显示在长按点上方，提供「查词 / 解释 / 复制」。
  * 弹窗为独立窗口（focusable），点击外部自动收起；点击按钮后由回调负责 clear 选区。
  */
 @Composable
@@ -33,6 +33,7 @@ fun SelectionToolbar(
     selectionState: TextSelectionState,
     palette: ReaderPalette,
     onLookup: (String) -> Unit,
+    onExplain: (String) -> Unit,
     onCopy: (String) -> Unit
 ) {
     val density = LocalDensity.current
@@ -67,6 +68,7 @@ fun SelectionToolbar(
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             ToolbarButton("查词", palette, Modifier.clickable { onLookup(selectionState.selectedText) })
+            ToolbarButton("解释", palette, Modifier.clickable { onExplain(selectionState.selectedText) })
             ToolbarButton("复制", palette, Modifier.clickable { onCopy(selectionState.selectedText) })
         }
     }

@@ -67,7 +67,8 @@ fun AppNavigation() {
             val bookId = entry.arguments?.getLong("bookId") ?: return@composable
             val vm: ReaderViewModel = viewModel(
                 factory = ReaderViewModel.Factory(
-                    bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase
+                    bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase,
+                    llmApiService = translationService
                 )
             )
             ReaderScreen(

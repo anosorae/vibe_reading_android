@@ -111,29 +111,36 @@ class TranslationCoordinator(
                     prevChapterEnglish = prevEnglish
                 ).collect { event ->
                     when (event) {
-                        TranslationEvent.Started -> _state.update {
-                            it.copy(phase = TranslationPhase.WAITING_FIRST_TOKEN)
+                        TranslationEvent.Started -> {
+                            if (run == runId) _state.update { it.copy(phase = TranslationPhase.WAITING_FIRST_TOKEN) }
                         }
-                        is TranslationEvent.Thinking -> _state.update {
-                            it.copy(
-                                phase = TranslationPhase.THINKING,
-                                thinkingText = it.thinkingText + event.text
-                            )
+                        is TranslationEvent.Thinking -> {
+                            if (run == runId) _state.update {
+                                it.copy(
+                                    phase = TranslationPhase.THINKING,
+                                    thinkingText = it.thinkingText + event.text
+                                )
+                            }
                         }
-                        is TranslationEvent.Chunk -> _state.update {
-                            it.copy(
-                                phase = TranslationPhase.STREAMING,
-                                streamingText = it.streamingText + event.text,
-                                streamingCharCount = it.streamingCharCount + event.text.length
-                            )
+                        is TranslationEvent.Chunk -> {
+                            if (run == runId) _state.update {
+                                it.copy(
+                                    phase = TranslationPhase.STREAMING,
+                                    streamingText = it.streamingText + event.text,
+                                    streamingCharCount = it.streamingCharCount + event.text.length
+                                )
+                            }
                         }
-                        is TranslationEvent.Progress -> _state.update {
-                            it.copy(streamingCharCount = maxOf(it.streamingCharCount, event.chars))
+                        is TranslationEvent.Progress -> {
+                            if (run == runId) _state.update {
+                                it.copy(streamingCharCount = maxOf(it.streamingCharCount, event.chars))
+                            }
                         }
                         is TranslationEvent.Done -> {
                             terminalEvent = true
                             if (chapterRepo.completeTranslation(bookId, chapterId, run, event.text)) {
-                                // 仅当本任务仍是当前任务时清空流式状态；取消/替换后由新状态接管
+                                // 仅当本任务仍是当前任务时清空流式状态；取消/替换后由新状态接管。
+                                // 旧任务仍完成写库（completeTranslation），但不写 UI 状态。
                                 if (run == runId) {
                                     _state.update { it.copy(isStreaming = false, phase = TranslationPhase.IDLE, thinkingText = "", streamingCharCount = 0) }
                                 }

@@ -473,8 +473,13 @@ fun ReaderScreen(
     var scrollChunks by remember(state.chapters, pageStyle.titleMode) {
         mutableStateOf(emptyList<ScrollItem>())
     }
-    LaunchedEffect(!isPagerMode, scrollChunks.isEmpty()) {
-        if (!isPagerMode && scrollChunks.isEmpty()) {
+    // key 用 state.chapters 而非 scrollChunks.isEmpty()：章节未加载时构建产出空列表，
+    // isEmpty() 不发生 true→false 翻转，effect 不会被标记为需要重新执行；
+    // 随后 state.chapters 加载触发 remember 重置 scrollChunks 为空，但 effect key 不变、不重启 → 死锁。
+    // 改为 key 章节列表本身：章节加载完成时 key 变化，effect 必然重启。
+    LaunchedEffect(!isPagerMode, state.chapters) {
+        // 章节未加载时不构建：空构建产出空列表，会让渲染条件误判为「正在构建」而非「无内容」
+        if (!isPagerMode && state.chapters.isNotEmpty()) {
             scrollChunks = buildScrollChunks(state.chapters, pageStyle.titleMode)
         }
     }

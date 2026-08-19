@@ -167,8 +167,16 @@ fun ReaderScreen(
     // （否则旧窗口状态残留，导致切换不生效/边距不生效）
     // 立即 recenterSync：避免 key 变化（如沉浸式切换导致 contentHeightPx 变化）时新窗口
     // windowPages 为空 → pageCount==0 → 闪现 EmptyReaderHint（"没有任何阅读内容"）
+    //
+    // 分页指纹只含影响排版的字段（id/title/section/index/content/translatedContent），
+    // 不含 status/errorMessage——翻译状态变化（IN_PROGRESS→DONE）不应重建窗口，
+    // 否则 pagerState.pageCount 在程序化跳章（scrollToPage）后突变，currentPage 偏移到
+    // 新窗口末尾，导致「下一章跳到最后一页」。状态变化只影响 UI chrome（状态点/面板）。
+    val paginationFingerprint = remember(state.chapters) {
+        state.chapters.joinToString("|") { "${it.id}:${it.title}:${it.section}:${it.chapterIndex}:${it.content.length}:${it.translatedContent?.length ?: -1}" }
+    }
     val window = remember(
-        measurer, pageStyle, state.mode, state.chapters, contentWidthPx, contentHeightPx, isPagerMode
+        measurer, pageStyle, state.mode, paginationFingerprint, contentWidthPx, contentHeightPx, isPagerMode
     ) {
         BookWindow(
             chapters = state.chapters,
@@ -227,14 +235,20 @@ fun ReaderScreen(
             else -> state.position?.offset ?: 0
         }
         windowSliding = true
-        // 页内跨章翻页（平移/覆盖）：动画已把 currentPage 推进到新章页。若此时 recenterSync 收缩窗口
-        // 到仅中心章，在收缩窗口上算出的 idx 与真实视觉页错位，scrollToPage 会把页滚到错误章。
-        // 检测条件：非程序化跳转 + 已完成初始恢复 + 当前视觉页已落在目标章（必须在 recenterSync 收缩
-        // 窗口之前判定，否则窗口只剩中心章、currentPage 越界返回 null）→ 动画已就位，跳过滚动，
-        // 由 LE2 在完整窗口上做最终确认。初始恢复和目录/上下章跳转不受影响（仍需滚动定位）。
+        // 页内跨章翻页（平移/覆盖）：动画已把 currentPage 推进到新章页。非程序化场景下若视觉页
+        // 已落在目标章，跳过滚动（position.offset 由 progress LE 写入，已反映正确位置）。
+        // 程序化跳章（上下章按钮/目录）必须无条件 scrollToPage，因为 currentPage 可能落在
+        // 目标章的末页（边界续翻残留），只有 scrollToPage(首页) 才能归位。
         val currentPageAlreadyOnTarget = !isProgrammatic && initialSeekDone &&
             window.chapterOfPage(pagerState.currentPage) == target
-        window.recenterSync(target, includeNeighbors = false)
+        // 非程序化跳章且窗口中心已正确时，不重新同步（避免缩小已扩展的窗口导致 currentPage 越界
+        // 被 clamped 到末页，用户落到章末而非首页）。
+        // 这发生在程序化跳章完成、pagerJumpTarget 被清除后，LaunchedEffect 因 activeChapterId
+        // 变化再次触发时——此时 window 已在 LaunchedEffect(window, state.activeChapterId) 中扩展
+        // 了邻居，不应再缩小回单章。
+        if (isProgrammatic || !initialSeekDone || window.centerChapterId != target) {
+            window.recenterSync(target, includeNeighbors = false)
+        }
         // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
         val idx = window.indexOf(target, sourceOffset.toLong())
             ?: window.indexOf(target, 0)
@@ -245,8 +259,24 @@ fun ReaderScreen(
         }
         initialSeekDone = true
         windowSliding = false
-        pagerJumpTarget = null
+        // 不在 LE 内清除 pagerJumpTarget：清除会立即触发 LE 重启，此时 activeChapterId 可能
+        // 还是旧章（navigateTo 是异步的），重启用旧 target + 旧 currentPage 算出错误 idx，
+        // 覆盖刚完成的 scrollToPage(0)，导致「下一章跳到最后一页」/「上一章没反应」。
+        // 改由下方 LaunchedEffect 在 activeChapterId 确认到达 target 且视觉页就位后清除。
         scope.launch { window.preloadNeighbors(target) }
+    }
+
+    // 程序化跳章收尾：activeChapterId 已到达 target 且 currentPage 落在目标章正确偏移页后，
+    // 清除 pagerJumpTarget。在此之前 LE1/LE2 都视为跳章进行中，避免用过期状态覆盖。
+    // 不能只检查 chapterOfPage==target（currentPage 可能落在目标章末页），必须校验偏移。
+    LaunchedEffect(window, state.activeChapterId, pagerJumpTarget, pagerState.currentPage) {
+        val jt = pagerJumpTarget ?: return@LaunchedEffect
+        if (state.activeChapterId != jt) return@LaunchedEffect
+        // currentPage 的章节原文偏移须与 pagerJumpOffset 一致才算跳章到位
+        val pageOffset = window.offsetOfPage(pagerState.currentPage)?.first
+        if (window.chapterOfPage(pagerState.currentPage) == jt && pageOffset == pagerJumpOffset) {
+            pagerJumpTarget = null
+        }
     }
 
     // 打开/切章后：后台排版中心章 ±1，完成后主线程扩展窗口并保持当前视觉页
@@ -257,10 +287,14 @@ fun ReaderScreen(
         if (!window.hasNeighbors(target)) {
             window.paginateNeighbors(target) // 后台排版，不阻塞 UI
         }
-        // 窗口重建时 pagerState.currentPage 是旧索引，用新窗口取偏移会错位；
-        // 以 state.position 为准（由翻页进度写入，始终可靠）。
-        val curChapter = state.activeChapterId
-        val curOffset = state.position?.offset
+        // 窗口扩展（pageCount 从中心章独占变为 ±1 邻居）后，pagerState.currentPage 的索引空间
+        // 变化：原来 idx=0 是中心章首页，扩展后 idx=0 变成前一章，中心章首页移到新 idx。
+        // 必须重新定位 currentPage 到目标章的正确页，否则视觉页漂移到错误章/末页。
+        // 程序化跳章进行中时用 pagerJumpOffset（用户意图的首页 offset=0），不用过期 position.offset。
+        val jumpTarget = pagerJumpTarget
+        val curChapter = jumpTarget ?: state.activeChapterId
+        val curOffset = if (jumpTarget != null) pagerJumpOffset else state.position?.offset
+        windowSliding = true
         window.recenterSync(target)
         val newIdx = window.indexOf(curChapter ?: target, curOffset?.toLong() ?: 0L)
             ?: window.indexOf(target, 0)
@@ -268,6 +302,7 @@ fun ReaderScreen(
         if (pagerState.currentPage != newIdx) {
             pagerState.scrollToPage(newIdx)
         }
+        windowSliding = false
     }
 
     // 分页模式：翻页时保存「章 + 章内页」进度；翻入新章同步 activeChapter（触发窗口滑动）

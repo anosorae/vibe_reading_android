@@ -540,11 +540,12 @@ fun renderPageBitmap(
                                 isAntiAlias = true
                                 color = palette.sourceBubble
                             }
-                            canvas.drawRect(
-                                Rect(
-                                    bubbleX.toFloat(), bubbleY.toFloat(),
-                                    (bubbleX + bubbleW).toFloat(), (bubbleY + bubbleH).toFloat()
-                                ),
+                            // 圆角半径对齐 BilingualParagraph 的 RoundedCornerShape(3.dp)
+                            val radius = padPx(3)
+                            canvas.drawRoundRect(
+                                bubbleX.toFloat(), bubbleY.toFloat(),
+                                (bubbleX + bubbleW).toFloat(), (bubbleY + bubbleH).toFloat(),
+                                radius.toFloat(), radius.toFloat(),
                                 bubblePaint
                             )
                         }

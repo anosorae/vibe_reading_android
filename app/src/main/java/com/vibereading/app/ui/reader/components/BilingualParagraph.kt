@@ -96,33 +96,39 @@ private fun BoxScope.SourceBubble(
     var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
-    // 44dp 触控区（隐形扩展，视觉气泡在右下角保持原位置）
+    // 触控区容器用 matchParentSize：填满父 Box 但不参与尺寸决策，
+    // 否则 44dp 触控区会比短段文本高，撑大 Box 导致位图与 Compose 页高度不一致。
+    // 触控区在 matchParentSize 容器内通过 align(BottomEnd) 定位到右下角，视觉位置不变。
     Box(
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(
-                end = ReaderMetrics.BUBBLE_END_DP.dp,
-                bottom = ReaderMetrics.BUBBLE_BOTTOM_DP.dp
-            )
-            .size(ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp)
-            .pointerInput(Unit) {
-                detectTapGestures { showPopup = !showPopup }
-            }
+        modifier = Modifier.matchParentSize()
     ) {
-        // 视觉气泡：在触控区内右下对齐，保持原视觉位置
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .size(
-                    width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
-                    height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp
+                .padding(
+                    end = ReaderMetrics.BUBBLE_END_DP.dp,
+                    bottom = ReaderMetrics.BUBBLE_BOTTOM_DP.dp
                 )
+                .size(ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { showPopup = !showPopup }
+                }
         ) {
-            Surface(
-                shape = RoundedCornerShape(3.dp),
-                color = palette.sourceBubble,
-                modifier = Modifier.fillMaxSize()
-            ) {}
+            // 视觉气泡：在触控区内右下对齐，保持原视觉位置
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(
+                        width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
+                        height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp
+                    )
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(3.dp),
+                    color = palette.sourceBubble,
+                    modifier = Modifier.fillMaxSize()
+                ) {}
+            }
         }
     }
 

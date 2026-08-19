@@ -189,10 +189,10 @@ private fun SelectionHandle(
                 HandleType.START -> size.width - lineW
                 HandleType.END -> 0f
             }
-            // 圆点中心 X：START 偏左，END 偏右，轴对称
+            // 圆点中心 X：紧贴竖线内侧（水滴与竖线连成一体，避免视觉分离）
             val dotCenterX = when (handleType) {
-                HandleType.START -> size.width * 0.35f
-                HandleType.END -> size.width * 0.65f
+                HandleType.START -> size.width - lineW - r * 0.5f
+                HandleType.END -> lineW + r * 0.5f
             }
             val dotCenterY = size.height - r - dotPadPx
 
@@ -202,11 +202,15 @@ private fun SelectionHandle(
                 topLeft = Offset(lineX, 2.dp.toPx()),
                 size = Size(lineW, (dotCenterY - 2.dp.toPx()).coerceAtLeast(0f))
             )
-            // 阴影
+            // 阴影（朝盒内偏移，避免贴边被裁剪）
+            val shadowOffsetX = when (handleType) {
+                HandleType.START -> -1f
+                HandleType.END -> 1f
+            }
             drawCircle(
                 color = palette.handleColor.copy(alpha = 0.3f),
                 radius = r + 2f,
-                center = Offset(dotCenterX + 1f, dotCenterY + 1f)
+                center = Offset(dotCenterX + shadowOffsetX, dotCenterY + 1f)
             )
             // 主圆点
             drawCircle(

@@ -81,6 +81,10 @@ class ReaderViewModel(
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
+    /** 当前阅读章节 ID 的独立流；combine 协调器状态时用它做 active 判定，
+     *  避免 navigateTo 改 activeChapterId 但协调器 _state 未变时桥接不重评估。 */
+    private val activeChapterIdFlow = MutableStateFlow<Long?>(null)
+
     // 翻译在 appScope 运行：按 Home 挂起或退出阅读器后仍可继续，直到完成/失败/被新任务替换
     private val translationCoordinator = TranslationCoordinator(
         bookId = bookId,
@@ -129,6 +133,7 @@ class ReaderViewModel(
                             errorMessage = null
                         )
                     }
+                    activeChapterIdFlow.value = chapter.id
                     if (_uiState.value.mode == "en") maybeTranslateChapter(chapter.id)
                 } else if (restoreCompleted) {
                     val current = _uiState.value.activeChapterId
@@ -138,11 +143,16 @@ class ReaderViewModel(
             }
         }
 
-        // 翻译协调器状态 → UI 状态（仅应用当前阅读章节的任务状态）
+        // 翻译协调器状态 → UI 状态。
+        // 用 combine 而非独立 collect：当 activeChapterId 变化（用户切回正在后台翻译的章节）
+        // 但协调器 _state 未变时，桥接也会重新评估并重新应用该章节的流式状态，
+        // 避免切回运行中章节时 UI 卡在 isStreaming=false 显示“翻译中…”。
         viewModelScope.launch {
-            translationCoordinator.state.collect { ts ->
+            combine(activeChapterIdFlow, translationCoordinator.state) { activeId, ts ->
+                activeId to ts
+            }.collect { (activeId, ts) ->
+                val isActive = ts.chapterId == activeId && activeId != null
                 _uiState.update { ui ->
-                    val isActive = ts.chapterId == ui.activeChapterId
                     ui.copy(
                         streamingText = if (isActive) ts.streamingText else ui.streamingText,
                         thinkingText = if (isActive) ts.thinkingText else ui.thinkingText,
@@ -206,19 +216,33 @@ class ReaderViewModel(
         viewModelScope.launch {
             val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return@launch
             val position = ReadingPosition(chapterId, offset.coerceIn(0, chapter.content.length))
+            // 若目标章节已有后台翻译在运行，不重置流式状态，让 combine 桥接重新应用协调器状态；
+            // 否则清空，准备开始新翻译或展示已完成译文
+            val running = translationCoordinator.currentRunningChapterId == chapterId &&
+                translationCoordinator.state.value.isStreaming
             _uiState.update {
-                it.copy(
-                    activeChapterId = chapterId,
-                    activeChapter = chapter,
-                    position = position,
-                    restoreReady = true,
-                    streamingText = "",
-                    thinkingText = "",
-                    isStreaming = false,
-                    translationPhase = TranslationPhase.IDLE,
-                    errorMessage = null
-                )
+                if (running) {
+                    it.copy(
+                        activeChapterId = chapterId,
+                        activeChapter = chapter,
+                        position = position,
+                        restoreReady = true
+                    )
+                } else {
+                    it.copy(
+                        activeChapterId = chapterId,
+                        activeChapter = chapter,
+                        position = position,
+                        restoreReady = true,
+                        streamingText = "",
+                        thinkingText = "",
+                        isStreaming = false,
+                        translationPhase = TranslationPhase.IDLE,
+                        errorMessage = null
+                    )
+                }
             }
+            activeChapterIdFlow.value = chapterId
             if (persist) enqueueProgress(position)
             if (_uiState.value.mode == "en") maybeTranslateChapter(chapterId)
         }
@@ -230,6 +254,7 @@ class ReaderViewModel(
         val position = ReadingPosition(chapterId, offset.coerceIn(0, chapter.content.length))
         if (position == _uiState.value.position) return
         _uiState.update { it.copy(position = position, activeChapterId = chapterId, activeChapter = chapter) }
+        activeChapterIdFlow.value = chapterId
         enqueueProgress(position)
     }
 

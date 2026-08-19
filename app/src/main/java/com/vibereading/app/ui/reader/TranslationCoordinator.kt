@@ -61,6 +61,9 @@ class TranslationCoordinator(
     private var runId = 0L
     private var runningChapterId: Long? = null
 
+    /** 当前正在翻译的章节 ID（可能在后台运行，UI 不在前台展示）。 */
+    val currentRunningChapterId: Long? get() = runningChapterId
+
     /** 启动翻译；同一章已有活动任务则忽略。 */
     fun translate(chapter: Chapter, settings: LlmSettings) {
         if (runningChapterId == chapter.id && translateJob?.isActive == true) return

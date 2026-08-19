@@ -224,6 +224,8 @@ class LlmApiService : TranslationService {
                                 chunkCount++
                                 emit(TranslationEvent.Progress(fullText.length))
                             }
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             AppLog.put("解析流式响应失败", e)
                             emit(TranslationEvent.Error("解析流式响应失败: ${e.message ?: "格式无效"}"))

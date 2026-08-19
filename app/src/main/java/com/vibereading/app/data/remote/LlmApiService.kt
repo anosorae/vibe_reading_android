@@ -42,7 +42,11 @@ private data class ChatStreamChoice(
 )
 private data class ChatStreamResponse(val choices: List<ChatStreamChoice>? = null)
 private data class ChatCompletionChoice(val message: ChatCompletionMessage? = null)
-private data class ChatCompletionMessage(val role: String, val content: String)
+private data class ChatCompletionMessage(
+    val role: String,
+    val content: String,
+    val reasoning_content: String? = null
+)
 private data class ChatCompletionResponse(val choices: List<ChatCompletionChoice>? = null)
 
 class LlmApiService : TranslationService {
@@ -317,7 +321,7 @@ class LlmApiService : TranslationService {
                 ),
                 "temperature" to 0.3f,
                 "top_p" to 0.9f,
-                "max_tokens" to 1024,
+                "max_tokens" to 4096,
                 "stream" to false
             )
             if (settings.enableThinking) {
@@ -341,11 +345,19 @@ class LlmApiService : TranslationService {
                 val body = response.body?.string() ?: return@withContext Result.failure(Exception("空响应"))
                 try {
                     val resp = gson.fromJson(body, ChatCompletionResponse::class.java)
-                    val content = resp.choices?.firstOrNull()?.message?.content
-                        ?: return@withContext Result.failure(Exception("模型返回内容为空"))
-                    // 提取 JSON：模型可能在外层包裹 markdown 代码块
+                    val message = resp.choices?.firstOrNull()?.message
+                    // content 为空时回退 reasoning_content（思考模式下模型可能将答案放入 reasoning_content）
+                    val content = if (!message?.content.isNullOrBlank()) message.content else message?.reasoning_content
+                    if (content.isNullOrBlank()) {
+                        AppLog.put("单词解释：模型返回内容为空，content=${message?.content?.length ?: 0}字, reasoning_content=${message?.reasoning_content?.length ?: 0}字")
+                        return@withContext Result.failure(Exception("模型返回内容为空"))
+                    }
+                    // 提取 JSON：模型可能在外层包裹 markdown 代码块或思考过程
                     val json = extractJson(content)
                     val explanation = gson.fromJson(json, WordExplanation::class.java)
+                    if (explanation == null) {
+                        AppLog.put("单词解释：解析结果为 null，extractJson 前200字: ${json.take(200)}")
+                    }
                     Result.success(explanation)
                 } catch (e: Exception) {
                     AppLog.put("解析单词解释结果失败", e)

@@ -874,7 +874,7 @@ fun ReaderScreen(
                         simFlip = simFlip,
                         // 卷页动画进行中禁用长按选词：用户手指在做翻页手势，
                         // 此时 SelectableParagraphText 若仍接收长按会误触发查词
-                        selectionState = if (simFlip.isRunning || anyOverlayVisible) null else selectionState
+                        selectionState = if (simFlip.isRunning) null else selectionState
                     )
                 }
             }
@@ -905,7 +905,7 @@ fun ReaderScreen(
                             pendingJumpChapter = id
                             vm.navigateTo(id, 0)
                         },
-                        selectionState = if (anyOverlayVisible) null else selectionState
+                        selectionState = selectionState
                     )
                 }
             }

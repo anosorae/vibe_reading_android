@@ -207,15 +207,6 @@ class TranslationCoordinator(
         }
     }
 
-    /** 立即终止当前任务（ViewModel onCleared）；不恢复章节状态。 */
-    fun cancelImmediately() {
-        runId++
-        translateJob?.cancel()
-        translateJob = null
-        runningChapterId = null
-        _state.value = TranslationUiState()
-    }
-
     private suspend fun loadContext(chapter: Chapter, settings: LlmSettings): String? {
         val budget = settings.contextMaxChars - chapter.content.length
         if (budget <= 0) return null

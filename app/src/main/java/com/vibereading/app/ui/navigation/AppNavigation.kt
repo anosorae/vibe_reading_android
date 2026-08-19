@@ -93,7 +93,8 @@ fun AppNavigation() {
             val vm: ReaderViewModel = viewModel(
                 factory = ReaderViewModel.Factory(
                     bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase,
-                    llmApiService = translationService
+                    llmApiService = translationService,
+                    appScope = application.appScope
                 )
             )
             ReaderScreen(

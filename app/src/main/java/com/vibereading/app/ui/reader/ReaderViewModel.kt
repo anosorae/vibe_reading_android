@@ -21,6 +21,7 @@ import com.vibereading.app.domain.model.toLlmProfile
 import com.vibereading.app.domain.model.toLlmSettings
 import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -71,17 +72,19 @@ class ReaderViewModel(
     private val llmProfileRepo: LlmProfileRepository,
     private val translationService: TranslationService,
     private val dictDatabase: DictDatabase? = null,
-    private val llmApiService: LlmApiService? = null
+    private val llmApiService: LlmApiService? = null,
+    appScope: CoroutineScope
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
 
+    // 翻译在 appScope 运行：按 Home 挂起或退出阅读器后仍可继续，直到完成/失败/被新任务替换
     private val translationCoordinator = TranslationCoordinator(
         bookId = bookId,
         chapterRepo = chapterRepo,
         translationService = translationService,
-        scope = viewModelScope
+        scope = appScope
     )
     private var llmEditDirty = false
     private val progressMutex = Mutex()
@@ -597,7 +600,8 @@ class ReaderViewModel(
     }
 
     override fun onCleared() {
-        translationCoordinator.cancelImmediately()
+        // 翻译运行在 appScope，退出阅读器后继续在后台完成，不在此取消；
+        // 仅 flush 阅读进度。重译/换章取消走 cancelAndReset，由用户动作触发。
         super.onCleared()
     }
 
@@ -609,12 +613,13 @@ class ReaderViewModel(
         private val llmProfileRepo: LlmProfileRepository,
         private val translationService: TranslationService,
         private val dictDatabase: DictDatabase? = null,
-        private val llmApiService: LlmApiService? = null
+        private val llmApiService: LlmApiService? = null,
+        private val appScope: CoroutineScope
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ReaderViewModel(
-                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService
+                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService, appScope
             ) as T
         }
     }

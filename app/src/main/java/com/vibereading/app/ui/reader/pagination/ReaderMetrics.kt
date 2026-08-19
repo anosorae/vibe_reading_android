@@ -22,6 +22,8 @@ object ReaderMetrics {
     const val BUBBLE_HEIGHT_DP = 6
     const val BUBBLE_END_DP = 4
     const val BUBBLE_BOTTOM_DP = 2
+    /** 原文气泡隐形触控区（视觉气泡 18×6dp 太小，扩展至 44dp 保证易点按） */
+    const val BUBBLE_TOUCH_TARGET_DP = 44
 
     /** 双语对英文段上下 padding 合计（px）——排版器 en 模式额外占位用（density 为 display density）。 */
     fun bilingualPadPx(density: Float): Float =

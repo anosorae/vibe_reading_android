@@ -1,6 +1,6 @@
 package com.vibereading.app.ui.reader.components
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.IntOffset
@@ -84,7 +85,8 @@ fun BilingualParagraph(
     }
 }
 
-/** 原文气泡 + 弹窗（视觉叠加层，不参与排版测量）。需在 Box 作用域内调用以使用 align 定位。 */
+/** 原文气泡 + 弹窗（视觉叠加层，不参与排版测量）。需在 Box 作用域内调用以使用 align 定位。
+ *  触控区 44dp × 44dp（视觉气泡仅 18×6dp），扩展区透明不干扰视觉，确保易点按。 */
 @Composable
 private fun BoxScope.SourceBubble(
     chineseText: String,
@@ -94,6 +96,7 @@ private fun BoxScope.SourceBubble(
     var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
+    // 44dp 触控区（隐形扩展，视觉气泡在右下角保持原位置）
     Box(
         modifier = Modifier
             .align(Alignment.BottomEnd)
@@ -101,17 +104,26 @@ private fun BoxScope.SourceBubble(
                 end = ReaderMetrics.BUBBLE_END_DP.dp,
                 bottom = ReaderMetrics.BUBBLE_BOTTOM_DP.dp
             )
-            .size(
-                width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
-                height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp
-            )
-            .clickable { showPopup = !showPopup }
+            .size(ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp)
+            .pointerInput(Unit) {
+                detectTapGestures { showPopup = !showPopup }
+            }
     ) {
-        Surface(
-            shape = RoundedCornerShape(3.dp),
-            color = palette.sourceBubble,
-            modifier = Modifier.fillMaxSize()
-        ) {}
+        // 视觉气泡：在触控区内右下对齐，保持原视觉位置
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .size(
+                    width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
+                    height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp
+                )
+        ) {
+            Surface(
+                shape = RoundedCornerShape(3.dp),
+                color = palette.sourceBubble,
+                modifier = Modifier.fillMaxSize()
+            ) {}
+        }
     }
 
     if (showPopup) {

@@ -69,14 +69,18 @@ fun ReaderScreen(
         ReaderBgPresets.GrayCream,
         ReaderBgPresets.DarkNight
     )
-    val bgColor = if (state.nightMode) ReaderBgPresets.DarkNight
+    val rawBgColor = if (state.nightMode) ReaderBgPresets.DarkNight
     else bgPresets.getOrElse(readingSettings.bgColorIndex) { ReaderBgPresets.WarmCream }
+    // rememberUpdatedState 确保手势协程（pointerInput）内始终读到最新值，
+    // 避免切换阅读背景后仿真卷页位图仍使用旧主题颜色。
+    val bgColor by rememberUpdatedState(rawBgColor)
     val isDark = state.nightMode || readingSettings.bgColorIndex == 4
     val flipMode = readingSettings.pageFlipMode
     val isPagerMode = flipMode != ReadingSettings.FLIP_SCROLL
     val accentColor = MaterialTheme.colorScheme.primary
     // 语义色板：把 isDark 亮/暗三元集中一处（正文/标题/气泡/弹窗共用）
-    val palette = remember(isDark) { ReaderPalette.of(isDark) }
+    val rawPalette = remember(isDark) { ReaderPalette.of(isDark) }
+    val palette by rememberUpdatedState(rawPalette)
     // 剪贴板与 Toast（选词复制）
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -335,7 +339,7 @@ fun ReaderScreen(
                 wf + wf - startTouchX   // PREV: 往右滚过屏幕，越过右边缘
             }
             val dy = if (simFlip.cornerY > 0f) (hf - startTouchY) else (1f - startTouchY)
-            val animationSpeed = 600 // ms，对齐 Legado defaultAnimationSpeed 量级
+            val animationSpeed = 400
             val duration = if (dx != 0f) (animationSpeed * kotlin.math.abs(dx) / wf).toLong()
             else (animationSpeed * kotlin.math.abs(dy) / hf).toLong()
             val endX = startTouchX + dx
@@ -390,7 +394,7 @@ fun ReaderScreen(
                 }
                 dy = if (simFlip.cornerY > 0f) hf - startTouchY else 1f - startTouchY
             }
-            val animationSpeed = 600
+            val animationSpeed = 400
             val duration = if (dx != 0f) (animationSpeed * kotlin.math.abs(dx) / wf).toLong()
             else (animationSpeed * kotlin.math.abs(dy) / hf).toLong()
             val endX = startTouchX + dx

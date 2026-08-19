@@ -3,6 +3,7 @@ package com.vibereading.app.ui.reader
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.content.Context
 import com.vibereading.app.data.dict.DictDatabase
 import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.remote.TranslationService
@@ -73,7 +74,8 @@ class ReaderViewModel(
     private val translationService: TranslationService,
     private val dictDatabase: DictDatabase? = null,
     private val llmApiService: LlmApiService? = null,
-    appScope: CoroutineScope
+    appScope: CoroutineScope,
+    appContext: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -84,7 +86,8 @@ class ReaderViewModel(
         bookId = bookId,
         chapterRepo = chapterRepo,
         translationService = translationService,
-        scope = appScope
+        scope = appScope,
+        appContext = appContext
     )
     private var llmEditDirty = false
     private val progressMutex = Mutex()
@@ -614,12 +617,13 @@ class ReaderViewModel(
         private val translationService: TranslationService,
         private val dictDatabase: DictDatabase? = null,
         private val llmApiService: LlmApiService? = null,
-        private val appScope: CoroutineScope
+        private val appScope: CoroutineScope,
+        private val appContext: Context
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ReaderViewModel(
-                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService, appScope
+                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService, appScope, appContext
             ) as T
         }
     }

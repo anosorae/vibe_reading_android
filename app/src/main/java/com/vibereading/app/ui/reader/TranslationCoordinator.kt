@@ -6,6 +6,8 @@ import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.log.AppLog
+import com.vibereading.app.log.TranslationForegroundService
+import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -49,7 +51,8 @@ class TranslationCoordinator(
     private val bookId: Long,
     private val chapterRepo: ChapterRepository,
     private val translationService: TranslationService,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val appContext: Context
 ) {
     private val _state = MutableStateFlow(TranslationUiState())
     val state: StateFlow<TranslationUiState> = _state.asStateFlow()
@@ -87,6 +90,8 @@ class TranslationCoordinator(
                     return@launch
                 }
                 markedInProgress = true
+                // 启动前台服务：保持进程前台状态，避免按 Home 挂起时系统销毁 socket
+                TranslationForegroundService.start(appContext)
                 _state.update {
                     it.copy(
                         isStreaming = true,
@@ -187,6 +192,9 @@ class TranslationCoordinator(
                 if (run == runId) {
                     runningChapterId = null
                     if (!terminalEvent) _state.update { it.copy(isStreaming = false) }
+                    // 本任务仍是当前任务且已终止（完成/失败/取消）：停止前台服务。
+                    // 若已被新任务替换（run != runId），服务由新任务接管，此处不停止。
+                    if (markedInProgress) TranslationForegroundService.stop(appContext)
                 }
             }
         }
@@ -205,6 +213,8 @@ class TranslationCoordinator(
         if (oldChapterId != null && oldRun > 0) {
             chapterRepo.cancelTranslation(bookId, oldChapterId, oldRun)
         }
+        // 显式取消：停止前台服务。若紧接着重译，translate() 会重新启动。
+        TranslationForegroundService.stop(appContext)
     }
 
     private suspend fun loadContext(chapter: Chapter, settings: LlmSettings): String? {

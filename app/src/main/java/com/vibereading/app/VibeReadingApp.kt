@@ -5,6 +5,7 @@ import com.vibereading.app.data.local.AppDatabase
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.CrashHandler
 import com.vibereading.app.log.LogUtils
+import com.vibereading.app.log.TranslationForegroundService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +28,7 @@ class VibeReadingApp : Application() {
         AppLog.init(this)
         LogUtils.init(this)
         LogUtils.logDeviceInfo()
+        TranslationForegroundService.createNotificationChannel(this)
         super.onCreate()
     }
 }

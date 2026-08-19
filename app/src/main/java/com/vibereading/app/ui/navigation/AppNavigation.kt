@@ -94,7 +94,8 @@ fun AppNavigation() {
                 factory = ReaderViewModel.Factory(
                     bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase,
                     llmApiService = translationService,
-                    appScope = application.appScope
+                    appScope = application.appScope,
+                    appContext = application
                 )
             )
             ReaderScreen(

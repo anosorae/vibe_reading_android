@@ -97,7 +97,7 @@ class TranslationCoordinatorTest {
     }
 
     private fun coordinator(service: TranslationService) =
-        TranslationCoordinator(bookId, chapterRepo, service, scope)
+        TranslationCoordinator(bookId, chapterRepo, service, scope, context)
 
     /** 轮询等待章节状态落库；返回最终实体（含 translationRunId）。 */
     private suspend fun awaitStatus(expected: Int): ChapterEntity {

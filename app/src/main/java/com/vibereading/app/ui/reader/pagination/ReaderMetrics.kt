@@ -25,6 +25,12 @@ object ReaderMetrics {
     /** 原文气泡隐形触控区（视觉气泡 18×6dp 太小，扩展至 44dp 保证易点按） */
     const val BUBBLE_TOUCH_TARGET_DP = 44
 
+    /** 选择手柄尺寸 / 定位（对齐 ADR-002 D8） */
+    const val HANDLE_SIZE_DP = 24       // 触控区域（竖线+圆点的盒子大小）
+    const val HANDLE_LINE_WIDTH_DP = 2  // 竖线宽度
+    const val HANDLE_DOT_RADIUS_DP = 4 // 底部圆点半径
+    const val HANDLE_DOT_PADDING_DP = 4 // 圆点距盒子底部间距
+
     /** 双语对英文段上下 padding 合计（px）——排版器 en 模式额外占位用（density 为 display density）。 */
     fun bilingualPadPx(density: Float): Float =
         (2 * kotlin.math.round(BILINGUAL_PAD_DP * density)).toFloat()

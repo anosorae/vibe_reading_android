@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
@@ -46,6 +47,7 @@ import com.vibereading.app.ui.reader.components.ExplainPopup
 import com.vibereading.app.ui.reader.components.PageInfoOverlays
 import com.vibereading.app.ui.reader.components.LlmSettingsSheet
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
+import com.vibereading.app.ui.reader.components.SelectionHandles
 import com.vibereading.app.ui.reader.components.SelectionToolbar
 import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.ui.reader.pagination.*
@@ -694,10 +696,14 @@ fun ReaderScreen(
         }
     }
 
+    // 手势容器在窗口中的位置，用于手柄坐标转换
+    var containerWindowOffset by remember { mutableStateOf(Offset.Zero) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
+            .onGloballyPositioned { containerWindowOffset = it.positionInWindow() }
             .pointerInput(isPagerMode, flipMode, readingSettings.paddingH, readingSettings.paddingV, statusBarPx, navBarPx, window) {
                 val inSim = isPagerMode && flipMode == ReadingSettings.FLIP_SIMULATION
                 awaitEachGesture {
@@ -734,9 +740,11 @@ fun ReaderScreen(
                         simFlip.downSettledFlip = settle >= 0
                         simFlip.calcCornerXY(downX, viewW, viewH)
                         simFlip.curl.setViewSize(viewW, viewH)
-                        // 已有选区时：DOWN 即清除（新长按可立即重新选词），本次手势结束时不再翻页
+                        // 已有选区时：DOWN 被手柄消费则保留选区，否则清除
                         val hadSelectionAtDown = selectionState.isSelecting
-                        if (hadSelectionAtDown) selectionState.clear()
+                        if (hadSelectionAtDown && !down.isConsumed) {
+                            selectionState.clear()
+                        }
                         val hadDictAtDown = isDictPopupOpen
 
                         var curlActive = false
@@ -855,9 +863,11 @@ fun ReaderScreen(
                         val downY = down.position.y
                         val slopSquare = 30f * 30f
                         var moved = false
-                        // 已有选区时：DOWN 即清除（新长按可立即重新选词），本次手势结束时不再翻页
+                        // 已有选区时：DOWN 被手柄消费则保留选区，否则清除
                         val hadSelectionAtDown = selectionState.isSelecting
-                        if (hadSelectionAtDown) selectionState.clear()
+                        if (hadSelectionAtDown && !down.isConsumed) {
+                            selectionState.clear()
+                        }
                         val hadDictAtDown = isDictPopupOpen
                         while (true) {
                             val event = awaitPointerEvent()
@@ -1061,7 +1071,8 @@ fun ReaderScreen(
         )
 
         // ── 长按选词工具栏（无选区时隐藏；弹窗为独立 focusable 窗口） ──
-        if (selectionState.isSelecting) {
+        // showToolbar 控制显隐：拖拽手柄时工具栏隐藏，选区保留；拖拽结束或长按选中后显示
+        if (selectionState.isSelecting && selectionState.showToolbar) {
             SelectionToolbar(
                 selectionState = selectionState,
                 palette = palette,
@@ -1080,9 +1091,21 @@ fun ReaderScreen(
                     clipboard.setText(AnnotatedString(word))
                     Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
                     selectionState.clear()
+                },
+                onDismissRequest = {
+                    // 点击工具栏外部：仅关闭工具栏，保留选区供手柄继续交互
+                    selectionState.dismissToolbar()
                 }
             )
         }
+
+        // ── 选择手柄（竖线+圆点，拖拽扩展选区；覆盖层渲染，不触发翻页） ──
+        SelectionHandles(
+            selectionState = selectionState,
+            palette = palette,
+            density = density,
+            containerWindowOffset = containerWindowOffset
+        )
 
         // ── 词典查询结果弹窗 ──
         state.dictQueryWord?.let { queryWord ->

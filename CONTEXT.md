@@ -41,6 +41,9 @@
 | **流式翻译状态栏 (Streaming Status Bar)** | 翻译面板顶部固定显示阶段和字符数；思考内容与正式回复在下方独立滚动 | 流式内容区 |
 | **输出长度截断 (Length Truncation)** | `finish_reason="length"` 表示模型未完整生成；即使收到 `[DONE]` 也必须失败，不能保存为已翻译 | 正常停止 |
 | **选词 (Word Selection)** | 长按正文触发：`TextLayoutResult.getOffsetForPosition` 命中字符 → `BreakIterator` 分词 → 高亮选区 + 工具栏（查词/复制）。瞬时 UI 状态，翻页/滚动/切章/开浮层时清除 | 选区高亮 |
+| **选择手柄 (Selection Handle)** | 选区两端显示的竖线+圆点拖拽控件（iOS 风格）：START 在手选区首字符左边缘，END 在末字符右边缘。拖拽手柄扩展或收缩选区范围，松开弹出工具栏 | 选区扩展 |
+| **选区扩展 (Selection Expansion)** | 拖拽选择手柄将单词级选区扩展为多词短语级选区；选区始终限制在单一段落内，不跨段 | 单次选词 |
+| **手柄反转 (Handle Reverse)** | 拖拽手柄越过对面手柄时自动交换角色：START 变为 END、END 变为 START，原拖拽手势不中断，用户拖拽的始终是活动端 | 固定手柄 |
 | **查词 (Dict Lookup)** | 工具栏「查词」→ 离线查询内嵌 ECDICT 库 → 弹窗显示音标/词性/中文释义；未收录时提示（中文词提示"仅支持英文查词"） | 选词 |
 | **词典库 (Dict Database)** | 内嵌 ECDICT 精简版 SQLite（约 50 万常用词条，只含 word/phonetic/translation/pos 四列）；构建时 gzip 预压缩为 `assets/dict/ecdict.dict`，首次查词解压到内部存储 | 在线词典 |
 | **单词解释 (Word Explanation)** | 选词工具栏「解释」按钮调用 LLM（非流式）返回 `WordExplanation`（音标/词性/释义/例句等 JSON）；与离线「查词」并列，依赖已配置的 API Key | 查词 |
@@ -63,6 +66,7 @@
 | 翻译状态机 | `TranslationCoordinator`（注入 `TranslationService`） |
 | 翻译网络服务 | `TranslationService`（`LlmApiService` 实现） |
 | 选词状态与分词 | `TextSelectionState` + `SelectableParagraphText` + `findWordBoundary` |
+| 选择手柄 | `SelectionHandles`（双端拖拽手柄，覆盖层渲染）+ `TextSelectionState`（双端选区） |
 | 词典数据访问 | `DictDatabase`（只读 SQLite，asset 解压后打开） |
 | 单词解释 | `LlmApiService.explainWord()` → `WordExplanation`（`ReaderViewModel.explainWord` 入口） |
 | LLM 配置档案 | `LlmProfileEntity`/`LlmProfileDao`/`LlmProfileRepository`；`LlmSettings` 为运行时子集 |
@@ -85,6 +89,7 @@
 - **翻译流可靠性**：持续拼接所有 `content` chunk 直到 `[DONE]`；思考字段单独生成 `Thinking`；网络、解析、取消和长度截断不得静默保存为成功译文。
 - **翻译写入的 stale 防护**：翻译开始、完成、失败、取消都以 `translationRunId` 为数据库级匹配条件（`ChapterDao.*TranslationRun`）；切换阅读章节不取消合法后台任务，新任务替换旧任务时旧任务的迟到写入被拒绝。
 - **选词是瞬时交互**：选区/工具栏/词典弹窗不持久化；翻页、滚动、切换章节或模式、打开浮层时清除。长按后的下一次点击只清除选区（或关闭词典弹窗）不翻页，再点才正常翻页。长按命中后 consume 本次手势剩余事件，防止外层把抬起当作点按翻页。
+- **选词支持双端手柄扩展**：选中词后出现左右两个选择手柄，拖拽手柄扩展选区到多词短语。选区限制在单一段落内，不跨段。拖拽手柄越过对面手柄时自动反转角色。拖拽结束松开时在选区几何中心上方弹出工具栏。手柄为屏幕级覆盖层（ReaderScreen 层级），自然拦截触摸优先于翻页手势。
 - **词典库构建与打包**：`tools/build_dict_db.py` 从 ECDICT 基础版 CSV 裁剪（词频存在或词长≤14）构建四列 SQLite，统一小写存储（BINARY 主键 + 查询小写归一覆盖大小写，无 NOCASE 索引）；gzip 预压缩（自定义头携带解压尺寸）为 `assets/dict/ecdict.dict`，APK `noCompress` 原样打包（约 18.7MB）；运行时首次查词解压到 `databases/ecdict.db` 后只读打开，之后按 gz 头声明的尺寸判断是否需要更新。
 - **选词高亮是视觉叠加**：选区背景 SpanStyle 不参与文本测量，不改变分页/滚动排版结果。
 - **错误落日志**：所有 `catch` 与 `Result.exceptionOrNull()` 路径除写 UI 状态外，应调用 `AppLog.put(msg, throwable)` 落日志；不在各组件散落 `android.util.Log` 或 `printStackTrace`。崩溃由 `CrashHandler` 全局捕获落盘，下次启动经 `CrashMark` 弹窗提示查看。

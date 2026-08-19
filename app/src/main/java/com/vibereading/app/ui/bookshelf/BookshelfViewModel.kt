@@ -14,6 +14,7 @@ import com.vibereading.app.domain.model.Book
 import com.vibereading.app.domain.model.BookShelfItem
 import com.vibereading.app.domain.model.ThemeSettings
 import com.vibereading.app.domain.parser.TxtParser
+import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -135,6 +136,7 @@ class BookshelfViewModel(
                     )
                 }
             } catch (e: Exception) {
+                AppLog.put("书籍上传失败", e)
                 _uiState.update {
                     it.copy(isLoading = false, uploadMessage = "上传失败: ${e.message}")
                 }

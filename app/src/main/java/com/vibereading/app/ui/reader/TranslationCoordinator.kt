@@ -5,6 +5,7 @@ import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -135,6 +136,7 @@ class TranslationCoordinator(
                         }
                         is TranslationEvent.Error -> {
                             terminalEvent = true
+                            AppLog.put("翻译流错误：书 $bookId 章 $chapterId run $run：${event.reason}")
                             if (chapterRepo.failTranslation(bookId, chapterId, run, event.reason)) {
                                 if (run == runId) {
                                     _state.update {
@@ -172,6 +174,7 @@ class TranslationCoordinator(
             } catch (e: Exception) {
                 if (markedInProgress) {
                     val reason = e.message ?: "翻译失败"
+                    AppLog.put("翻译失败：书 $bookId 章 $chapterId run $run", e)
                     if (chapterRepo.failTranslation(bookId, chapterId, run, reason)) {
                         if (run == runId) {
                             _state.update {

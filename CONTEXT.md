@@ -27,7 +27,7 @@
 | **页边距 (Page Margin)** | 内容区与屏幕边缘的用户留白；分页、滚动和五种翻页类型共用 | — |
 | **自定义字体 (Custom Font)** | 通过 SAF 导入 TTF/OTF，持久化 `content://` URI 并取得持久权限 | 系统字体 |
 | **边到边 (Edge-to-Edge)** | 内容延伸到系统栏区域；排版、渲染、滚动 padding 和仿真手势统一扣除状态栏/导航栏 | 系统栏 |
-| **夜间模式 (Night Mode)** | 阅读背景在当前预设与深夜背景之间的快捷切换，独立于全局主题和背景设置 | 背景预设 |
+| **夜间模式 (Night Mode)** | 阅读背景在当前预设与深夜背景之间的快捷切换，独立于全局主题和背景设置；不归属 `ReadingSettings`，存于 `SettingsRepository`（DataStore）并映射到 `ReaderUiState.nightMode` | 背景预设 |
 | **背景色 (Background Preset)** | 阅读器背景预设：暖白、米色、青绿、灰米、深夜；不等同于全局主题 | 夜间模式 |
 | **主题模式 (Theme Mode)** | 全局主题：跟随系统/浅色/深色 × 原木/青简；阅读页面配色独立控制 | 阅读背景 |
 | **章节滑块 (Chapter Slider)** | 阅读器底部控件，显示章节位置并支持拖动跨章跳转；跳转到目标章节原文起点 | 上一章/下一章 |
@@ -43,6 +43,10 @@
 | **选词 (Word Selection)** | 长按正文触发：`TextLayoutResult.getOffsetForPosition` 命中字符 → `BreakIterator` 分词 → 高亮选区 + 工具栏（查词/复制）。瞬时 UI 状态，翻页/滚动/切章/开浮层时清除 | 选区高亮 |
 | **查词 (Dict Lookup)** | 工具栏「查词」→ 离线查询内嵌 ECDICT 库 → 弹窗显示音标/词性/中文释义；未收录时提示（中文词提示"仅支持英文查词"） | 选词 |
 | **词典库 (Dict Database)** | 内嵌 ECDICT 精简版 SQLite（约 50 万常用词条，只含 word/phonetic/translation/pos 四列）；构建时 gzip 预压缩为 `assets/dict/ecdict.dict`，首次查词解压到内部存储 | 在线词典 |
+| **单词解释 (Word Explanation)** | 选词工具栏「解释」按钮调用 LLM（非流式）返回 `WordExplanation`（音标/词性/释义/例句等 JSON）；与离线「查词」并列，依赖已配置的 API Key | 查词 |
+| **LLM 配置档案 (LLM Profile)** | `llm_profiles` 表中的翻译服务配置（名称/API Key/API Base/模型/温度/Top P/上下文增强/思考模式等），多档案共存，`isActive` 标记当前生效档案；`LlmSettings` 是其翻译/连接测试使用的运行时子集 | 单一全局配置 |
+| **应用日志 (App Log)** | 运行时事件日志：内存环形缓冲（`AppLog`，上限 100 条）+ 异步文件日志（`LogUtils`，`<externalCacheDir>/logs/`）；错误路径统一调用 `AppLog.put` 落日志，用户经「设置 → 调试 → 日志」查看 | 崩溃日志 |
+| **崩溃日志 (Crash Log)** | 全局未捕获异常由 `CrashHandler` 落盘到 `<externalCacheDir>/crash/crash-<time>.log`（含设备信息头 + 完整堆栈），并设置 `CrashMark` 让下次启动弹窗提示查看 | 应用日志 |
 
 ## 共享实现概念
 
@@ -60,6 +64,9 @@
 | 翻译网络服务 | `TranslationService`（`LlmApiService` 实现） |
 | 选词状态与分词 | `TextSelectionState` + `SelectableParagraphText` + `findWordBoundary` |
 | 词典数据访问 | `DictDatabase`（只读 SQLite，asset 解压后打开） |
+| 单词解释 | `LlmApiService.explainWord()` → `WordExplanation`（`ReaderViewModel.explainWord` 入口） |
+| LLM 配置档案 | `LlmProfileEntity`/`LlmProfileDao`/`LlmProfileRepository`；`LlmSettings` 为运行时子集 |
+| 应用与崩溃日志 | `AppLog`（内存）/ `LogUtils`+`AsyncFileHandler`（文件）/ `CrashHandler`+`CrashMark`（崩溃） |
 
 ## 关键边界（决策摘要）
 
@@ -71,7 +78,7 @@
 - **分页窗口**：当前章 ±1 章全量排版常驻；打开书籍/切章首帧仅同步排版中心章，邻居章后台排版后扩展窗口并保持当前视觉页，目录/章节滑块远跳重建窗口 O(1)，但恢复依据始终是 `chapterId + sourceOffset`。滚动内容全书解析惰性化：分页模式不构建，首次进入滚动模式时构建并缓存。
 - **双语原子性**：英文双语对默认不可拆；单对超高时按英文行切分，所有片段仍绑定同一个中文原文范围，只有首片段显示 `pairHead` 原文气泡。
 - **视觉叠加不参与排版**：原文气泡、Popup、状态提示等不能进入文本测量或改变分页；末段不渲染段距，排版器和真实页面/卷页位图必须保持同一高度口径。
-- **设置入口**：字体、字号、行距、段距、翻页类型、背景和高级排版参数的唯一入口是阅读器设置面板。高级选项包括页边距、字间距、首行缩进、两端对齐。
+- **设置入口**：字体、字号、行距、段距、翻页类型、背景和高级排版参数的唯一入口是阅读器设置面板。高级选项包括页边距、字间距、首行缩进、两端对齐。全局设置页（`SettingsScreen`）只放主题、翻译配置、翻译参数、调试（日志）和关于，不重复阅读排版项。
 - **边到边一致性**：排版几何、PageRenderer、滚动 content padding、卷页覆盖层和仿真手势必须使用同一系统栏扣除公式；内容区宽高按整像素对齐。
 - **目录入口**：阅读器目录唯一入口在底部栏中央，顶栏不放目录按钮。
 - **主题独立性**：全局 `ThemeSettings` 的 dark/light 与配色只控制应用主题；阅读器页面背景、正文和气泡颜色由阅读设置及 `ReaderPalette` 控制。
@@ -80,6 +87,8 @@
 - **选词是瞬时交互**：选区/工具栏/词典弹窗不持久化；翻页、滚动、切换章节或模式、打开浮层时清除。长按后的下一次点击只清除选区（或关闭词典弹窗）不翻页，再点才正常翻页。长按命中后 consume 本次手势剩余事件，防止外层把抬起当作点按翻页。
 - **词典库构建与打包**：`tools/build_dict_db.py` 从 ECDICT 基础版 CSV 裁剪（词频存在或词长≤14）构建四列 SQLite，统一小写存储（BINARY 主键 + 查询小写归一覆盖大小写，无 NOCASE 索引）；gzip 预压缩（自定义头携带解压尺寸）为 `assets/dict/ecdict.dict`，APK `noCompress` 原样打包（约 18.7MB）；运行时首次查词解压到 `databases/ecdict.db` 后只读打开，之后按 gz 头声明的尺寸判断是否需要更新。
 - **选词高亮是视觉叠加**：选区背景 SpanStyle 不参与文本测量，不改变分页/滚动排版结果。
+- **错误落日志**：所有 `catch` 与 `Result.exceptionOrNull()` 路径除写 UI 状态外，应调用 `AppLog.put(msg, throwable)` 落日志；不在各组件散落 `android.util.Log` 或 `printStackTrace`。崩溃由 `CrashHandler` 全局捕获落盘，下次启动经 `CrashMark` 弹窗提示查看。
+- **日志入口**：用户经「设置 → 调试 → 日志」进入 `LogViewerScreen`（运行日志/崩溃日志双 Tab），日志查看器不参与阅读排版。
 
 ## 交互规则
 

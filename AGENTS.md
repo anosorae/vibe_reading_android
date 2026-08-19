@@ -13,15 +13,15 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - Android 验证优先使用 android-emulator MCP：`android_preflight` → `android_discover_project` → `android_build_and_run` 或 `build_app` + `install_app` + `launch_app`。除非用户明确要求，不主动截图或执行额外 UI 自动化。
 - 单测使用 Robolectric 4.14/NATIVE 真实换行测量；断言结构化结果（offset 范围、切段拼接、双语原子性、页高和位置映射），不要固定易变的像素值。
 - 项目为单模块 `:app`，包名 `com.vibereading.app`，minSdk 26，target/compileSdk 35，Kotlin 2.1.0，Compose BOM 2024.12.01，Gradle 8.11.1。
-- Room schema 通过 KSP 输出到 `app/schemas`；当前数据库版本为 6，实体模型使用 `lastReadOffset`；`chapters.translationRunId` 提供翻译任务的数据库级 stale 防护；书架「已译章节数」由 chapters 表 DONE 状态实时派生，`books.translatedChapters` 冗余列已移除。
+- Room schema 通过 KSP 输出到 `app/schemas`；当前数据库版本为 8，三个实体 `BookEntity`/`ChapterEntity`/`LlmProfileEntity`，迁移链 `MIGRATION_2_3` … `MIGRATION_7_8` 全部手写注册（v6→v7 新增 `llm_profiles` 表，v7→v8 增 `temperature`/`topP` 列）。实体模型使用 `lastReadOffset`；`chapters.translationRunId` 提供翻译任务的数据库级 stale 防护；书架「已译章节数」由 chapters 表 DONE 状态实时派生，`books.translatedChapters` 冗余列已移除。
 
 ## 目录结构
 
 - `app/src/main/java/com/vibereading/app/`
-  - `data/` — Room 本地库（`local/entity`、`local/dao`）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（Book/Chapter/Settings 仓库）、`dict/`（`DictDatabase` 内嵌词典只读访问）
-  - `domain/model/` — 纯 Kotlin 领域模型，包括 `Book`、`Chapter`、`ReadingPosition`、`ReadingSettings`、`DictEntry`
+  - `data/` — Room 本地库：`local/entity`（`BookEntity`/`ChapterEntity`/`LlmProfileEntity`）、`local/dao`（`BookDao`/`ChapterDao`/`LlmProfileDao`，含 `AppDatabase` 迁移链）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（`BookRepository`/`ChapterRepository`/`SettingsRepository`/`LlmProfileRepository`）、`dict/`（`DictDatabase` 内嵌词典只读访问）
+  - `domain/model/` — 纯 Kotlin 领域模型：`Book`、`BookShelfItem`、`Chapter`、`ReadingPosition`、`ReadingSettings`（含 `LlmSettings`，两者同文件）、`LlmProfile`、`ThemeSettings`、`DictEntry`、`WordExplanation`
   - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`；负责保留原文段落的 UTF-16 起止 offset
-  - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`、`navigation`、`theme`
+  - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`（全局设置，含调试/日志入口）、`log`（日志查看器）、`navigation`、`theme`
     - `reader/ReaderScreen.kt` — 阅读器容器、五种翻页交互、生命周期 flush、滚动/分页接线（页面协调）
     - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
     - `reader/ReaderChrome.kt` — 顶栏/底栏/翻译状态面板/章节标签等 chrome 组件
@@ -30,8 +30,14 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
     - `reader/components/ReadingContentRenderer.kt` — 分页与滚动共享的章节标题/正文/双语内容渲染
     - `reader/components/BilingualParagraph.kt` — 英文译文、原文气泡和 Popup
     - `reader/components/TextSelection.kt` — 长按选词：`TextSelectionState`、`SelectableParagraphText`、`findWordBoundary`（BreakIterator 分词）
-    - `reader/components/SelectionToolbar.kt` — 选词工具栏（查词/复制）
+    - `reader/components/SelectionToolbar.kt` — 选词工具栏（查词/复制/解释）
     - `reader/components/DictPopup.kt` — 词典查询结果弹窗
+    - `reader/components/ExplainPopup.kt` — LLM 单词解释结果弹窗（`WordExplanation`）
+    - `reader/components/ReaderSettingsSheet.kt` — 阅读器设置面板（字体/字号/行距/段距/翻页/背景/高级排版）
+    - `reader/components/LlmSettingsSheet.kt` — 翻译配置面板（多 LLM 配置档案 CRUD + 连接测试）
+    - `reader/components/CatalogBottomSheet.kt` — 章节目录底部抽屉
+    - `reader/components/PageInfoOverlays.kt` — 页码/进度浮层
+    - `reader/content/ReadingContent.kt` — 统一章节内容结构（`ReadingContent.fromChapter()`），分页与滚动的共同数据源
     - `reader/ReaderPalette.kt` — 亮/暗语义色板
     - `reader/ReaderGeometry.kt` — 页面几何和系统栏扣除公式
     - `reader/ChapterStatusUi.kt` — 章节状态到颜色映射
@@ -40,11 +46,15 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
     - `reader/pagination/BookPager.kt` — HorizontalPager、PageRenderer、覆盖/卷页位图
     - `reader/pagination/PageCurl.kt` — Legado 仿真卷页几何移植
     - `reader/pagination/ReaderMetrics.kt` — 排版、标题、双语 padding、气泡尺寸共享常量
-  - `VibeReadingApp.kt` — Application，持有 Room 单例
-- `app/src/test/java/` — LLM/SSE、设置、解析器、阅读位置、分页窗口、手势、选词分词和词典查询单测
+  - `log/` — 三层日志：`AppLog`（内存环形缓冲，最新在前上限 100）、`LogUtils`+`AsyncFileHandler`（`java.util.logging` 异步写 `<externalCacheDir>/logs/`）、`CrashHandler`（全局未捕获异常落盘 `<externalCacheDir>/crash/`，内含 `CrashMark` 标志位）、`CrashLogFiles`（崩溃文件列表/读取/删除）、`LogContext`（进程级 Context + 单线程后台执行器）
+  - `MainActivity.kt` — 唯一 Activity，`enableEdgeToEdge` + `VibeReadingTheme { AppNavigation() }`
+  - `ui/log/LogViewerScreen.kt` — 日志查看器：运行日志/崩溃日志双 Tab，清除与复制
+  - `VibeReadingApp.kt` — Application，持有 Room 单例；`onCreate` 中先装 `CrashHandler` 再 `AppLog.init`/`LogUtils.init`/`logDeviceInfo`
+- `app/src/test/java/` — LLM/SSE、迁移、DAO、设置仓库、解析器、阅读位置、分页窗口、仿真/手势、位图渲染、选词分词、词典查询与翻译状态机单测
 - `docs/` — ADR 文档
 - `reference_code/legado-E/` — Legado 开源阅读器参考源码，**只读，禁止修改**。
 - `tools/build_dict_db.py` — 词典库构建脚本（CSV → 四列 SQLite → gzip 资产）
+- `app/proguard-rules.pro` — R8 保留规则（release `minifyEnabled`）；keep Gson 模型 `data.remote.**` 与 `WordExplanation`、Room 实体 `data.local.entity.**`，dontwarn OkHttp/okio。新增 Gson 反序列化的数据类必须在此加 keep 规则。
 
 ## 架构与分层规则
 
@@ -54,7 +64,7 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - 阅读位置统一使用 `ReadingPosition(chapterId, offset)`。`Book.lastReadChapterId` 和 `Book.lastReadOffset` 是持久化恢复数据；页码只能是当前 `BookWindow`/`ChapterPaginator` 的派生状态。
 - 初始恢复必须是一次性、原子、无副作用的：先读取 Book 位置快照，再等待章节列表；不要通过会写库的普通导航函数恢复默认位置。后续章节 Flow 只刷新当前章节。
 - 位置变化统一经过 ViewModel 的进度入口；分页从 `window.offsetOfPage()` 取 offset，滚动从可见 `ScrollItem` 取 offset。写入必须串行，退出前调用 `flushProgress()`。
-- 翻译走 `TranslationService` 接口（`LlmApiService` 实现）的 `translateStream()`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文。
+- 翻译走 `TranslationService` 接口（`LlmApiService` 实现，方法：`translateStream`/`testConnection`/`truncateMiddle`）的 `translateStream()`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文。LLM 配置存于 `llm_profiles` 表（多档案，`LlmProfileRepository` 管理，`isActive` 标记当前生效档案）；`LlmSettings` 是翻译/连接测试使用的运行时子集。
 - 翻译状态机集中在 `TranslationCoordinator`（注入 `TranslationService`）：开始翻译时写入 `chapters.translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧任务无法污染新任务。
 
 ## 阅读内容与五种翻页模式
@@ -93,7 +103,8 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 
 ## 复用与内聚
 
-- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，章节状态颜色用 `chapterStatusColor`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，词典访问用 `DictDatabase`。
+- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，章节状态颜色用 `chapterStatusColor`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，词典访问用 `DictDatabase`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
+- 错误路径（`catch` / `Result.exceptionOrNull()`）除了写 UI 状态外，应调用 `AppLog.put(msg, throwable)` 落日志，便于用户在「设置 → 调试 → 日志」中定位 bug；不要散落 `android.util.Log` 或 `printStackTrace`。
 - 修改跨组件概念前先搜索其单一数据源；不要在组件内复制常量或重新解析章节文本。
 - 共享 Composable 优先复用 `ReadingChapterTitle`、`ReadingParagraphItem`、`BilingualParagraph`；新增视觉差异应通过参数表达，而不是复制组件。
 
@@ -101,6 +112,6 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 
 - 注释和 UI 字符串以中文为主，新增代码保持一致。
 - 文案和术语必须与 `CONTEXT.md` 一致；新增概念先更新术语表。
-- `ReadingSettings` 使用 `FLIP_*` 字符串常量和 `TITLE_MODE_*` 整数常量；Llm 默认 API base 为 DeepSeek，API key 存于 DataStore，思考模式文案使用通用模型措辞。
+- `ReadingSettings` 使用 `FLIP_*` 字符串常量和 `TITLE_MODE_*` 整数常量；`LlmSettings`（同文件）默认 API base 为 DeepSeek、模型 `deepseek-v4-flash`，API key 与配置档案存于 `llm_profiles` 表（DataStore 旧值由 `AppNavigation` 启动时 `ensureDefaultProfile()` 一次性迁移），思考模式文案使用通用模型措辞。`nightMode` 不属于 `ReadingSettings`，而是独立存于 `SettingsRepository`（DataStore key）并映射到 `ReaderUiState.nightMode`。
 - 单元测试断言结构化结果，不 pin 跨版本易变的像素值；解析器测试必须覆盖原文范围、空行/逐行输入、标记对齐和无效标记。
 - `reference_code/legado-E/` 只作对照，禁止改动。

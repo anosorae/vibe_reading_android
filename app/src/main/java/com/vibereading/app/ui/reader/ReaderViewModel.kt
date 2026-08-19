@@ -19,6 +19,7 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.domain.model.ReadingPosition
 import com.vibereading.app.domain.model.toLlmProfile
 import com.vibereading.app.domain.model.toLlmSettings
+import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -471,6 +472,7 @@ class ReaderViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.put("保存翻译设置失败", e)
                 _uiState.update { it.copy(llmTestResult = e.message ?: "保存翻译设置失败", llmTestSuccess = false) }
             }
         }
@@ -494,6 +496,7 @@ class ReaderViewModel(
                 }
                 llmEditDirty = false
                 val result = translationService.testConnection(newSettings)
+                result.exceptionOrNull()?.let { AppLog.put("连接测试失败", it) }
                 _uiState.update {
                     it.copy(
                         llmTestResult = result.getOrNull() ?: result.exceptionOrNull()?.message,
@@ -503,6 +506,7 @@ class ReaderViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.put("测试连接失败", e)
                 _uiState.update {
                     it.copy(llmTestResult = e.message ?: "测试连接失败", llmTestSuccess = false)
                 }
@@ -577,8 +581,10 @@ class ReaderViewModel(
                 if (result.isSuccess) {
                     it.copy(explainResult = result.getOrNull(), explainLoading = false, explainError = null)
                 } else {
+                    val ex = result.exceptionOrNull()
+                    AppLog.put("单词解释失败：$word", ex)
                     it.copy(explainResult = null, explainLoading = false,
-                        explainError = result.exceptionOrNull()?.message ?: "解释失败")
+                        explainError = ex?.message ?: "解释失败")
                 }
             }
         }

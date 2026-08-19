@@ -42,7 +42,8 @@ import com.vibereading.app.ui.theme.WereadColors
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenLogs: () -> Unit = {}
 ) {
     val state by vm.uiState.collectAsState()
     val editApiKey by vm.editApiKey.collectAsState()
@@ -397,6 +398,27 @@ fun SettingsScreen(
                     steps = 9,
                     colors = SliderDefaults.colors(activeTrackColor = accentColor)
                 )
+            }
+
+            // ── 调试 ──
+            SectionHeader("调试")
+            SectionCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenLogs() }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("日志", style = MaterialTheme.typography.bodyMedium)
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
 
             // ── 关于 ──

@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.WordExplanation
 import com.vibereading.app.domain.parser.ReadingContentParser.splitParagraphs
+import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -224,18 +225,24 @@ class LlmApiService : TranslationService {
                                 emit(TranslationEvent.Progress(fullText.length))
                             }
                         } catch (e: Exception) {
+                            AppLog.put("解析流式响应失败", e)
                             emit(TranslationEvent.Error("解析流式响应失败: ${e.message ?: "格式无效"}"))
                             return@flow
                         }
                     }
                 }
-                if (!sawDone) emit(TranslationEvent.Error("流式响应提前结束"))
+                if (!sawDone) {
+                    AppLog.put("流式响应提前结束（未收到 [DONE]）")
+                    emit(TranslationEvent.Error("流式响应提前结束"))
+                }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: java.io.IOException) {
+            AppLog.put("翻译网络错误", e)
             emit(TranslationEvent.Error("网络错误: ${e.message}"))
         } catch (e: Exception) {
+            AppLog.put("翻译请求失败", e)
             emit(TranslationEvent.Error(e.message ?: "翻译请求失败"))
         } finally {
             call?.cancel()
@@ -275,14 +282,17 @@ class LlmApiService : TranslationService {
                     val resp = gson.fromJson(body, ChatCompletionResponse::class.java)
                     Result.success(resp.choices?.firstOrNull()?.message?.content ?: "连接成功")
                 } catch (e: Exception) {
+                    AppLog.put("解析连接测试响应失败", e)
                     Result.failure(Exception("解析响应失败: ${e.message}"))
                 }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: java.io.IOException) {
+            AppLog.put("连接测试网络错误", e)
             Result.failure(Exception("网络错误: ${e.message}"))
         } catch (e: Exception) {
+            AppLog.put("连接测试请求失败", e)
             Result.failure(Exception(e.message ?: "请求配置无效"))
         }
     }
@@ -336,14 +346,17 @@ class LlmApiService : TranslationService {
                     val explanation = gson.fromJson(json, WordExplanation::class.java)
                     Result.success(explanation)
                 } catch (e: Exception) {
+                    AppLog.put("解析单词解释结果失败", e)
                     Result.failure(Exception("解析解释结果失败: ${e.message}"))
                 }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: java.io.IOException) {
+            AppLog.put("单词解释网络错误", e)
             Result.failure(Exception("网络错误: ${e.message}"))
         } catch (e: Exception) {
+            AppLog.put("单词解释请求失败", e)
             Result.failure(Exception(e.message ?: "解释请求失败"))
         }
     }

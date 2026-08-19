@@ -227,13 +227,22 @@ fun ReaderScreen(
             else -> state.position?.offset ?: 0
         }
         windowSliding = true
+        // 页内跨章翻页（平移/覆盖）：动画已把 currentPage 推进到新章页。若此时 recenterSync 收缩窗口
+        // 到仅中心章，在收缩窗口上算出的 idx 与真实视觉页错位，scrollToPage 会把页滚到错误章。
+        // 检测条件：非程序化跳转 + 已完成初始恢复 + 当前视觉页已落在目标章（必须在 recenterSync 收缩
+        // 窗口之前判定，否则窗口只剩中心章、currentPage 越界返回 null）→ 动画已就位，跳过滚动，
+        // 由 LE2 在完整窗口上做最终确认。初始恢复和目录/上下章跳转不受影响（仍需滚动定位）。
+        val currentPageAlreadyOnTarget = !isProgrammatic && initialSeekDone &&
+            window.chapterOfPage(pagerState.currentPage) == target
         window.recenterSync(target, includeNeighbors = false)
         // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
         val idx = window.indexOf(target, sourceOffset.toLong())
             ?: window.indexOf(target, 0)
             ?: window.indexOf(window.centerChapterId ?: target, 0)
             ?: 0
-        if (pagerState.currentPage != idx) pagerState.scrollToPage(idx)
+        if (!currentPageAlreadyOnTarget && pagerState.currentPage != idx) {
+            pagerState.scrollToPage(idx)
+        }
         initialSeekDone = true
         windowSliding = false
         pagerJumpTarget = null
@@ -256,7 +265,9 @@ fun ReaderScreen(
         val newIdx = window.indexOf(curChapter ?: target, curOffset?.toLong() ?: 0L)
             ?: window.indexOf(target, 0)
             ?: 0
-        if (pagerState.currentPage != newIdx) pagerState.scrollToPage(newIdx)
+        if (pagerState.currentPage != newIdx) {
+            pagerState.scrollToPage(newIdx)
+        }
     }
 
     // 分页模式：翻页时保存「章 + 章内页」进度；翻入新章同步 activeChapter（触发窗口滑动）
@@ -267,7 +278,9 @@ fun ReaderScreen(
         val cp = window.chapterOfPage(pagerState.currentPage) ?: return@LaunchedEffect
         val offset = window.offsetOfPage(pagerState.currentPage)?.first ?: return@LaunchedEffect
         vm.updateProgress(cp, offset)
-        if (cp != state.activeChapterId) vm.navigateTo(cp, offset)
+        if (cp != state.activeChapterId) {
+            vm.navigateTo(cp, offset)
+        }
     }
 
     /** 卷页快照对（对齐 Legado setBitmap）：curBitmap=当前页, targetBitmap=目标页。 */

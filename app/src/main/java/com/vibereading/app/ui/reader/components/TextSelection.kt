@@ -151,7 +151,27 @@ fun SelectableParagraphText(
                         val charOffset = runCatching {
                             layout.getOffsetForPosition(pressPosition)
                         }.getOrNull()
-                        val wordRange = charOffset?.let {
+                        // 两端对齐时，getOffsetForPosition 返回的字符可能偏左（视觉位置因齐行间距偏右），
+                        // 在该行上逐字符遍历，用 getBoundingBox 的 ink 边界做命中测试。
+                        // 兼容两端对齐、居中等所有对齐方式，尽可能补偿 getOffsetForPosition 的映射偏差。
+                        val adjustedOffset = if (charOffset != null) {
+                            val line = layout.getLineForOffset(charOffset)
+                            val lineStart = layout.getLineStart(line)
+                            val lineEnd = layout.getLineEnd(line, visibleEnd = true)
+                            var found = charOffset
+                            for (off in lineStart until lineEnd) {
+                                val bbox = layout.getBoundingBox(off)
+                                // 给 1px 容差，避免亚像素舍入把触点判到边界外
+                                if (pressPosition.x >= bbox.left - 1f &&
+                                    pressPosition.x <= bbox.right + 1f
+                                ) {
+                                    found = off
+                                    break
+                                }
+                            }
+                            found
+                        } else null
+                        val wordRange = adjustedOffset?.let {
                             findWordBoundary(text, it, locale)
                         }
                         val word = wordRange?.let { text.substring(it) }

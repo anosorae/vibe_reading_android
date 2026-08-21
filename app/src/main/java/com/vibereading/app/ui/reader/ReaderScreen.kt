@@ -1176,6 +1176,7 @@ fun ReaderScreen(
             onUpdateContextChapters = vm::updateLlmContextChapters,
             onUpdateContextMaxChars = vm::updateLlmContextMaxChars,
             onToggleThinking = vm::updateLlmThinking,
+            onToggleExplainThinking = vm::updateLlmExplainThinking,
             onUpdateTemperature = vm::updateLlmTemperature,
             onUpdateTopP = vm::updateLlmTopP,
             onSwitchProfile = vm::switchProfile,

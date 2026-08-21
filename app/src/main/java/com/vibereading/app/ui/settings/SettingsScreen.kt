@@ -347,6 +347,23 @@ fun SettingsScreen(
                     )
                 }
 
+                // 解释时思考
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("解释时思考", style = MaterialTheme.typography.bodyMedium)
+                        Text("选词解释时使用深度思考模式", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    }
+                    Switch(
+                        checked = ls.enableExplainThinking,
+                        onCheckedChange = { vm.updateExplainThinking(it) },
+                        colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                    )
+                }
+
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 // 采样温度

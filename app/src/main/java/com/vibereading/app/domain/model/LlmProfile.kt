@@ -15,6 +15,7 @@ data class LlmProfile(
     val contextChapters: Int = 1,
     val contextMaxChars: Int = 30000,
     val enableThinking: Boolean = false,
+    val enableExplainThinking: Boolean = false,
     val temperature: Float = 0.6f,
     val topP: Float = 1f
 )
@@ -29,6 +30,7 @@ fun LlmProfile.toLlmSettings(): LlmSettings = LlmSettings(
     contextChapters = contextChapters.coerceIn(1, 3),
     contextMaxChars = contextMaxChars,
     enableThinking = enableThinking,
+    enableExplainThinking = enableExplainThinking,
     temperature = temperature.coerceIn(0f, 2f),
     topP = topP.coerceIn(0f, 1f)
 )
@@ -45,6 +47,7 @@ fun LlmSettings.toLlmProfile(name: String, id: Long = 0): LlmProfile = LlmProfil
     contextChapters = contextChapters,
     contextMaxChars = contextMaxChars,
     enableThinking = enableThinking,
+    enableExplainThinking = enableExplainThinking,
     temperature = temperature,
     topP = topP
 )

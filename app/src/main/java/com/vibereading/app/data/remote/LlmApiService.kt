@@ -324,7 +324,7 @@ class LlmApiService : TranslationService {
                 "max_tokens" to 4096,
                 "stream" to false
             )
-            if (settings.enableThinking) {
+            if (settings.enableExplainThinking) {
                 requestMap["thinking"] = mapOf("type" to "enabled")
                 requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to true)
             } else {

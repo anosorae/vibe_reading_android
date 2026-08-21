@@ -56,6 +56,7 @@ fun LlmSettingsSheet(
     onUpdateContextChapters: (Int) -> Unit,
     onUpdateContextMaxChars: (Int) -> Unit,
     onToggleThinking: (Boolean) -> Unit,
+    onToggleExplainThinking: (Boolean) -> Unit,
     onUpdateTemperature: (Float) -> Unit,
     onUpdateTopP: (Float) -> Unit,
     onSwitchProfile: (Long) -> Unit,
@@ -385,6 +386,23 @@ fun LlmSettingsSheet(
                 Switch(
                     checked = llmSettings.enableThinking,
                     onCheckedChange = onToggleThinking,
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                )
+            }
+
+            // 解释时思考
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("解释时思考", style = MaterialTheme.typography.bodyMedium)
+                    Text("选词解释时使用深度思考模式", fontSize = 12.sp, color = VibeColors.WarmGray)
+                }
+                Switch(
+                    checked = llmSettings.enableExplainThinking,
+                    onCheckedChange = onToggleExplainThinking,
                     colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
                 )
             }

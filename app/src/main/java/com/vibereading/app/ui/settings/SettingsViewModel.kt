@@ -278,6 +278,14 @@ class SettingsViewModel(
             llmProfileRepo.updateProfileWithActiveState(profile.copy(enableThinking = enabled), isActive = true)
         }
     }
+    fun updateExplainThinking(enabled: Boolean) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableExplainThinking = enabled)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableExplainThinking = enabled), isActive = true)
+        }
+    }
     fun updateTemperature(value: Float) {
         val clamped = value.coerceIn(0f, 2f)
         _uiState.update { it.copy(llmSettings = it.llmSettings.copy(temperature = clamped)) }

@@ -54,10 +54,10 @@ class SettingsRepository(
             apiKey = prefs[LlmKeys.API_KEY]?.trim() ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
             apiBase = prefs[LlmKeys.API_BASE]?.trim()?.trimEnd('/')?.ifEmpty { defaultApiBase } ?: defaultApiBase,
             model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { "deepseek-v4-flash" },
-            chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 20000,
+            chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 30000,
             enableContextBoost = prefs[LlmKeys.ENABLE_CONTEXT_BOOST] ?: false,
             contextChapters = prefs[LlmKeys.CONTEXT_CHAPTERS]?.coerceIn(1, 3) ?: 1,
-            contextMaxChars = prefs[LlmKeys.CONTEXT_MAX_CHARS] ?: 30000,
+            contextMaxChars = prefs[LlmKeys.CONTEXT_MAX_CHARS] ?: 50000,
             enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: false
         )
     }

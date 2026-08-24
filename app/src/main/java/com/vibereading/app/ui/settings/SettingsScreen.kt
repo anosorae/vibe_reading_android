@@ -34,6 +34,13 @@ import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.ThemeMode
+import com.vibereading.app.ui.components.CHAPTER_MAX_CHARS_RANGE
+import com.vibereading.app.ui.components.CONTEXT_CHAPTERS_RANGE
+import com.vibereading.app.ui.components.CONTEXT_MAX_CHARS_RANGE
+import com.vibereading.app.ui.components.DECIMAL_PARAM_STEP
+import com.vibereading.app.ui.components.TEMPERATURE_RANGE
+import com.vibereading.app.ui.components.StepperValueInput
+import com.vibereading.app.ui.components.TOP_P_RANGE
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.WereadColors
@@ -143,17 +150,6 @@ fun SettingsScreen(
                 }
             }
 
-            // ── 阅读设置 ──
-            SectionHeader("阅读设置")
-            SectionCard {
-                Text(
-                    "字体、字号、行间距、段落间距、背景色与翻页类型以阅读器内的设置面板为唯一入口（阅读页 → 底部「设置」）。",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 20.sp
-                )
-            }
-
             // ── 翻译设置 ──
             SectionHeader("翻译设置")
             SectionCard {
@@ -245,27 +241,21 @@ fun SettingsScreen(
             SectionCard {
                 val ls = state.llmSettings
 
-                // 单章字符上限
+                // 单章字符上限：步进器微调 + 直接输入
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "${ls.chapterMaxChars}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accentColor
+                    StepperValueInput(
+                        value = ls.chapterMaxChars,
+                        range = CHAPTER_MAX_CHARS_RANGE,
+                        step = 1000,
+                        accentColor = accentColor,
+                        onValueChange = vm::updateChapterMaxChars
                     )
                 }
-                Slider(
-                    value = ls.chapterMaxChars.toFloat(),
-                    onValueChange = { vm.updateChapterMaxChars(it.toInt()) },
-                    valueRange = 1000f..200000f,
-                    steps = 19,
-                    colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                )
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
@@ -300,15 +290,15 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("上下文章节数", style = MaterialTheme.typography.bodySmall)
-                                Text("${ls.contextChapters}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                                StepperValueInput(
+                                    value = ls.contextChapters,
+                                    range = CONTEXT_CHAPTERS_RANGE,
+                                    step = 1,
+                                    accentColor = accentColor,
+                                    fieldWidth = 44.dp,
+                                    onValueChange = vm::updateContextChapters
+                                )
                             }
-                            Slider(
-                                value = ls.contextChapters.toFloat(),
-                                onValueChange = { vm.updateContextChapters(it.toInt()) },
-                                valueRange = 1f..3f,
-                                steps = 1,
-                                colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                            )
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -316,14 +306,14 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("总字符限制", style = MaterialTheme.typography.bodySmall)
-                                Text("${ls.contextMaxChars}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                                StepperValueInput(
+                                    value = ls.contextMaxChars,
+                                    range = CONTEXT_MAX_CHARS_RANGE,
+                                    step = 5000,
+                                    accentColor = accentColor,
+                                    onValueChange = vm::updateContextMaxChars
+                                )
                             }
-                            Slider(
-                                value = ls.contextMaxChars.toFloat(),
-                                onValueChange = { vm.updateContextMaxChars(it.toInt()) },
-                                valueRange = 5000f..500000f,
-                                colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                            )
                         }
                     }
                 }
@@ -376,20 +366,14 @@ fun SettingsScreen(
                         Text("采样温度", style = MaterialTheme.typography.bodyMedium)
                         Text("越高输出越随机，越低越确定；建议与 top_p 二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
                     }
-                    Text(
-                        String.format("%.1f", ls.temperature),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accentColor
+                    StepperValueInput(
+                        value = ls.temperature,
+                        range = TEMPERATURE_RANGE,
+                        step = DECIMAL_PARAM_STEP,
+                        accentColor = accentColor,
+                        onValueChange = vm::updateTemperature
                     )
                 }
-                Slider(
-                    value = ls.temperature,
-                    onValueChange = { vm.updateTemperature(it) },
-                    valueRange = 0f..2f,
-                    steps = 19,
-                    colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                )
 
                 // Top P
                 Row(
@@ -401,20 +385,14 @@ fun SettingsScreen(
                         Text("Top P", style = MaterialTheme.typography.bodyMedium)
                         Text("仅考虑前 top_p 概率的 token；建议与采样温度二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
                     }
-                    Text(
-                        String.format("%.1f", ls.topP),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accentColor
+                    StepperValueInput(
+                        value = ls.topP,
+                        range = TOP_P_RANGE,
+                        step = DECIMAL_PARAM_STEP,
+                        accentColor = accentColor,
+                        onValueChange = vm::updateTopP
                     )
                 }
-                Slider(
-                    value = ls.topP,
-                    onValueChange = { vm.updateTopP(it) },
-                    valueRange = 0f..1f,
-                    steps = 9,
-                    colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                )
             }
 
             // ── 调试 ──

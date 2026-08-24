@@ -27,6 +27,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.ui.components.CHAPTER_MAX_CHARS_RANGE
+import com.vibereading.app.ui.components.CONTEXT_CHAPTERS_RANGE
+import com.vibereading.app.ui.components.CONTEXT_MAX_CHARS_RANGE
+import com.vibereading.app.ui.components.DECIMAL_PARAM_STEP
+import com.vibereading.app.ui.components.TEMPERATURE_RANGE
+import com.vibereading.app.ui.components.StepperValueInput
+import com.vibereading.app.ui.components.TOP_P_RANGE
 import com.vibereading.app.ui.theme.VibeColors
 
 /**
@@ -290,27 +297,21 @@ fun LlmSettingsSheet(
 
             Spacer(Modifier.height(10.dp))
 
-            // 单章字符上限
+            // 单章字符上限：步进器微调 + 直接输入
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "${llmSettings.chapterMaxChars}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accentColor
+                StepperValueInput(
+                    value = llmSettings.chapterMaxChars,
+                    range = CHAPTER_MAX_CHARS_RANGE,
+                    step = 1000,
+                    accentColor = accentColor,
+                    onValueChange = onUpdateChapterMaxChars
                 )
             }
-            Slider(
-                value = llmSettings.chapterMaxChars.toFloat(),
-                onValueChange = { onUpdateChapterMaxChars(it.toInt()) },
-                valueRange = 1000f..200000f,
-                steps = 19,
-                colors = SliderDefaults.colors(activeTrackColor = accentColor)
-            )
 
             // 上下文增强翻译
             Row(
@@ -343,15 +344,15 @@ fun LlmSettingsSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("上下文章节数", style = MaterialTheme.typography.bodySmall)
-                            Text("${llmSettings.contextChapters}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                            StepperValueInput(
+                                value = llmSettings.contextChapters,
+                                range = CONTEXT_CHAPTERS_RANGE,
+                                step = 1,
+                                accentColor = accentColor,
+                                fieldWidth = 44.dp,
+                                onValueChange = onUpdateContextChapters
+                            )
                         }
-                        Slider(
-                            value = llmSettings.contextChapters.toFloat(),
-                            onValueChange = { onUpdateContextChapters(it.toInt()) },
-                            valueRange = 1f..3f,
-                            steps = 1,
-                            colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                        )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -359,14 +360,14 @@ fun LlmSettingsSheet(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("总字符限制", style = MaterialTheme.typography.bodySmall)
-                            Text("${llmSettings.contextMaxChars}", fontWeight = FontWeight.SemiBold, color = accentColor)
+                            StepperValueInput(
+                                value = llmSettings.contextMaxChars,
+                                range = CONTEXT_MAX_CHARS_RANGE,
+                                step = 5000,
+                                accentColor = accentColor,
+                                onValueChange = onUpdateContextMaxChars
+                            )
                         }
-                        Slider(
-                            value = llmSettings.contextMaxChars.toFloat(),
-                            onValueChange = { onUpdateContextMaxChars(it.toInt()) },
-                            valueRange = 5000f..500000f,
-                            colors = SliderDefaults.colors(activeTrackColor = accentColor)
-                        )
                     }
                 }
             }
@@ -419,20 +420,14 @@ fun LlmSettingsSheet(
                     Text("采样温度", style = MaterialTheme.typography.bodyMedium)
                     Text("越高输出越随机，越低越确定；建议与 top_p 二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
                 }
-                Text(
-                    String.format("%.1f", llmSettings.temperature),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accentColor
+                StepperValueInput(
+                    value = llmSettings.temperature,
+                    range = TEMPERATURE_RANGE,
+                    step = DECIMAL_PARAM_STEP,
+                    accentColor = accentColor,
+                    onValueChange = onUpdateTemperature
                 )
             }
-            Slider(
-                value = llmSettings.temperature,
-                onValueChange = { onUpdateTemperature(it) },
-                valueRange = 0f..2f,
-                steps = 19,
-                colors = SliderDefaults.colors(activeTrackColor = accentColor)
-            )
 
             // Top P
             Row(
@@ -444,20 +439,14 @@ fun LlmSettingsSheet(
                     Text("Top P", style = MaterialTheme.typography.bodyMedium)
                     Text("仅考虑前 top_p 概率的 token；建议与采样温度二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
                 }
-                Text(
-                    String.format("%.1f", llmSettings.topP),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = accentColor
+                StepperValueInput(
+                    value = llmSettings.topP,
+                    range = TOP_P_RANGE,
+                    step = DECIMAL_PARAM_STEP,
+                    accentColor = accentColor,
+                    onValueChange = onUpdateTopP
                 )
             }
-            Slider(
-                value = llmSettings.topP,
-                onValueChange = { onUpdateTopP(it) },
-                valueRange = 0f..1f,
-                steps = 9,
-                colors = SliderDefaults.colors(activeTrackColor = accentColor)
-            )
         }
     }
 }

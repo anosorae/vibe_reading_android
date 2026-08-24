@@ -157,13 +157,13 @@ fun ReaderSettingsSheet(
             var fontPickerVisible by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("字号", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(72.dp))
+                    modifier = Modifier.width(56.dp))
                 StepperValueInput(
                     value = settings.fontSize,
                     range = 14..24,
                     step = 1,
                     accentColor = accentColor,
-                    fieldWidth = 44.dp,
+                    fieldWidth = 52.dp,
                     onValueChange = { onUpdate(settings.copy(fontSize = it)) }
                 )
                 Spacer(Modifier.width(12.dp))
@@ -173,8 +173,8 @@ fun ReaderSettingsSheet(
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = if (customFontActive) accentColor.copy(alpha = 0.1f) else Color.Transparent
                     ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1f)
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.weight(1f).height(32.dp)
                 ) {
                     Text(
                         currentFontName,
@@ -201,24 +201,49 @@ fun ReaderSettingsSheet(
                 )
             }
 
-            // ── 常用滑块（行间距 / 段落间距） ──
-            SettingSliderRow(
-                title = "行间距",
-                value = settings.lineSpacing.toFloat(),
-                display = "${settings.lineSpacing}",
-                range = 0f..24f,
-                accentColor = accentColor
-            ) { onUpdate(settings.copy(lineSpacing = it.toInt())) }
+            // ── 行间距 / 段落间距 / 字间距 / 首行缩进（胶囊步进，两行每行两个，字号下方） ──
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text("行间距", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(56.dp))
+                    StepperValueInput(
+                        value = settings.lineSpacing, range = 0..24, step = 1,
+                        accentColor = accentColor, fieldWidth = 52.dp,
+                        onValueChange = { onUpdate(settings.copy(lineSpacing = it)) }
+                    )
+                }
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text("段落间距", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(56.dp))
+                    StepperValueInput(
+                        value = settings.paragraphSpacing, range = 4..32, step = 1,
+                        accentColor = accentColor, fieldWidth = 52.dp,
+                        onValueChange = { onUpdate(settings.copy(paragraphSpacing = it)) }
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text("字间距", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(56.dp))
+                    StepperValueInput(
+                        value = settings.letterSpacing, range = -0.5f..0.5f, step = 0.01f,
+                        accentColor = accentColor, decimals = 2, fieldWidth = 52.dp,
+                        onValueChange = { onUpdate(settings.copy(letterSpacing = it)) }
+                    )
+                }
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text("首行缩进", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(56.dp))
+                    StepperValueInput(
+                        value = settings.indentEm, range = 0f..4f, step = 0.5f,
+                        accentColor = accentColor, decimals = 1, fieldWidth = 52.dp,
+                        onValueChange = { onUpdate(settings.copy(indentEm = it)) }
+                    )
+                }
+            }
 
-            SettingSliderRow(
-                title = "段落间距",
-                value = settings.paragraphSpacing.toFloat(),
-                display = "${settings.paragraphSpacing}",
-                range = 4f..32f,
-                accentColor = accentColor
-            ) { onUpdate(settings.copy(paragraphSpacing = it.toInt())) }
-
-            // ── 排版滑块（左右边距 / 上下边距 / 字间距 / 首行缩进） ──
+            // ── 排版滑块（左右边距 / 上下边距 / 页眉间距 / 页脚间距） ──
             SettingSliderRow(
                 title = "左右边距",
                 value = settings.paddingH.toFloat(),
@@ -250,24 +275,6 @@ fun ReaderSettingsSheet(
                 range = 0f..50f,
                 accentColor = accentColor
             ) { onUpdate(settings.copy(footerContentGap = it.toInt())) }
-
-            SettingSliderRow(
-                title = "字间距",
-                value = settings.letterSpacing,
-                display = String.format("%.2f", settings.letterSpacing),
-                range = -0.5f..0.5f,
-                accentColor = accentColor,
-                step = 0.01f
-            ) { onUpdate(settings.copy(letterSpacing = it)) }
-
-            SettingSliderRow(
-                title = "首行缩进",
-                value = settings.indentEm,
-                display = String.format("%.1f em", settings.indentEm),
-                range = 0f..4f,
-                accentColor = accentColor,
-                step = 0.5f
-            ) { onUpdate(settings.copy(indentEm = it)) }
 
             // ── 两端对齐 ──
             Row(

@@ -19,6 +19,7 @@ data class LlmProfileEntity(
     val contextMaxChars: Int = 50000,
     val enableThinking: Boolean = false,
     val enableExplainThinking: Boolean = false,
+    val autoTranslateNext: Boolean = false, // 英文阅读时预译下一章
     val temperature: Float = 0.6f,
     val topP: Float = 1f,
     val isActive: Boolean = false

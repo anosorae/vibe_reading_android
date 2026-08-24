@@ -16,6 +16,7 @@ data class LlmProfile(
     val contextMaxChars: Int = 50000,
     val enableThinking: Boolean = false,
     val enableExplainThinking: Boolean = false,
+    val autoTranslateNext: Boolean = false, // 英文阅读时预译下一章
     val temperature: Float = 0.6f,
     val topP: Float = 1f
 )
@@ -31,6 +32,7 @@ fun LlmProfile.toLlmSettings(): LlmSettings = LlmSettings(
     contextMaxChars = contextMaxChars,
     enableThinking = enableThinking,
     enableExplainThinking = enableExplainThinking,
+    autoTranslateNext = autoTranslateNext,
     temperature = temperature.coerceIn(0f, 2f),
     topP = topP.coerceIn(0f, 1f)
 )
@@ -48,6 +50,7 @@ fun LlmSettings.toLlmProfile(name: String, id: Long = 0): LlmProfile = LlmProfil
     contextMaxChars = contextMaxChars,
     enableThinking = enableThinking,
     enableExplainThinking = enableExplainThinking,
+    autoTranslateNext = autoTranslateNext,
     temperature = temperature,
     topP = topP
 )

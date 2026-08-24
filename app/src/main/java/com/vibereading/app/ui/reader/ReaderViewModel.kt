@@ -136,6 +136,7 @@ class ReaderViewModel(
                     }
                     activeChapterIdFlow.value = chapter.id
                     if (_uiState.value.mode == "en") maybeTranslateChapter(chapter.id)
+                    prefetchNextChapterIfNeeded()
                 } else if (restoreCompleted) {
                     val current = _uiState.value.activeChapterId
                     val updated = chapters.find { it.id == current }
@@ -158,12 +159,26 @@ class ReaderViewModel(
                         streamingText = if (isActive) ts.streamingText else ui.streamingText,
                         thinkingText = if (isActive) ts.thinkingText else ui.thinkingText,
                         streamingCharCount = if (isActive) ts.streamingCharCount else ui.streamingCharCount,
-                        isStreaming = if (isActive) ts.isStreaming else ui.isStreaming,
+                        // 协调器在译「非当前章」（如预译下一章）时，当前章未在放流：
+                        // 置 false，避免当前章的进度弹窗因状态合并（conflation）卡住不关闭。
+                        isStreaming = if (isActive) ts.isStreaming else false,
                         translationPhase = if (isActive) ts.phase else ui.translationPhase,
                         errorMessage = if (isActive) ts.errorMessage else ui.errorMessage
                     )
                 }
             }
+        }
+
+        // 任一翻译任务结束后（完成/失败/取消），尝试预译下一章：
+        // 若当前章翻译在忙被跳过，等它结束后在这里补上预译。
+        viewModelScope.launch {
+            translationCoordinator.state
+                .drop(1) // 跳过初始 IDLE 态
+                .collect { ts ->
+                    if (!ts.isStreaming && ts.phase != TranslationPhase.PREPARING) {
+                        prefetchNextChapterIfNeeded()
+                    }
+                }
         }
 
         // Load settings
@@ -238,6 +253,7 @@ class ReaderViewModel(
             activeChapterIdFlow.value = chapterId
             if (persist) enqueueProgress(position)
             if (_uiState.value.mode == "en") maybeTranslateChapter(chapterId)
+            prefetchNextChapterIfNeeded()
         }
     }
 
@@ -296,6 +312,7 @@ class ReaderViewModel(
         viewModelScope.launch { bookRepo.updateLanguageMode(bookId, mode) }
         if (mode == "en") {
             _uiState.value.activeChapterId?.let { maybeTranslateChapter(it) }
+            prefetchNextChapterIfNeeded()
         }
     }
 
@@ -461,6 +478,16 @@ class ReaderViewModel(
             llmProfileRepo.updateProfileWithActiveState(profile.copy(enableExplainThinking = enabled), isActive = true)
         }
     }
+    fun updateLlmAutoTranslateNext(enabled: Boolean) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(autoTranslateNext = enabled)) }
+        viewModelScope.launch {
+            val id = _uiState.value.activeProfileId ?: return@launch
+            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(autoTranslateNext = enabled), isActive = true)
+        }
+        // 打开开关时立即预译下一章（无需等到下次切章），并让目录圆点立刻反映
+        if (enabled) prefetchNextChapterIfNeeded()
+    }
     fun updateLlmTemperature(value: Float) {
         val clamped = value.coerceIn(0f, 2f)
         _uiState.update { it.copy(llmSettings = it.llmSettings.copy(temperature = clamped)) }
@@ -553,6 +580,24 @@ class ReaderViewModel(
         when (chapter.status) {
             Chapter.STATUS_PENDING, Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG ->
                 translationCoordinator.translate(chapter, settings)
+        }
+    }
+
+    /**
+     * 提前翻译下一章（英文阅读时，空闲则后台预译未译的下一章）。
+     * 仅协调器空闲时才启动，避免打断当前阅读章的翻译；成功后用户翻到下一章即已就绪。
+     */
+    private fun prefetchNextChapterIfNeeded() {
+        val s = _uiState.value
+        if (!s.llmSettings.autoTranslateNext) return
+        if (s.mode != "en") return
+        if (translationCoordinator.currentRunningChapterId != null) return
+        val current = s.activeChapter ?: return
+        val idx = s.chapters.indexOfFirst { it.id == current.id }
+        if (idx < 0) return
+        val next = s.chapters.getOrNull(idx + 1) ?: return
+        if (next.status == Chapter.STATUS_PENDING || next.status == Chapter.STATUS_FAILED) {
+            maybeTranslateChapter(next.id)
         }
     }
 

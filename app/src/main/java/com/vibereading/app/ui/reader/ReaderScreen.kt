@@ -116,12 +116,12 @@ fun ReaderScreen(
     val measurer = rememberTextMeasurer()
     val bgMeasurer = rememberTextMeasurer(cacheSize = 8) // 后台预载独立实例（后台线程测量）
     val density = LocalDensity.current
-    // 自定义/内置字体总入口：customFontUri > fontId > 系统默认（解析失败回退系统字体）
-    val customFont = remember(readingSettings.customFontUri, readingSettings.fontId) {
-        ReaderFonts.readerFontFamily(context, readingSettings)
+    // 中英分体：返回 (中文字体, 英文字体)；parse 失败/未选回退系统字体
+    val (cnFont, enFont) = remember(readingSettings.customFontUri, readingSettings.enCustomFontUri, readingSettings.fontId, readingSettings.enFontId) {
+        ReaderFonts.readerFontFamilies(context, readingSettings)
     }
-    val pageStyle = remember(readingSettings, density, state.mode, customFont) {
-        PageStyle.of(readingSettings, density, state.mode, customFont)
+    val pageStyle = remember(readingSettings, density, state.mode, cnFont, enFont) {
+        PageStyle.of(readingSettings, density, state.mode, cnFont, enFont)
     }
     // 页几何：内容区 = 屏尺寸 − 页边距（与 BookPager 渲染内边距严格一致，排版所见即所排）
     // 屏幕像素取 displayMetrics 实际值（不通过 screenWidthDp*density 转换，
@@ -181,8 +181,13 @@ fun ReaderScreen(
     // 不含 status/errorMessage——翻译状态变化（IN_PROGRESS→DONE）不应重建窗口，
     // 否则 pagerState.pageCount 在程序化跳章（scrollToPage）后突变，currentPage 偏移到
     // 新窗口末尾，导致「下一章跳到最后一页」。状态变化只影响 UI chrome（状态点/面板）。
+    // 指纹仅取当前正读章节的译文长度：后台预译「下一章」写库虽使 chapters 变化，但当前章
+    // 译文长度不变 → 指纹字符串相等 → 窗口不重建、当前画面不跳动；邻居译文由切章时的
+    // recenterSync 重新排版取得。
     val paginationFingerprint = remember(state.chapters) {
-        state.chapters.joinToString("|") { "${it.id}:${it.title}:${it.section}:${it.chapterIndex}:${it.content.length}:${it.translatedContent?.length ?: -1}" }
+        state.chapters.find { it.id == state.activeChapterId }
+            ?.let { "${it.id}:${it.translatedContent?.length ?: -1}" }
+            ?: ""
     }
     val window = remember(
         measurer, pageStyle, state.mode, paginationFingerprint, contentWidthPx, contentHeightPx, isPagerMode
@@ -1198,6 +1203,7 @@ fun ReaderScreen(
             onUpdateContextMaxChars = vm::updateLlmContextMaxChars,
             onToggleThinking = vm::updateLlmThinking,
             onToggleExplainThinking = vm::updateLlmExplainThinking,
+            onToggleAutoTranslateNext = vm::updateLlmAutoTranslateNext,
             onUpdateTemperature = vm::updateLlmTemperature,
             onUpdateTopP = vm::updateLlmTopP,
             onSwitchProfile = vm::switchProfile,

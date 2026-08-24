@@ -36,7 +36,7 @@ class AppDatabaseMigrationTest {
         try {
             // 用 Room + MIGRATION_5_6 打开：Room 严格校验迁移结果与当前实体 schema 一致
             val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10)
+                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
                 .build()
             runBlocking {
                 val book = db.bookDao().getBookById(1L)!!
@@ -60,8 +60,8 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migrate2To10_fullChain_preservesData() {
-        val dbName = "migrate-2-10"
+    fun migrate2To11_fullChain_preservesData() {
+        val dbName = "migrate-2-11"
         val db = createV2Database(context, dbName)
 
         AppDatabase.MIGRATION_2_3.migrate(db)
@@ -72,6 +72,7 @@ class AppDatabaseMigrationTest {
         AppDatabase.MIGRATION_7_8.migrate(db)
         AppDatabase.MIGRATION_8_9.migrate(db)
         AppDatabase.MIGRATION_9_10.migrate(db)
+        AppDatabase.MIGRATION_10_11.migrate(db)
 
         try {
             // v5→v6 后：lastReadPage（v3 加入）被 lastReadOffset 替代，translatedChapters 被移除
@@ -92,6 +93,8 @@ class AppDatabaseMigrationTest {
 
             // v8→v9：llm_profiles 增加 enableExplainThinking 列
             assertTrue("enableExplainThinking 应存在", "enableExplainThinking" in profileColumns)
+            // v10→v11：llm_profiles 增加 autoTranslateNext 列
+            assertTrue("autoTranslateNext 应存在", "autoTranslateNext" in profileColumns)
 
             // 数据保留：进度 offset 归零（旧页码不转换），译文/状态保留
             db.query("SELECT lastReadChapterId, lastReadOffset, lastReadAt, languageMode FROM books WHERE id = 1").use { c ->

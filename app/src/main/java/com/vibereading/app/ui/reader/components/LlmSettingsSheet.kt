@@ -64,6 +64,7 @@ fun LlmSettingsSheet(
     onUpdateContextMaxChars: (Int) -> Unit,
     onToggleThinking: (Boolean) -> Unit,
     onToggleExplainThinking: (Boolean) -> Unit,
+    onToggleAutoTranslateNext: (Boolean) -> Unit,
     onUpdateTemperature: (Float) -> Unit,
     onUpdateTopP: (Float) -> Unit,
     onSwitchProfile: (Long) -> Unit,
@@ -295,7 +296,8 @@ fun LlmSettingsSheet(
                 color = accentColor
             )
 
-            Spacer(Modifier.height(10.dp))
+            // 翻译参数选项（统一 12dp 垂直间距）
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
             // 单章字符上限：步进器微调 + 直接输入
             Row(
@@ -372,8 +374,6 @@ fun LlmSettingsSheet(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-
             // 思考模式
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -408,7 +408,22 @@ fun LlmSettingsSheet(
                 )
             }
 
-            Spacer(Modifier.height(8.dp))
+            // 提前翻译下一章
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("提前翻译下一章", style = MaterialTheme.typography.bodyMedium)
+                    Text("英文阅读时自动预译未译的下一章", fontSize = 12.sp, color = VibeColors.WarmGray)
+                }
+                Switch(
+                    checked = llmSettings.autoTranslateNext,
+                    onCheckedChange = onToggleAutoTranslateNext,
+                    colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                )
+            }
 
             // 采样温度
             Row(
@@ -447,6 +462,7 @@ fun LlmSettingsSheet(
                     onValueChange = onUpdateTopP
                 )
             }
+                }
         }
     }
 }

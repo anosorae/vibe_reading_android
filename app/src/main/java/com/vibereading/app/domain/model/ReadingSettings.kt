@@ -20,6 +20,8 @@ data class ReadingSettings(
     val oneHandMode: Boolean = false,  // 单手模式：分页模式下点击左右两侧均翻下一页（默认关）
     val customFontUri: String? = null, // SAF 导入的自定义字体 content:// URI（null=未导入）
     val fontId: String? = null,        // 内置开源字体 id（null=未选）；渲染优先级 customFontUri > fontId
+    val enCustomFontUri: String? = null, // 英文字体自定义导入 URI（null=未导入）
+    val enFontId: String? = null,      // 英文字体 id（null=跟随中文字体）；区别于中文 fontId，用于中英分体
     // ── 沉浸式（对齐 Legado ReadBookConfig hideStatusBar / hideNavigationBar） ──
     val hideStatusBar: Boolean = true,     // 阅读时隐藏状态栏（默认开）
     val hideNavigationBar: Boolean = true  // 阅读时隐藏导航栏（默认开）
@@ -49,6 +51,7 @@ data class LlmSettings(
     val contextMaxChars: Int = 50000,
     val enableThinking: Boolean = false,
     val enableExplainThinking: Boolean = false,
+    val autoTranslateNext: Boolean = false, // 英文阅读时预译下一章
     val temperature: Float = 0.6f,
     val topP: Float = 1f
 )

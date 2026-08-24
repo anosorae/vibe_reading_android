@@ -42,10 +42,13 @@ data class PageStyle(
     val titleMode: Int = ReadingSettings.TITLE_MODE_LEFT // 0 左 / 1 居中 / 2 隐藏
 ) {
     companion object {
-        /** 由 ReadingSettings 构造排版样式（分页与滚动共用同一口径，对齐 Legado 微信读书预设）。 */
-        fun of(settings: ReadingSettings, density: Density, mode: String = "zh", customFont: FontFamily? = null): PageStyle {
-            // 自定义导入字体优先；无则回退系统字体（fontFamilyOf 按名字符串）
-            val family = customFont ?: fontFamilyOf(settings.fontFamily)
+        /** 由 ReadingSettings 构造排版样式（分页与滚动共用同一口径，对齐 Legado 微信读书预设）。
+         *  cnFont/enFont 为中英分体字体；正文 body 在 en 模式显示英文（用 enFont）、zh 模式显示中文（用 cnFont），
+         *  中文气泡 cnFont 与标题恒用中文字体。 */
+        fun of(settings: ReadingSettings, density: Density, mode: String = "zh", cnFont: FontFamily? = null, enFont: FontFamily? = null): PageStyle {
+            // 中文字体优先自定义/内置，否则系统字体（fontFamilyOf 按名字符串）；英文字体跟随中文或独立
+            val cnFamily = cnFont ?: fontFamilyOf(settings.fontFamily)
+            val enFamily = enFont ?: cnFamily
             // 首行缩进：以正文字号换算绝对 sp 值，卷标/标题字号不同时仍视觉对齐
             // （em 单位相对于当前字号，标题大字号 2em > 正文 2em > 卷标小字号 2em，不对齐）
             val indentSp = settings.indentEm * settings.fontSize
@@ -59,7 +62,7 @@ data class PageStyle(
             val align = if (settings.justify) TextAlign.Justify else TextAlign.Start
             return PageStyle(
                 body = TextStyle(
-                    fontFamily = family,
+                    fontFamily = if (mode == "en") enFamily else cnFamily,
                     fontSize = settings.fontSize.sp,
                     lineHeight = (settings.fontSize * 1.6 + settings.lineSpacing).sp,
                     letterSpacing = settings.letterSpacing.em,
@@ -67,7 +70,7 @@ data class PageStyle(
                 textAlign = align
             ),
             cn = TextStyle(
-                    fontFamily = family,
+                    fontFamily = cnFamily,
                     fontSize = (settings.fontSize * 0.875).sp,
                     lineHeight = (settings.fontSize * 1.5 + settings.lineSpacing).sp,
                     letterSpacing = settings.letterSpacing.em,
@@ -75,7 +78,7 @@ data class PageStyle(
                     textAlign = align
                 ),
                 title = TextStyle(
-                    fontFamily = family,
+                    fontFamily = cnFamily,
                     fontSize = (settings.fontSize + 4).sp,
                     lineHeight = ((settings.fontSize + 4) * 1.3f).sp,
                     fontWeight = FontWeight.Bold,

@@ -78,6 +78,7 @@ class LlmProfileRepository(
         contextMaxChars = contextMaxChars,
         enableThinking = enableThinking,
         enableExplainThinking = enableExplainThinking,
+        autoTranslateNext = autoTranslateNext,
         temperature = temperature,
         topP = topP
     )
@@ -94,6 +95,7 @@ class LlmProfileRepository(
         contextMaxChars = contextMaxChars,
         enableThinking = enableThinking,
         enableExplainThinking = enableExplainThinking,
+        autoTranslateNext = autoTranslateNext,
         temperature = temperature.coerceIn(0f, 2f),
         topP = topP.coerceIn(0f, 1f),
         isActive = isActive

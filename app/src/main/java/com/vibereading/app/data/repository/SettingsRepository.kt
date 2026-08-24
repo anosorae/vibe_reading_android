@@ -98,7 +98,9 @@ class SettingsRepository(
         val BOTTOM_JUSTIFY = booleanPreferencesKey("bottom_justify")
         val ONE_HAND_MODE = booleanPreferencesKey("one_hand_mode")
         val CUSTOM_FONT_URI = stringPreferencesKey("custom_font_uri")
+        val EN_CUSTOM_FONT_URI = stringPreferencesKey("en_custom_font_uri")
         val FONT_ID = stringPreferencesKey("font_id")
+        val EN_FONT_ID = stringPreferencesKey("en_font_id")
         val HIDE_STATUS_BAR = booleanPreferencesKey("hide_status_bar")
         val HIDE_NAVIGATION_BAR = booleanPreferencesKey("hide_navigation_bar")
         val NIGHT_MODE = booleanPreferencesKey("night_mode")
@@ -126,6 +128,8 @@ class SettingsRepository(
                 oneHandMode = prefs[ReadingKeys.ONE_HAND_MODE] ?: false,
                 customFontUri = prefs[ReadingKeys.CUSTOM_FONT_URI],
                 fontId = prefs[ReadingKeys.FONT_ID],
+                enCustomFontUri = prefs[ReadingKeys.EN_CUSTOM_FONT_URI],
+                enFontId = prefs[ReadingKeys.EN_FONT_ID],
                 hideStatusBar = prefs[ReadingKeys.HIDE_STATUS_BAR] ?: true,
                 hideNavigationBar = prefs[ReadingKeys.HIDE_NAVIGATION_BAR] ?: true
             )
@@ -156,10 +160,20 @@ class SettingsRepository(
             } else {
                 prefs.remove(ReadingKeys.CUSTOM_FONT_URI)
             }
+            if (settings.enCustomFontUri != null) {
+                prefs[ReadingKeys.EN_CUSTOM_FONT_URI] = settings.enCustomFontUri
+            } else {
+                prefs.remove(ReadingKeys.EN_CUSTOM_FONT_URI)
+            }
             if (settings.fontId != null) {
                 prefs[ReadingKeys.FONT_ID] = settings.fontId
             } else {
                 prefs.remove(ReadingKeys.FONT_ID)
+            }
+            if (settings.enFontId != null) {
+                prefs[ReadingKeys.EN_FONT_ID] = settings.enFontId
+            } else {
+                prefs.remove(ReadingKeys.EN_FONT_ID)
             }
         }
     }

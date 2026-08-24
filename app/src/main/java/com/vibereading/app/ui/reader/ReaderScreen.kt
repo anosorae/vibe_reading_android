@@ -334,6 +334,40 @@ fun ReaderScreen(
         return curBmp to targetBmp
     }
 
+    // ── 卷页自动动画共享驱动 ──
+    // 入口只负责算好位移 (dx,dy) 与落地页；逐帧插值、adjustTouchY、落地提交和收尾清理
+    // 统一在这里，避免点按翻页（startSimFlip）与拖拽抬手（simFlipAnimStart）双处同形。
+    // commitPage < 0 表示回弹/不落地。
+    fun launchCurlAnim(dx: Float, dy: Float, commitPage: Int) {
+        val wf = screenWidthPx.toFloat()
+        val hf = screenHeightPx.toFloat()
+        val sx = simFlip.touchX
+        val sy = simFlip.touchY
+        val endX = sx + dx
+        val endY = sy + dy
+        simFlipJob = scope.launch {
+            val animatable = androidx.compose.animation.core.Animatable(0f)
+            animatable.animateTo(
+                targetValue = 1f,
+                animationSpec = androidx.compose.animation.core.tween(
+                    durationMillis = simFlipDurationMs(dx, dy, wf, hf).toInt(),
+                    easing = androidx.compose.animation.core.LinearEasing
+                )
+            ) {
+                simFlip.touchX = sx + (endX - sx) * value
+                simFlip.touchY = sy + (endY - sy) * value
+                // 动画帧也必须调用 adjustTouchY，保持与手势阶段相同的 Y 吸顶/吸底规则，
+                // 否则回弹动画末尾 touchY 偏离调整值，卷页几何跳变（右上角突然卷页）
+                simFlip.adjustTouchY(hf)
+            }
+            if (commitPage >= 0 && pagerState.currentPage != commitPage) {
+                pagerState.scrollToPage(commitPage)
+            }
+            simFlip.cleanup()
+            simFlipJob = null
+        }
+    }
+
     /** 启动仿真卷页自动动画（对齐 Legado Scroller 式：cancel 回弹 / complete 完成）。 */
     fun startSimFlip(cur: Int, next: Int, goingNext: Boolean) {
         if (simFlip.isRunning) return
@@ -356,11 +390,13 @@ fun ReaderScreen(
             // NEXT：卷页角固定右边缘（cornerX=wf）。DOWN 时 calcCornerXY 按点击 x 算角：
             // 点左侧（含单手模式翻下一页）会得到 cornerX=0（左边缘），导致「翻下一页」
             // 却从左边缘卷起、姿态像翻上一页——强制右边缘与右侧点击动画完全一致；
-            // cornerY 保留点击高度（上半屏右上 / 下半屏右下，与右侧点击同规则）
+            // cornerY 与新 startY 同源推导（对齐 calcCornerXY 的上下半屏规则），
+            // 不沿用 DOWN 点击点的旧值——程序化入口（点按/跳章）没有可靠的手势角落
             simFlip.cornerX = wf
             val startY = if (simFlip.startY > hf / 2) hf * 0.9f else 1f
             simFlip.startX = wf * 0.9f
             simFlip.startY = startY
+            simFlip.cornerY = if (startY > hf / 2) hf else 0f
             simFlip.touchX = wf * 0.9f
             simFlip.touchY = startY
         } else {
@@ -378,43 +414,14 @@ fun ReaderScreen(
         simFlip.isCancel = false
         simFlip.settleTarget = next
 
-        // Scroller 式动画（对齐 Legado onAnimStart）
-        simFlipJob = scope.launch {
-            val startTouchX = simFlip.touchX
-            val startTouchY = simFlip.touchY
-            // complete: 滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
-            val dx = if (goingNext) {
-                if (simFlip.cornerX > 0f) -(wf + startTouchX) else wf - startTouchX
-            } else {
-                wf + wf - startTouchX   // PREV: 往右滚过屏幕，越过右边缘
-            }
-            val dy = if (simFlip.cornerY > 0f) (hf - startTouchY) else (1f - startTouchY)
-            val animationSpeed = 400
-            val duration = if (dx != 0f) (animationSpeed * kotlin.math.abs(dx) / wf).toLong()
-            else (animationSpeed * kotlin.math.abs(dy) / hf).toLong()
-            val endX = startTouchX + dx
-            val endY = startTouchY + dy
-            val animatable = androidx.compose.animation.core.Animatable(0f)
-            animatable.animateTo(
-                targetValue = 1f,
-                animationSpec = androidx.compose.animation.core.tween(
-                    durationMillis = duration.coerceIn(150, 800).toInt(),
-                    easing = androidx.compose.animation.core.LinearEasing
-                )
-            ) {
-                simFlip.touchX = startTouchX + (endX - startTouchX) * value
-                simFlip.touchY = startTouchY + (endY - startTouchY) * value
-                // 动画帧也必须调用 adjustTouchY，保持与手势阶段相同的 Y 吸顶/吸底规则，
-                // 否则回弹动画末尾 touchY 偏离调整值，卷页几何跳变（右上角突然卷页）
-                simFlip.adjustTouchY(hf)
-            }
-            // 动画完成 → 翻页
-            if (pagerState.currentPage != next) {
-                pagerState.scrollToPage(next)
-            }
-            simFlip.cleanup()
-            simFlipJob = null
+        // Scroller 式动画（对齐 Legado onAnimStart）：complete 滚过屏幕边缘完成翻页
+        val dx = if (goingNext) {
+            if (simFlip.cornerX > 0f) -(wf + simFlip.touchX) else wf - simFlip.touchX
+        } else {
+            wf + wf - simFlip.touchX   // PREV: 往右滚过屏幕，越过右边缘
         }
+        val dy = if (simFlip.cornerY > 0f) (hf - simFlip.touchY) else (1f - simFlip.touchY)
+        launchCurlAnim(dx, dy, commitPage = next)
     }
 
     /** 仿真卷页抬手动画（对齐 Legado SimulationPageDelegate.onAnimStart：cancel 回弹 / complete 完成）。 */
@@ -424,55 +431,27 @@ fun ReaderScreen(
         simFlip.animating = true
         simFlip.isRunning = true
         // 记录本动画将要落地的页（打断时提交用）；回弹/越界不做翻页
-        simFlip.settleTarget = if (!simFlip.isCancel && target in 0 until window.pageCount) target else -1
+        val commit = simFlipCommitPage(simFlip.isCancel, target, window.pageCount)
+        simFlip.settleTarget = commit
         val wf = screenWidthPx.toFloat()
         val hf = screenHeightPx.toFloat()
-        simFlipJob = scope.launch {
-            val startTouchX = simFlip.touchX
-            val startTouchY = simFlip.touchY
-            val dx: Float
-            val dy: Float
-            if (simFlip.isCancel) {
-                // 回弹：滚回手势起点（对齐 Legado SimulationPageDelegate.onAnimStart isCancel）
-                // 不能按半屏宽度猜测边缘——PREV 起点在左侧却会错误滚到右边
-                dx = simFlip.startX - startTouchX
-                dy = simFlip.startY - startTouchY
+        val dx: Float
+        val dy: Float
+        if (simFlip.isCancel) {
+            // 回弹：滚回手势起点（对齐 Legado SimulationPageDelegate.onAnimStart isCancel）
+            // 不能按半屏宽度猜测边缘——PREV 起点在左侧却会错误滚到右边
+            dx = simFlip.startX - simFlip.touchX
+            dy = simFlip.startY - simFlip.touchY
+        } else {
+            // 完成：滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
+            if (simFlip.direction == PageCurl.Direction.NEXT) {
+                dx = -(wf + simFlip.touchX)     // NEXT: 往左滚过屏幕
             } else {
-                // 完成：滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
-                if (simFlip.direction == PageCurl.Direction.NEXT) {
-                    dx = -(wf + startTouchX)     // NEXT: 往左滚过屏幕
-                } else {
-                    dx = wf + wf - startTouchX   // PREV: 往右滚过屏幕，越过右边缘
-                }
-                dy = if (simFlip.cornerY > 0f) hf - startTouchY else 1f - startTouchY
+                dx = wf + wf - simFlip.touchX   // PREV: 往右滚过屏幕，越过右边缘
             }
-            val animationSpeed = 400
-            val duration = if (dx != 0f) (animationSpeed * kotlin.math.abs(dx) / wf).toLong()
-            else (animationSpeed * kotlin.math.abs(dy) / hf).toLong()
-            val endX = startTouchX + dx
-            val endY = startTouchY + dy
-            val animatable = androidx.compose.animation.core.Animatable(0f)
-            animatable.animateTo(
-                targetValue = 1f,
-                animationSpec = androidx.compose.animation.core.tween(
-                    durationMillis = duration.coerceIn(100, 600).toInt(),
-                    easing = androidx.compose.animation.core.LinearEasing
-                )
-            ) {
-                simFlip.touchX = startTouchX + (endX - startTouchX) * value
-                simFlip.touchY = startTouchY + (endY - startTouchY) * value
-                // 动画帧也必须调用 adjustTouchY，保持与手势阶段相同的 Y 吸顶/吸底规则，
-                // 否则回弹动画末尾 touchY 偏离调整值，卷页几何跳变（右上角突然卷页）
-                simFlip.adjustTouchY(hf)
-            }
-            if (!simFlip.isCancel && target in 0 until window.pageCount) {
-                if (pagerState.currentPage != target) {
-                    pagerState.scrollToPage(target)
-                }
-            }
-            simFlip.cleanup()
-            simFlipJob = null
+            dy = if (simFlip.cornerY > 0f) hf - simFlip.touchY else 1f - simFlip.touchY
         }
+        launchCurlAnim(dx, dy, commitPage = commit)
     }
 
     /** 分页翻页：左/右 1/3 点按一页（跨章自动续翻）；仿真走真卷页动画。 */

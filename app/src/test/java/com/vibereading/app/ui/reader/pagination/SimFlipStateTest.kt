@@ -79,4 +79,30 @@ class SimFlipStateTest {
         state.settleTarget = 12
         assertEquals(-1, simFlipSettlePage(state, currentPage = 3, pageCount = 10))
     }
+
+    @Test
+    fun commitPage_cancelOrOutOfRange_returnsMinusOne() {
+        // 正常完成：提交目标页；末页边界 pageCount-1 合法
+        assertEquals(5, simFlipCommitPage(isCancel = false, target = 5, pageCount = 10))
+        assertEquals(9, simFlipCommitPage(isCancel = false, target = 9, pageCount = 10))
+        // 回弹：不落地
+        assertEquals(-1, simFlipCommitPage(isCancel = true, target = 5, pageCount = 10))
+        // 目标越界（含负值）：不落地
+        assertEquals(-1, simFlipCommitPage(isCancel = false, target = 10, pageCount = 10))
+        assertEquals(-1, simFlipCommitPage(isCancel = false, target = -1, pageCount = 10))
+    }
+
+    @Test
+    fun duration_scalesWithDistance_andClampsToSharedRange() {
+        val wf = 1080f
+        val hf = 2400f
+        // 全屏位移 → 恰为速度基准值
+        assertEquals(400L, simFlipDurationMs(dx = wf, dy = 0f, viewWidth = wf, viewHeight = hf))
+        // 微小位移 → 钳到共享区间下限
+        assertEquals(100L, simFlipDurationMs(dx = 1f, dy = 0f, viewWidth = wf, viewHeight = hf))
+        // 越屏大位移（NEXT 全程 ≈ 1.9×宽）→ 钳到共享区间上限
+        assertEquals(600L, simFlipDurationMs(dx = wf * 2f, dy = 0f, viewWidth = wf, viewHeight = hf))
+        // 纯纵向回弹（dx==0）走 dy 分支，按全屏高缩放
+        assertEquals(400L, simFlipDurationMs(dx = 0f, dy = hf, viewWidth = wf, viewHeight = hf))
+    }
 }

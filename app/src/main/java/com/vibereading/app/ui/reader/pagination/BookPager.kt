@@ -189,6 +189,24 @@ fun simFlipSettlePage(simFlip: SimFlipState, currentPage: Int, pageCount: Int): 
     return if (t in 0 until pageCount && t != currentPage) t else -1
 }
 
+/** 卷页自动动画速度基准：时长按位移占全屏宽/高的比例缩放。 */
+internal const val SIM_FLIP_ANIMATION_SPEED_MS = 400
+
+// 点按翻页与拖拽抬手共用同一手感区间（此前两处 coerceIn 区间不一致导致手感漂移）
+private const val SIM_FLIP_MIN_DURATION_MS = 100L
+private const val SIM_FLIP_MAX_DURATION_MS = 600L
+
+/** 卷页自动动画时长：按位移比例缩放并钳制到统一手感区间。 */
+internal fun simFlipDurationMs(dx: Float, dy: Float, viewWidth: Float, viewHeight: Float): Long {
+    val raw = if (dx != 0f) SIM_FLIP_ANIMATION_SPEED_MS * kotlin.math.abs(dx) / viewWidth
+    else SIM_FLIP_ANIMATION_SPEED_MS * kotlin.math.abs(dy) / viewHeight
+    return raw.toLong().coerceIn(SIM_FLIP_MIN_DURATION_MS, SIM_FLIP_MAX_DURATION_MS)
+}
+
+/** 抬手动画落地页决策：回弹（isCancel）或目标越界返回 -1 不翻页，否则返回目标页。 */
+internal fun simFlipCommitPage(isCancel: Boolean, target: Int, pageCount: Int): Int =
+    if (!isCancel && target in 0 until pageCount) target else -1
+
 /**
  * 整页阅读视图：HorizontalPager + 五种翻页转场。
  *

@@ -2,7 +2,7 @@ package com.vibereading.app.domain.model
 
 data class ReadingSettings(
     val fontSize: Int = 17,
-    val fontFamily: String = "serif",
+    val fontFamily: String = "default", // 系统默认字体族："default"=跟随系统 UI 字体（非安卓默认 Roboto）；另有 serif/sans-serif/monospace
     val bgColorIndex: Int = 0,
     val lineSpacing: Int = 8,          // extra sp added on top of the base line height
     val paragraphSpacing: Int = 16,    // dp between paragraphs
@@ -18,7 +18,8 @@ data class ReadingSettings(
     val titleMode: Int = 0,            // 章节标题：0 左对齐 / 1 居中 / 2 隐藏（默认值，不进面板）
     val bottomJustify: Boolean = true, // 底部对齐：页内行距重分布使末行沉底（默认值，不进面板）
     val oneHandMode: Boolean = false,  // 单手模式：分页模式下点击左右两侧均翻下一页（默认关）
-    val customFontUri: String? = null, // SAF 导入的自定义字体 content:// URI（null=系统字体）
+    val customFontUri: String? = null, // SAF 导入的自定义字体 content:// URI（null=未导入）
+    val fontId: String? = null,        // 内置开源字体 id（null=未选）；渲染优先级 customFontUri > fontId
     // ── 沉浸式（对齐 Legado ReadBookConfig hideStatusBar / hideNavigationBar） ──
     val hideStatusBar: Boolean = true,     // 阅读时隐藏状态栏（默认开）
     val hideNavigationBar: Boolean = true  // 阅读时隐藏导航栏（默认开）

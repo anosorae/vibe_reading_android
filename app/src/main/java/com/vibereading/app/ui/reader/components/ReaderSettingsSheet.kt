@@ -19,11 +19,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.vibereading.app.domain.model.ReadingSettings
+import com.vibereading.app.ui.components.StepperValueInput
+import com.vibereading.app.ui.reader.pagination.ReaderFontInfo
+import com.vibereading.app.ui.reader.pagination.ReaderFonts
 import com.vibereading.app.ui.theme.ReaderBgPresets
 import com.vibereading.app.ui.theme.VibeColors
+import kotlinx.coroutines.launch
 
 /**
  * 阅读设置面板（对齐 Legado ReadStyleDialog 的信息密度）：
@@ -65,7 +71,7 @@ fun ReaderSettingsSheet(
         } catch (_: SecurityException) {
             // 选择器未授予持久读权限：本次会话仍可用，但不持久化
         }
-        onUpdate(settings.copy(customFontUri = uri.toString()))
+        onUpdate(settings.copy(customFontUri = uri.toString(), fontId = null))
     }
     fun pickCustomFont() {
         fontLauncher.launch(
@@ -141,53 +147,61 @@ fun ReaderSettingsSheet(
                 }
             }
 
-            // ── 字体（系统字体 + 自定义导入） ──
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                val sysSelected = settings.customFontUri == null
+            // ── 字号（胶囊步进） + 字体选择（同一行） ──
+            val currentFontName = when {
+                settings.customFontUri != null -> "自定义字体"
+                settings.fontId != null -> ReaderFonts.byId(settings.fontId)?.zhName ?: "内置字体"
+                else -> "系统字体"
+            }
+            val customFontActive = settings.customFontUri != null || settings.fontId != null
+            var fontPickerVisible by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("字号", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(72.dp))
+                StepperValueInput(
+                    value = settings.fontSize,
+                    range = 14..24,
+                    step = 1,
+                    accentColor = accentColor,
+                    fieldWidth = 44.dp,
+                    onValueChange = { onUpdate(settings.copy(fontSize = it)) }
+                )
+                Spacer(Modifier.width(12.dp))
                 OutlinedButton(
-                    onClick = { onUpdate(settings.copy(customFontUri = null)) },
+                    onClick = { fontPickerVisible = true },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (sysSelected) accentColor.copy(alpha = 0.1f) else Color.Transparent
+                        containerColor = if (customFontActive) accentColor.copy(alpha = 0.1f) else Color.Transparent
                     ),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("系统字体", fontSize = 12.sp, color = if (sysSelected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (settings.customFontUri != null) {
-                    OutlinedButton(
-                        onClick = ::pickCustomFont,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.weight(1.4f)
-                    ) {
-                        Text("更换自定义字体", fontSize = 12.sp, color = accentColor, maxLines = 1)
-                    }
-                    TextButton(onClick = { onUpdate(settings.copy(customFontUri = null)) }) {
-                        Text("清除", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = ::pickCustomFont,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.weight(1.4f)
-                    ) {
-                        Text("导入字体…", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text(
+                        currentFontName,
+                        fontSize = 12.sp,
+                        color = if (customFontActive) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
+            if (fontPickerVisible) {
+                FontPickerDialog(
+                    settings = settings,
+                    accentColor = accentColor,
+                    onSelectSystem = {
+                        onUpdate(settings.copy(customFontUri = null, fontId = null, fontFamily = "default"))
+                    },
+                    onSelectBuiltin = { id ->
+                        onUpdate(settings.copy(fontId = id, customFontUri = null))
+                    },
+                    onImportCustom = ::pickCustomFont,
+                    onClearCustom = { onUpdate(settings.copy(customFontUri = null)) },
+                    onDismiss = { fontPickerVisible = false }
+                )
+            }
 
-            // ── 常用滑块（字号 / 行间距 / 段落间距） ──
-            SettingSliderRow(
-                title = "字号",
-                value = settings.fontSize.toFloat(),
-                display = "${settings.fontSize}sp",
-                range = 14f..24f,
-                accentColor = accentColor
-            ) { onUpdate(settings.copy(fontSize = it.toInt())) }
-
+            // ── 常用滑块（行间距 / 段落间距） ──
             SettingSliderRow(
                 title = "行间距",
                 value = settings.lineSpacing.toFloat(),
@@ -350,5 +364,144 @@ private fun SettingSliderRow(
         )
         Text(display, fontWeight = FontWeight.SemiBold, color = accentColor, fontSize = 12.sp,
             modifier = Modifier.width(52.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+    }
+}
+
+/**
+ * 字体选择器：系统默认 / 内置开源字库（未下载则点击即下载）/ 自定义导入。
+ * 内置字体选择后经 onSelectBuiltin 应用到阅读设置；下载状态就地维护。
+ */
+@Composable
+private fun FontPickerDialog(
+    settings: ReadingSettings,
+    accentColor: Color,
+    onSelectSystem: () -> Unit,
+    onSelectBuiltin: (String) -> Unit,
+    onImportCustom: () -> Unit,
+    onClearCustom: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val downloading = remember { mutableStateMapOf<String, Boolean>() }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+
+    fun pickBuiltin(info: ReaderFontInfo) {
+        if (ReaderFonts.localFile(context, info) != null) {
+            onSelectBuiltin(info.id)
+            return
+        }
+        if (downloading[info.id] == true) return
+        downloading[info.id] = true
+        downloadError = null
+        scope.launch {
+            ReaderFonts.downloadFont(context, info)
+                .onSuccess { onSelectBuiltin(info.id) }
+                .onFailure { downloadError = "「${info.zhName}」下载失败" }
+            downloading[info.id] = false
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(Modifier.padding(vertical = 12.dp)) {
+                Text(
+                    "选择字体",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+                )
+                HorizontalDivider()
+                // 系统字体
+                FontPickerRow(
+                    label = "系统字体",
+                    sub = "跟随设备系统字体",
+                    selected = settings.customFontUri == null && settings.fontId == null,
+                    accentColor = accentColor,
+                    trailing = null,
+                    onClick = { onSelectSystem(); onDismiss() }
+                )
+                // 内置开源字体
+                ReaderFonts.fonts.forEach { info ->
+                    val selected = settings.fontId == info.id && settings.customFontUri == null
+                    val downloaded = ReaderFonts.localFile(context, info) != null
+                    val isDownloading = downloading[info.id] == true
+                    FontPickerRow(
+                        label = info.zhName,
+                        sub = info.enSpec,
+                        selected = selected,
+                        accentColor = accentColor,
+                        trailing = when {
+                            isDownloading -> "下载中…"
+                            downloaded -> "已下载"
+                            else -> "下载"
+                        },
+                        trailingColor = when {
+                            isDownloading -> MaterialTheme.colorScheme.onSurfaceVariant
+                            downloaded -> MaterialTheme.colorScheme.primary
+                            else -> accentColor
+                        },
+                        onClick = { pickBuiltin(info) }
+                    )
+                }
+                // 自定义导入
+                FontPickerRow(
+                    label = "自定义导入",
+                    sub = "从本机文件选择 TTF/OTF",
+                    selected = settings.customFontUri != null,
+                    accentColor = accentColor,
+                    trailing = if (settings.customFontUri != null) "清除" else null,
+                    trailingColor = MaterialTheme.colorScheme.error,
+                    onClick = {
+                        if (settings.customFontUri != null) {
+                            onClearCustom()
+                        } else {
+                            onImportCustom()
+                            onDismiss()
+                        }
+                    }
+                )
+                downloadError?.let { err ->
+                    Text(
+                        err,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FontPickerRow(
+    label: String,
+    sub: String,
+    selected: Boolean,
+    accentColor: Color,
+    trailing: String?,
+    trailingColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(if (selected) accentColor.copy(alpha = 0.1f) else Color.Transparent)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                color = if (selected) accentColor else MaterialTheme.colorScheme.onSurface)
+            Text(sub, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        trailing?.let {
+            Text(it, fontSize = 12.sp, color = trailingColor)
+        }
     }
 }

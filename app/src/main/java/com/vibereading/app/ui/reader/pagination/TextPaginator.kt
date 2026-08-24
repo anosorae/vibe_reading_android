@@ -43,8 +43,9 @@ data class PageStyle(
 ) {
     companion object {
         /** 由 ReadingSettings 构造排版样式（分页与滚动共用同一口径，对齐 Legado 微信读书预设）。 */
-        fun of(settings: ReadingSettings, density: Density, mode: String = "zh"): PageStyle {
-            val family = fontFamilyOf(settings.fontFamily)
+        fun of(settings: ReadingSettings, density: Density, mode: String = "zh", customFont: FontFamily? = null): PageStyle {
+            // 自定义导入字体优先；无则回退系统字体（fontFamilyOf 按名字符串）
+            val family = customFont ?: fontFamilyOf(settings.fontFamily)
             // 首行缩进：以正文字号换算绝对 sp 值，卷标/标题字号不同时仍视觉对齐
             // （em 单位相对于当前字号，标题大字号 2em > 正文 2em > 卷标小字号 2em，不对齐）
             val indentSp = settings.indentEm * settings.fontSize
@@ -424,9 +425,12 @@ class ChapterPaginator(
     }
 }
 
-/** 根据 ReadingSettings 的字体名字符串解析 FontFamily。 */
+/** 根据 ReadingSettings 的字体名字符串解析 FontFamily。
+ *  "default"（及未知值）跟随设备系统 UI 字体（Typeface.DEFAULT，体现厂商/系统设置的字体）；
+ *  仅 "sans-serif/monospace/serif" 等显式族名映射到对应风格。 */
 fun fontFamilyOf(name: String): FontFamily = when (name) {
     "sans-serif" -> FontFamily.SansSerif
     "monospace" -> FontFamily.Monospace
-    else -> FontFamily.Serif
+    "serif" -> FontFamily.Serif
+    else -> FontFamily.Default
 }

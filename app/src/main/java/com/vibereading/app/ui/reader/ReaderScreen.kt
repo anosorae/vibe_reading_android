@@ -116,7 +116,13 @@ fun ReaderScreen(
     val measurer = rememberTextMeasurer()
     val bgMeasurer = rememberTextMeasurer(cacheSize = 8) // 后台预载独立实例（后台线程测量）
     val density = LocalDensity.current
-    val pageStyle = remember(readingSettings, density, state.mode) { PageStyle.of(readingSettings, density, state.mode) }
+    // 自定义/内置字体总入口：customFontUri > fontId > 系统默认（解析失败回退系统字体）
+    val customFont = remember(readingSettings.customFontUri, readingSettings.fontId) {
+        ReaderFonts.readerFontFamily(context, readingSettings)
+    }
+    val pageStyle = remember(readingSettings, density, state.mode, customFont) {
+        PageStyle.of(readingSettings, density, state.mode, customFont)
+    }
     // 页几何：内容区 = 屏尺寸 − 页边距（与 BookPager 渲染内边距严格一致，排版所见即所排）
     // 屏幕像素取 displayMetrics 实际值（不通过 screenWidthDp*density 转换，
     // 因 screenWidthDp 为截断整数，411dp*2.625=1078.875→round=1079≠1080 实际宽度，

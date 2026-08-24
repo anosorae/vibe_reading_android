@@ -420,6 +420,8 @@ fun ReaderScreen(
     /** 仿真卷页抬手动画（对齐 Legado SimulationPageDelegate.onAnimStart：cancel 回弹 / complete 完成）。 */
     fun simFlipAnimStart(cur: Int, target: Int) {
         simFlipJob?.cancel()
+        // 自置可见性：不依赖手势阶段遗留的 animating 值，动画生命周期自包含
+        simFlip.animating = true
         simFlip.isRunning = true
         // 记录本动画将要落地的页（打断时提交用）；回弹/越界不做翻页
         simFlip.settleTarget = if (!simFlip.isCancel && target in 0 until window.pageCount) target else -1
@@ -750,9 +752,26 @@ fun ReaderScreen(
                         var curlActive = false
                         var gestureStartedWithOverlay = overlayVisible
 
+                        // 手势循环被中途接管（选词消费事件/指针消失）时的退场：已卷起的页按
+                        // 「抬手取消」走回弹动画收场，保持视觉连续；绝不带位图静默退出——
+                        // 那会让冻结的卷页画面停留到下一次 DOWN 才被清理。后续新 DOWN 仍可
+                        // 正常打断这次回弹并按 settleTarget 落地。
+                        fun abortCurlBounce() {
+                            if (!curlActive) return
+                            val cur = pagerState.currentPage
+                            val target = if (simFlip.direction == PageCurl.Direction.NEXT) cur + 1 else cur - 1
+                            simFlip.isCancel = true
+                            simFlipAnimStart(cur, target)
+                        }
+
                         while (true) {
                             val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                            if (change == null) {
+                                // 被跟踪指针从事件流消失（系统取消）：按中途退场收尾
+                                abortCurlBounce()
+                                break
+                            }
                             if (!change.pressed) {
                                 // ── UP ──
                                 if (hadDictAtDown) {
@@ -798,8 +817,12 @@ fun ReaderScreen(
                                 break
                             }
                             // ── MOVE ──
-                            // 内层（选词长按）已消费的事件不再驱动卷页，防止长按后拖动误触发
-                            if (change.isConsumed) break
+                            // 内层（选词长按）已消费的事件不再驱动卷页，防止长按后拖动误触发；
+                            // 已卷起时先回弹收场再退出，避免残留冻结画面
+                            if (change.isConsumed) {
+                                abortCurlBounce()
+                                break
+                            }
                             val focusX = change.position.x
                             val focusY = change.position.y
                             if (!simFlip.isMoved) {
@@ -855,7 +878,10 @@ fun ReaderScreen(
                                 simFlip.adjustTouchY(viewH)
                                 simFlip.isRunning = true
                             }
-                            if (change.isConsumed) break
+                            if (change.isConsumed) {
+                                abortCurlBounce()
+                                break
+                            }
                         }
                     } else {
                         // ── 其他模式：三段点按；有浮层时，滑动先关闭浮层再交给分页器 ──

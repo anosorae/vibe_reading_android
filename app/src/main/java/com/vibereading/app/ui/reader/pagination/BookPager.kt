@@ -1,6 +1,8 @@
 package com.vibereading.app.ui.reader.pagination
 
 import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -44,6 +46,9 @@ fun readerPagerScrollEnabled(flipMode: String): Boolean =
 
 /** 手势开始时若有浮层，先关闭浮层，再继续处理本次手势。 */
 fun readerShouldDismissOverlayOnGestureStart(overlayVisible: Boolean): Boolean = overlayVisible
+
+/** 卷页位图延迟回收时长：两帧（60fps），确保渲染线程重放完最后一帧。 */
+private const val SIM_FLIP_BITMAP_RECYCLE_DELAY_MS = 34L
 
 /**
  * 仿真卷页状态机（对齐 Legado PageDelegate + HorizontalPageDelegate + SimulationPageDelegate）。
@@ -151,16 +156,27 @@ class SimFlipState {
             }
         }
 
-    /** 清除位图并停止动画 */
+    /** 清除位图引用并停止动画；位图本体延迟两帧回收（见 [deferRecycle]）。 */
     fun cleanup() {
         animating = false
-        curBitmap?.recycle()
-        targetBitmap?.recycle()
+        deferRecycle(curBitmap)
+        deferRecycle(targetBitmap)
         curBitmap = null
         targetBitmap = null
         isRunning = false
         isMoved = false
         settleTarget = -1
+    }
+
+    // 惰性创建：纯 JVM 单测构造 SimFlipState 不触碰 android.os.Handler
+    private val recycleHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
+
+    // 立即摘除位图引用，recycle 推迟两帧：硬件加速下 UI 线程录制完成后，渲染线程仍可能
+    // 重放引用该位图的上一帧 DisplayList，立即 recycle 会以 "Canvas: trying to use a
+    // recycled bitmap" 崩溃；两帧后该帧必已上屏。
+    private fun deferRecycle(bitmap: Bitmap?) {
+        if (bitmap == null || bitmap.isRecycled) return
+        recycleHandler.postDelayed({ bitmap.recycle() }, SIM_FLIP_BITMAP_RECYCLE_DELAY_MS)
     }
 }
 

@@ -68,7 +68,6 @@ object LogUtils {
                 level = Level.INFO
             }
         } catch (e: Exception) {
-            e.printStackTrace()
             AppLog.putNotSave("创建 fileHandler 出错\n${e}", e)
             null
         }

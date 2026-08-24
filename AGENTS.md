@@ -8,6 +8,7 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - **JAVA_HOME 必须指向 JDK 17**，例如 `C:\Program Files\Microsoft\jdk-17.0.20.8-hotspot`；Android Studio 自带 JBR/JDK 25 不适配当前 Kotlin/Gradle 配置。
 - 构建 debug APK：`./gradlew.bat :app:assembleDebug`。
 - 单元测试：`./gradlew.bat :app:testDebugUnitTest`。
+- 日志约定检查（找出「catch/runCatching 吞异常且没落日志」的疑似点，须人工甄别合法回退用法）：`python tools/check_log_convention.py`。改动新增 catch 分支后跑一次，确认没有遗漏 AppLog 落日志。
 - 词典资产已入库（`app/src/main/assets/dict/ecdict.dict`），日常构建无需重建；如需重建：`python tools/build_dict_db.py`（从 ECDICT 基础版 CSV 裁剪约 50 万词条 → 四列 SQLite → gzip 预压缩，约 18.7MB；`--keep-all` 保留全量 76 万）。asset 扩展名 `.dict` 是刻意的：AGP 会把 `.gz` 资产自动解压，`.dict` + `noCompress` 才能原样打包。
 - 每次代码改动后都必须完成：构建 APK → 按 `app/build/outputs/apk/debug/output-metadata.json` 选择设备 ABI → 安装 → 启动。x86_64 模拟器通常使用 `app-x86_64-debug.apk`，没有匹配设备时使用 `app-universal-debug.apk`。
 - Android 验证优先使用 android-emulator MCP：`android_preflight` → `android_discover_project` → `android_build_and_run` 或 `build_app` + `install_app` + `launch_app`。除非用户明确要求，不主动截图或执行额外 UI 自动化。

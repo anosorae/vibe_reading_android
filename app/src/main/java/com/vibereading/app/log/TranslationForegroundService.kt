@@ -46,6 +46,7 @@ class TranslationForegroundService : Service() {
             }
         } catch (e: Exception) {
             // 前台通知创建失败必须 stopSelf，否则会 ANR/崩溃
+            AppLog.put("前台服务通知创建失败", e)
             stopSelf()
         }
     }
@@ -111,6 +112,7 @@ class TranslationForegroundService : Service() {
             } catch (e: Exception) {
                 // 后台启动受限时退化为普通 startService；最坏情况服务无法前台化，
                 // 但 appScope 仍在运行，前台返回后可继续。
+                AppLog.put("startForegroundService 受限，退化为 startService", e)
                 runCatching { context.startService(intent) }
             }
         }

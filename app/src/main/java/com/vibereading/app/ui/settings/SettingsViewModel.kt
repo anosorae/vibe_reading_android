@@ -8,6 +8,7 @@ import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.LlmProfile
+import com.vibereading.app.log.AppLog
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.domain.model.ThemeMode
@@ -185,6 +186,7 @@ class SettingsViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.put("保存 LLM 配置失败", e)
                 _uiState.update {
                     it.copy(isSaving = false, saved = false, testResult = e.message ?: "保存配置失败", testSuccess = false)
                 }
@@ -221,6 +223,7 @@ class SettingsViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.put("测试 LLM 连接失败", e)
                 _uiState.update {
                     it.copy(isTesting = false, testResult = e.message ?: "测试连接失败", testSuccess = false)
                 }

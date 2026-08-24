@@ -145,7 +145,7 @@ class PageCurl(
      * @param base  底页位图（NEXT=当前页，PREV=上一页）
      * @param sheet 卷起页位图（NEXT=下一页，PREV=当前页）
      */
-    fun draw(canvas: Canvas, base: Bitmap?, sheet: Bitmap?, direction: Direction, bgColor: Int) {
+    fun draw(canvas: Canvas, base: Bitmap?, sheet: Bitmap?, bgColor: Int) {
         base ?: return
         sheet ?: return
         calcPoints()
@@ -453,7 +453,7 @@ class PageCurl(
         mBezierVertex2.y = (2 * mBezierControl2.y + mBezierStart2.y + mBezierEnd2.y) / 4
     }
 
-/**
+    /**
      * 求解直线P1P2和直线P3P4的交点坐标（带除零保护）。
      * - 垂直线（dx==0）：单独处理，避免 Infinity
      * - 平行线（a1==a2）：无交点，返回四点中心，避免 NaN

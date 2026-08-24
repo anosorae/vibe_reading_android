@@ -50,7 +50,7 @@ class PageCurlPrevSweepTest {
         val canvas = Canvas(out)
         st.curl.setViewSize(viewW, viewH)
         st.curl.start(st.touchX, st.touchY, st.cornerX, st.cornerY)
-        st.curl.draw(canvas, base, sheet, PageCurl.Direction.PREV, Color.WHITE)
+        st.curl.draw(canvas, base, sheet, Color.WHITE)
 
         val px = out.loadAndroidPixels()
         var sheetCount = 0

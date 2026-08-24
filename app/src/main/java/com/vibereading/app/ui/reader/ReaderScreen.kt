@@ -40,6 +40,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
+import com.vibereading.app.log.AppLog
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.DictPopup
@@ -710,8 +711,9 @@ fun ReaderScreen(
                             // requestScrollToPage = 无动画瞬时落地（internal snapToItem 的公开入口）
                             try {
                                 pagerState.requestScrollToPage(settle)
-                            } catch (_: Exception) {
-                                // 窗口重建等罕见竞态：放弃接管分页器
+                            } catch (e: Exception) {
+                                // 窗口重建等罕见竞态：放弃接管分页器，落日志供「设置 → 调试」定位
+                                AppLog.put("仿真打断落地 requestScrollToPage($settle) 失败", e)
                             }
                         }
                         val downX = down.position.x

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.ReadingSettings
+import com.vibereading.app.log.AppLog
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.ReaderPageGeometry
 import com.vibereading.app.ui.reader.components.BilingualParagraph
@@ -140,21 +141,21 @@ class SimFlipState {
         }
     }
 
-/** 垂直位置调整（对齐 Legado SimulationPageDelegate.onTouch MOVE）。
-         *  PREV 方向卷页角固定右下，触摸点强制到底部；
-         *  NEXT 方向按 startY 区间分段：上中段吸顶、中下段吸底、其余保持手势原值。 */
-        fun adjustTouchY(viewHeight: Float) {
-            when (direction) {
-                PageCurl.Direction.PREV -> touchY = viewHeight
-                PageCurl.Direction.NEXT -> {
-                    when {
-                        startY > viewHeight / 3 && startY < viewHeight / 2 -> touchY = 1f
-                        startY >= viewHeight / 2 && startY < viewHeight * 2 / 3 -> touchY = viewHeight
-                        // else：保持手势跟踪的原始 Y 值
-                    }
+    /** 垂直位置调整（对齐 Legado SimulationPageDelegate.onTouch MOVE）。
+     *  PREV 方向卷页角固定右下，触摸点强制到底部；
+     *  NEXT 方向按 startY 区间分段：上中段吸顶、中下段吸底、其余保持手势原值。 */
+    fun adjustTouchY(viewHeight: Float) {
+        when (direction) {
+            PageCurl.Direction.PREV -> touchY = viewHeight
+            PageCurl.Direction.NEXT -> {
+                when {
+                    startY > viewHeight / 3 && startY < viewHeight / 2 -> touchY = 1f
+                    startY >= viewHeight / 2 && startY < viewHeight * 2 / 3 -> touchY = viewHeight
+                    // else：保持手势跟踪的原始 Y 值
                 }
             }
         }
+    }
 
     /** 清除位图引用并停止动画；位图本体延迟两帧回收（见 [deferRecycle]）。 */
     fun cleanup() {
@@ -310,7 +311,6 @@ private fun CurlOverlay(simFlip: SimFlipState) {
                 canvas = c.nativeCanvas,
                 base = base,
                 sheet = sheet,
-                direction = simFlip.direction,
                 bgColor = simFlip.bgColor
             )
         }
@@ -591,7 +591,8 @@ fun renderPageBitmap(
 
         canvas.restore()
         image.asAndroidBitmap()
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        AppLog.put("仿真卷页位图渲染失败 page=$page mode=$mode", e)
         null
     }
     return bitmap

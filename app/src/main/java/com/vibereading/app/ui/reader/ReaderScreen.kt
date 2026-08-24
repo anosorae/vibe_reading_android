@@ -439,10 +439,18 @@ fun ReaderScreen(
         val dx: Float
         val dy: Float
         if (simFlip.isCancel) {
-            // 回弹：滚回手势起点（对齐 Legado SimulationPageDelegate.onAnimStart isCancel）
-            // 不能按半屏宽度猜测边缘——PREV 起点在左侧却会错误滚到右边
-            dx = simFlip.startX - simFlip.touchX
-            dy = simFlip.startY - simFlip.touchY
+            // 回弹：滚回卷角（对齐 Legado SimulationPageDelegate.onAnimStart isCancel）。
+            // 不能滚回手指起点 startX/startY——按下点本就比物理角点往里偏一小段，
+            // 取消时书页会停在离角落一小段距离的地方消失而不是完整折回角落。
+            dx = if (simFlip.direction != PageCurl.Direction.NEXT) {
+                // PREV：滚出左屏边缘（对齐 Legado：isCancel 时 PREV 统一 -(viewWidth+touchX)）
+                -(wf + simFlip.touchX)
+            } else if (simFlip.cornerX > 0) {
+                wf - simFlip.touchX    // NEXT 右边缘角：收到右缘
+            } else {
+                -simFlip.touchX        // NEXT 左边缘角：收到左缘
+            }
+            dy = if (simFlip.cornerY > 0) hf - simFlip.touchY else -simFlip.touchY
         } else {
             // 完成：滚过屏幕边缘（对齐 Legado SimulationPageDelegate.onAnimStart !isCancel）
             if (simFlip.direction == PageCurl.Direction.NEXT) {

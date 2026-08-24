@@ -36,7 +36,7 @@ class AppDatabaseMigrationTest {
         try {
             // 用 Room + MIGRATION_5_6 打开：Room 严格校验迁移结果与当前实体 schema 一致
             val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9)
+                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10)
                 .build()
             runBlocking {
                 val book = db.bookDao().getBookById(1L)!!
@@ -60,8 +60,8 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migrate2To9_fullChain_preservesData() {
-        val dbName = "migrate-2-9"
+    fun migrate2To10_fullChain_preservesData() {
+        val dbName = "migrate-2-10"
         val db = createV2Database(context, dbName)
 
         AppDatabase.MIGRATION_2_3.migrate(db)
@@ -71,6 +71,7 @@ class AppDatabaseMigrationTest {
         AppDatabase.MIGRATION_6_7.migrate(db)
         AppDatabase.MIGRATION_7_8.migrate(db)
         AppDatabase.MIGRATION_8_9.migrate(db)
+        AppDatabase.MIGRATION_9_10.migrate(db)
 
         try {
             // v5→v6 后：lastReadPage（v3 加入）被 lastReadOffset 替代，translatedChapters 被移除
@@ -78,6 +79,8 @@ class AppDatabaseMigrationTest {
             assertFalse("lastReadPage 应被移除", "lastReadPage" in bookColumns)
             assertFalse("translatedChapters 应被移除", "translatedChapters" in bookColumns)
             assertTrue("lastReadOffset 应存在", "lastReadOffset" in bookColumns)
+            // v9→v10：books 新增 languageMode 列，默认中文
+            assertTrue("languageMode 应存在", "languageMode" in bookColumns)
             val chapterColumns = columns(db, "chapters")
             assertTrue("errorMessage 应存在", "errorMessage" in chapterColumns)
             assertTrue("translationRunId 应存在", "translationRunId" in chapterColumns)
@@ -91,11 +94,13 @@ class AppDatabaseMigrationTest {
             assertTrue("enableExplainThinking 应存在", "enableExplainThinking" in profileColumns)
 
             // 数据保留：进度 offset 归零（旧页码不转换），译文/状态保留
-            db.query("SELECT lastReadChapterId, lastReadOffset, lastReadAt FROM books WHERE id = 1").use { c ->
+            db.query("SELECT lastReadChapterId, lastReadOffset, lastReadAt, languageMode FROM books WHERE id = 1").use { c ->
                 assertTrue(c.moveToFirst())
                 assertEquals(1L, c.getLong(0))
                 assertEquals(0, c.getInt(1))
                 assertEquals(1000L, c.getLong(2))
+                // v9→v10：languageMode 默认中文
+                assertEquals("zh", c.getString(3))
             }
             db.query("SELECT translatedContent, status, translationRunId, errorMessage FROM chapters WHERE id = 1").use { c ->
                 assertTrue(c.moveToFirst())

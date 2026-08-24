@@ -38,18 +38,22 @@ class BookRepository(private val bookDao: BookDao) {
     suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int): Boolean =
         bookDao.updateLastReadProgress(bookId, chapterId, offset.coerceAtLeast(0), System.currentTimeMillis()) > 0
 
+    /** 保存本书阅读语言模式（"zh" 或 "en"）。 */
+    suspend fun updateLanguageMode(bookId: Long, mode: String): Boolean =
+        bookDao.updateLanguageMode(bookId, mode) > 0
+
     private fun BookEntity.toDomain() = Book(
         id = id, title = title, filePath = filePath,
         totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
-        lastReadAt = lastReadAt, createdAt = createdAt
+        lastReadAt = lastReadAt, languageMode = languageMode, createdAt = createdAt
     )
 
     private fun Book.toEntity() = BookEntity(
         id = id, title = title, filePath = filePath,
         totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
-        lastReadAt = lastReadAt, createdAt = createdAt
+        lastReadAt = lastReadAt, languageMode = languageMode, createdAt = createdAt
     )
 
     private fun BookWithProgress.toShelfItem() = BookShelfItem(

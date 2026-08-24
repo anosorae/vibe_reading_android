@@ -110,6 +110,7 @@ class ReaderViewModel(
         viewModelScope.launch {
             val book = bookRepo.getBookByIdOnce(bookId) ?: return@launch
             val savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
+            _uiState.update { it.copy(mode = book.languageMode) } // 阅读模式按书绑定，默认中文
             chapterRepo.getChaptersByBook(bookId).collect { chapters ->
                 _uiState.update { it.copy(bookTitle = book.title, chapters = chapters) }
                 if (!restoreCompleted && chapters.isNotEmpty()) {
@@ -166,14 +167,6 @@ class ReaderViewModel(
         }
 
         // Load settings
-        viewModelScope.launch {
-            settingsRepo.readingMode.collect { mode ->
-                _uiState.update { it.copy(mode = mode) }
-                if (mode == "en") {
-                    _uiState.value.activeChapterId?.let { maybeTranslateChapter(it) }
-                }
-            }
-        }
         viewModelScope.launch {
             settingsRepo.readingSettings.collect { rs ->
                 _uiState.update { it.copy(readingSettings = rs) }
@@ -300,7 +293,7 @@ class ReaderViewModel(
 
     fun switchMode(mode: String) {
         _uiState.update { it.copy(mode = mode) }
-        viewModelScope.launch { settingsRepo.saveReadingMode(mode) }
+        viewModelScope.launch { bookRepo.updateLanguageMode(bookId, mode) }
         if (mode == "en") {
             _uiState.value.activeChapterId?.let { maybeTranslateChapter(it) }
         }

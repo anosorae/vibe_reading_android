@@ -238,20 +238,4 @@ class SettingsRepository(
     suspend fun saveBookshelfSortOrder(order: String) {
         store.edit { prefs -> prefs[ShelfKeys.SORT_ORDER] = order }
     }
-
-    // ── Reading Mode ──
-
-    private object ModeKeys {
-        val MODE = stringPreferencesKey("reading_mode")
-    }
-
-    val readingMode: Flow<String> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[ModeKeys.MODE] ?: "zh" }
-
-    suspend fun saveReadingMode(mode: String) {
-        store.edit { prefs ->
-            prefs[ModeKeys.MODE] = mode
-        }
-    }
 }

@@ -56,4 +56,8 @@ interface BookDao {
           )
     """)
     suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int, readAt: Long): Int
+
+    /** 保存本书阅读语言模式（"zh" 或 "en"），按书绑定。 */
+    @Query("UPDATE books SET languageMode = :mode WHERE id = :bookId")
+    suspend fun updateLanguageMode(bookId: Long, mode: String): Int
 }

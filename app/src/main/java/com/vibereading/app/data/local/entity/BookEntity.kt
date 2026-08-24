@@ -14,5 +14,6 @@ data class BookEntity(
     val lastReadChapterId: Long? = null,
     val lastReadOffset: Int = 0,        // 原文字符偏移量；旧页码不转换
     val lastReadAt: Long = 0,           // 最近阅读时间，书架「最近阅读」排序用
+    val languageMode: String = "zh",    // "zh" 或 "en"，按书绑定，默认中文
     val createdAt: Long = System.currentTimeMillis()
 )

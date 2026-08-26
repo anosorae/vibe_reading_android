@@ -11,6 +11,7 @@ import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.domain.parser.IllustrationLink
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,6 +36,7 @@ class FakeTranslationService(
     var lastTitle: String? = null
     var lastContent: String? = null
     var lastSourceLanguage: String? = null
+    var callCount = 0
 
     override fun translateStream(
         settings: LlmSettings,
@@ -42,6 +44,7 @@ class FakeTranslationService(
         chapterContent: String,
         sourceLanguage: String
     ): Flow<TranslationEvent> = flow {
+        callCount++
         lastTitle = chapterTitle
         lastContent = chapterContent
         lastSourceLanguage = sourceLanguage
@@ -97,10 +100,10 @@ class TranslationCoordinatorTest {
         TranslationCoordinator(bookId, chapterRepo, service, scope, context)
 
     /** 轮询等待章节状态落库；返回最终实体（含 translationRunId）。 */
-    private suspend fun awaitStatus(expected: Int): ChapterEntity {
+    private suspend fun awaitStatus(expected: Int, id: Long = chapterId): ChapterEntity {
         val deadline = System.currentTimeMillis() + 10_000
         while (true) {
-            val ch = db.chapterDao().getChapterById(bookId, chapterId)
+            val ch = db.chapterDao().getChapterById(bookId, id)
             if (ch != null && ch.status == expected) return ch
             if (System.currentTimeMillis() > deadline) {
                 throw AssertionError("等待章节状态 $expected 超时")
@@ -218,5 +221,33 @@ class TranslationCoordinatorTest {
         newCoordinator.translate(chapter, settings)
         val done = awaitStatus(Chapter.STATUS_DONE)
         assertEquals("FINAL", done.translatedContent)
+    }
+
+    @Test
+    fun `illustration only chapter completes without calling api`() = runBlocking {
+        // 纯插图/空文本章节（ADR-002）：不调 API，直接 start→complete 落 DONE 空译文
+        val ids = db.chapterDao().insertAll(
+            listOf(
+                ChapterEntity(
+                    bookId = bookId, title = "插图章", chapterIndex = 1,
+                    content = IllustrationLink.build("9/pic.jpg", 100, 50)
+                ),
+                ChapterEntity(bookId = bookId, title = "空白章", chapterIndex = 2, content = "\n\n   \n\n")
+            )
+        )
+        val service = FakeTranslationService(listOf(TranslationEvent.Done("不应被使用")))
+        coordinator(service).let { c ->
+            c.translate(chapterRepo.getChapterById(bookId, ids[0])!!, settings)
+            c.translate(chapterRepo.getChapterById(bookId, ids[1])!!, settings)
+        }
+
+        val imgDone = awaitStatus(Chapter.STATUS_DONE, ids[0])
+        assertEquals("空译文落库，读取侧回退原文", "", imgDone.translatedContent)
+        assertEquals(0L, imgDone.translationRunId)
+        val blankDone = awaitStatus(Chapter.STATUS_DONE, ids[1])
+        assertEquals("", blankDone.translatedContent)
+
+        // 两次翻译都不应触达翻译服务
+        assertEquals(0, service.callCount)
     }
 }

@@ -82,7 +82,8 @@ ${if (includeNcx) "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-
     private fun buildEpub(
         includeNcx: Boolean = true,
         encryptionXml: Boolean = false,
-        dropContainer: Boolean = false
+        dropContainer: Boolean = false,
+        ncx: String = ncxXml
     ): ByteArray {
         val entries = mutableListOf<Pair<String, ByteArray>>(
             "mimetype" to str("application/epub+zip"),
@@ -94,7 +95,7 @@ ${if (includeNcx) "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-
             "OEBPS/images/i.png" to byteArrayOf(1, 2, 3),
             "OEBPS/images/cover.jpg" to byteArrayOf(9, 8, 7)
         )
-        if (includeNcx) entries += "OEBPS/toc.ncx" to str(ncxXml)
+        if (includeNcx) entries += "OEBPS/toc.ncx" to str(ncx)
         if (encryptionXml) entries += "META-INF/encryption.xml" to str("<encryption/>")
         if (dropContainer) entries.removeIf { it.first == "META-INF/container.xml" }
         return zipOf(*entries.toTypedArray())
@@ -282,5 +283,102 @@ ${if (includeNcx) "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-
         )
         val book = EpubParser.parse(epub) { 10 to 5 }
         assertTrue(book.chapters.any { it.paragraphs.contains(EpubParser.Paragraph.Text("你好。")) })
+    }
+
+    // ── 补充分支：卷映射、EPUB3 nav、书末、锚点丢失 ──
+
+    /** 嵌套 navPoint：子章节挂父节点标题为卷。 */
+    private val nestedNcxXml = """<?xml version="1.0" encoding="utf-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+<navMap>
+<navPoint id="v1"><navLabel><text>第一卷</text></navLabel><content src="chap1.xhtml"/>
+<navPoint id="c1"><navLabel><text>第一章</text></navLabel><content src="chap1.xhtml#sec2"/></navPoint>
+</navPoint>
+<navPoint id="n3"><navLabel><text>外传</text></navLabel><content src="chap2.xhtml"/></navPoint>
+</navMap>
+</ncx>"""
+
+    @Test
+    fun ncx_nestedNavPoints_mapParentTitleAsSection() {
+        val book = EpubParser.parse(buildEpub(ncx = nestedNcxXml), sizeStub)
+        assertEquals(
+            listOf(
+                "卷首" to null,
+                "第一卷" to null,      // 父条目自身是章，无卷
+                "第一章" to "第一卷",   // 子条目挂父标题为卷
+                "外传" to null          // 顶层兄弟条目不继承前面的卷
+            ),
+            book.chapters.map { it.title to it.section }
+        )
+    }
+
+    @Test
+    fun epub3_navXhtml_parsedWithSectionMapping() {
+        // EPUB3：manifest 声明 properties="nav"，嵌套 ol 子条目挂父条目文本为卷
+        val opf = opfXml(includeNcx = false).replace(
+            "</manifest>",
+            "<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/></manifest>"
+        )
+        val navXhtml = """<html><body><nav><ol>
+<li><a href="chap1.xhtml">第一卷</a><ol><li><a href="chap1.xhtml#sec2">第一章</a></li></ol></li>
+<li><a href="chap2.xhtml">第二章</a></li>
+</ol></nav></body></html>"""
+        val epub = zipOf(
+            "mimetype" to str("application/epub+zip"),
+            "META-INF/container.xml" to str(containerXml),
+            "OEBPS/content.opf" to str(opf),
+            "OEBPS/nav.xhtml" to str(navXhtml),
+            "OEBPS/cover.xhtml" to str(coverXhtml),
+            "OEBPS/chap1.xhtml" to str(chap1Xhtml),
+            "OEBPS/chap2.xhtml" to str(chap2Xhtml),
+            "OEBPS/images/i.png" to byteArrayOf(1, 2, 3),
+            "OEBPS/images/cover.jpg" to byteArrayOf(9, 8, 7)
+        )
+        val book = EpubParser.parse(epub, sizeStub)
+        assertEquals(
+            listOf(
+                "卷首" to null,
+                "第一卷" to null,
+                "第一章" to "第一卷",
+                "第二章" to null
+            ),
+            book.chapters.map { it.title to it.section }
+        )
+    }
+
+    @Test
+    fun backMatter_spinePagesAfterLastTocEntry_becomeBackMatterChapter() {
+        // spine 在最后一个 TOC 资源之后还有页面：合并为「书末」章，不丢内容
+        val opf = opfXml(includeNcx = true)
+            .replace("</manifest>", "<item id=\"end\" href=\"end.xhtml\" media-type=\"application/xhtml+xml\"/></manifest>")
+            .replace("<itemref idref=\"c2\"/>", "<itemref idref=\"c2\"/><itemref idref=\"end\"/>")
+        val endXhtml = """<html><head><title>后记</title></head><body><p>后记内容。</p></body></html>"""
+        val epub = zipOf(
+            "mimetype" to str("application/epub+zip"),
+            "META-INF/container.xml" to str(containerXml),
+            "OEBPS/content.opf" to str(opf),
+            "OEBPS/cover.xhtml" to str(coverXhtml),
+            "OEBPS/chap1.xhtml" to str(chap1Xhtml),
+            "OEBPS/chap2.xhtml" to str(chap2Xhtml),
+            "OEBPS/end.xhtml" to str(endXhtml),
+            "OEBPS/images/i.png" to byteArrayOf(1, 2, 3),
+            "OEBPS/images/cover.jpg" to byteArrayOf(9, 8, 7),
+            "OEBPS/toc.ncx" to str(ncxXml)
+        )
+        val book = EpubParser.parse(epub, sizeStub)
+        assertEquals(listOf("卷首", "前言", "第一章", "第二章", "书末"), book.chapters.map { it.title })
+        assertEquals(listOf(EpubParser.Paragraph.Text("后记内容。")), book.chapters.last().paragraphs)
+    }
+
+    @Test
+    fun anchorNotFound_mergesIntoPreviousEntry_droppingTitle() {
+        // #missing 锚点在文件中不存在：该条目标题丢弃，内容并入前一条目（前言）
+        val brokenNcx = ncxXml.replace("chap1.xhtml#sec2", "chap1.xhtml#missing")
+        val book = EpubParser.parse(buildEpub(ncx = brokenNcx), sizeStub)
+        assertEquals(listOf("卷首", "前言", "第二章"), book.chapters.map { it.title })
+
+        // 原本属于「第一章」条目的内容保留在前言章里，没有静默丢失
+        val preface = book.chapters[1].paragraphs
+        assertTrue(preface.contains(EpubParser.Paragraph.Text("第二段内容。")))
     }
 }

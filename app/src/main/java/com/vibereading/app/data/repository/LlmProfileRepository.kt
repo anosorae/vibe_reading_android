@@ -32,9 +32,9 @@ class LlmProfileRepository(
     }
 
     suspend fun updateProfile(profile: LlmProfile) {
-        val isActive = dao.getActive() // 不用 Flow，这里用一次性的即可
-        // 保持 isActive 状态不变
-        dao.update(profile.toEntity(isActive = false)) // 稍后通过 setActiveIfNeeded 处理
+        // 保持 isActive 状态不变：以库中现有记录为准（激活/取消激活走 setActive）
+        val isActive = dao.getById(profile.id)?.isActive ?: false
+        dao.update(profile.toEntity(isActive = isActive))
     }
 
     /** 更新配置档案，保留其当前 isActive 状态 */

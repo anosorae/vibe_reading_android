@@ -25,6 +25,9 @@ interface LlmProfileDao {
     @Query("DELETE FROM llm_profiles WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("SELECT * FROM llm_profiles WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): LlmProfileEntity?
+
     /** 事务切换活跃配置：取消旧活跃，设置新活跃。 */
     @Transaction
     suspend fun setActive(profileId: Long) {

@@ -125,12 +125,10 @@ class TranslationCoordinator(
                     )
                 }
 
-                val prevTranslation = if (settings.enableContextBoost) loadContext(chapter, settings) else null
                 translationService.translateStream(
                     settings = settings,
                     chapterTitle = chapter.title,
                     chapterContent = chapter.content,
-                    prevChapterTranslation = prevTranslation,
                     sourceLanguage = sourceLanguage
                 ).collect { event ->
                     when (event) {
@@ -245,14 +243,5 @@ class TranslationCoordinator(
         }
         // 显式取消：停止前台服务。若紧接着重译，translate() 会重新启动。
         TranslationForegroundService.stop(appContext)
-    }
-
-    private suspend fun loadContext(chapter: Chapter, settings: LlmSettings): String? {
-        val budget = settings.contextMaxChars - chapter.content.length
-        if (budget <= 0) return null
-        val prevChapters = chapterRepo.getRecentDoneChapters(bookId, settings.contextChapters)
-        if (prevChapters.isEmpty()) return null
-        val combined = prevChapters.reversed().mapNotNull { it.translatedContent }.joinToString("\n\n")
-        return if (combined.length > budget) translationService.truncateMiddle(combined, budget) else combined
     }
 }

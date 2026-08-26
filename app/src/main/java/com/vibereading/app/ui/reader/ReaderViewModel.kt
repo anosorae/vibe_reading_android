@@ -439,29 +439,12 @@ class ReaderViewModel(
             llmProfileRepo.updateProfileWithActiveState(profile.copy(chapterMaxChars = value), isActive = true)
         }
     }
-    fun updateLlmContextBoost(enabled: Boolean) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableContextBoost = enabled)) }
+    fun updateLlmMaxOutputTokens(value: Int) {
+        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(maxOutputTokens = value)) }
         viewModelScope.launch {
             val id = _uiState.value.activeProfileId ?: return@launch
             val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableContextBoost = enabled), isActive = true)
-        }
-    }
-    fun updateLlmContextChapters(value: Int) {
-        val clamped = value.coerceIn(1, 3)
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextChapters = clamped)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(contextChapters = clamped), isActive = true)
-        }
-    }
-    fun updateLlmContextMaxChars(value: Int) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(contextMaxChars = value)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(contextMaxChars = value), isActive = true)
+            llmProfileRepo.updateProfileWithActiveState(profile.copy(maxOutputTokens = value), isActive = true)
         }
     }
     fun updateLlmThinking(enabled: Boolean) {

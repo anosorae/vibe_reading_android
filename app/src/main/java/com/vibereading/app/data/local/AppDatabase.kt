@@ -13,7 +13,7 @@ import com.vibereading.app.data.local.entity.LlmProfileEntity
 
 @Database(
     entities = [BookEntity::class, ChapterEntity::class, LlmProfileEntity::class],
-    version = 13,
+    version = 15,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -122,7 +122,7 @@ abstract class AppDatabase : RoomDatabase() {
                         apiKey TEXT NOT NULL DEFAULT '',
                         apiBase TEXT NOT NULL DEFAULT 'https://api.deepseek.com',
                         model TEXT NOT NULL DEFAULT 'deepseek-v4-flash',
-                        chapterMaxChars INTEGER NOT NULL DEFAULT 20000,
+                        chapterMaxChars INTEGER NOT NULL DEFAULT 60000,
                         enableContextBoost INTEGER NOT NULL DEFAULT 0,
                         contextChapters INTEGER NOT NULL DEFAULT 1,
                         contextMaxChars INTEGER NOT NULL DEFAULT 30000,
@@ -177,6 +177,49 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v13→v14：llm_profiles 增加 maxOutputTokens 列，翻译请求的最大输出 token 可配置。 */
+        val MIGRATION_13_14 = object : androidx.room.migration.Migration(13, 14) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE llm_profiles ADD COLUMN maxOutputTokens INTEGER NOT NULL DEFAULT 32768")
+            }
+        }
+
+        /** v14→v15：移除「上下文增强翻译」三列（enableContextBoost/contextChapters/contextMaxChars），重建 llm_profiles 表。 */
+        val MIGRATION_14_15 = object : androidx.room.migration.Migration(14, 15) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("PRAGMA foreign_keys=OFF")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS llm_profiles_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        name TEXT NOT NULL,
+                        apiKey TEXT NOT NULL,
+                        apiBase TEXT NOT NULL,
+                        model TEXT NOT NULL,
+                        chapterMaxChars INTEGER NOT NULL,
+                        maxOutputTokens INTEGER NOT NULL,
+                        enableThinking INTEGER NOT NULL,
+                        enableExplainThinking INTEGER NOT NULL,
+                        autoTranslateNext INTEGER NOT NULL,
+                        temperature REAL NOT NULL,
+                        topP REAL NOT NULL,
+                        isActive INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO llm_profiles_new (
+                        id, name, apiKey, apiBase, model, chapterMaxChars, maxOutputTokens,
+                        enableThinking, enableExplainThinking, autoTranslateNext, temperature, topP, isActive
+                    )
+                    SELECT id, name, apiKey, apiBase, model, chapterMaxChars, maxOutputTokens,
+                        enableThinking, enableExplainThinking, autoTranslateNext, temperature, topP, isActive
+                    FROM llm_profiles
+                """.trimIndent())
+                db.execSQL("DROP TABLE llm_profiles")
+                db.execSQL("ALTER TABLE llm_profiles_new RENAME TO llm_profiles")
+                db.execSQL("PRAGMA foreign_keys=ON")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -184,7 +227,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "vibe_reading"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
                     .build()
                 INSTANCE = instance
                 instance

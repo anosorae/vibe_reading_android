@@ -30,13 +30,13 @@ class AppDatabaseMigrationTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun migrate5To6_dropsTranslatedColumn_andAddsRunId() {
+    fun migrate5To15_dropsTranslatedColumn_andAddsRunId() {
         val dbName = "migrate-5-6"
         createV5Database(context, dbName)
         try {
-            // 用 Room + MIGRATION_5_6 打开：Room 严格校验迁移结果与当前实体 schema 一致
+            // 用 Room + 迁移链打开：Room 严格校验迁移结果与当前实体 schema 一致
             val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13)
+                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15)
                 .build()
             runBlocking {
                 val book = db.bookDao().getBookById(1L)!!
@@ -54,6 +54,13 @@ class AppDatabaseMigrationTest {
             assertTrue("translationRunId 应存在", "translationRunId" in columns(sqlite, "chapters"))
             // v12→v13：books 新增 sourceLanguage 列（ADR-003）
             assertTrue("sourceLanguage 应存在", "sourceLanguage" in columns(sqlite, "books"))
+            // v13→v14：llm_profiles 新增 maxOutputTokens 列
+            assertTrue("maxOutputTokens 应存在", "maxOutputTokens" in columns(sqlite, "llm_profiles"))
+            // v14→v15：上下文增强三列已移除
+            val profileColumns = columns(sqlite, "llm_profiles")
+            assertFalse("enableContextBoost 应被移除", "enableContextBoost" in profileColumns)
+            assertFalse("contextChapters 应被移除", "contextChapters" in profileColumns)
+            assertFalse("contextMaxChars 应被移除", "contextMaxChars" in profileColumns)
             assertNoForeignKeyViolations(sqlite)
             db.close()
         } finally {
@@ -62,7 +69,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migrate2To13_fullChain_preservesData() {
+    fun migrate2To15_fullChain_preservesData() {
         val dbName = "migrate-2-13"
         val db = createV2Database(context, dbName)
 
@@ -77,6 +84,8 @@ class AppDatabaseMigrationTest {
         AppDatabase.MIGRATION_10_11.migrate(db)
         AppDatabase.MIGRATION_11_12.migrate(db)
         AppDatabase.MIGRATION_12_13.migrate(db)
+        AppDatabase.MIGRATION_13_14.migrate(db)
+        AppDatabase.MIGRATION_14_15.migrate(db)
 
         try {
             // v5→v6 后：lastReadPage（v3 加入）被 lastReadOffset 替代，translatedChapters 被移除
@@ -101,6 +110,12 @@ class AppDatabaseMigrationTest {
             assertTrue("enableExplainThinking 应存在", "enableExplainThinking" in profileColumns)
             // v10→v11：llm_profiles 增加 autoTranslateNext 列
             assertTrue("autoTranslateNext 应存在", "autoTranslateNext" in profileColumns)
+            // v13→v14：llm_profiles 增加 maxOutputTokens 列
+            assertTrue("maxOutputTokens 应存在", "maxOutputTokens" in profileColumns)
+            // v14→v15：上下文增强三列移除
+            assertFalse("enableContextBoost 应被移除", "enableContextBoost" in profileColumns)
+            assertFalse("contextChapters 应被移除", "contextChapters" in profileColumns)
+            assertFalse("contextMaxChars 应被移除", "contextMaxChars" in profileColumns)
 
             // 数据保留：进度 offset 归零（旧页码不转换），译文/状态保留
             db.query("SELECT lastReadChapterId, lastReadOffset, lastReadAt, languageMode, sourceLanguage FROM books WHERE id = 1").use { c ->

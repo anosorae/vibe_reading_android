@@ -13,10 +13,8 @@ data class LlmProfileEntity(
     val apiKey: String = "",
     val apiBase: String = "https://api.deepseek.com",
     val model: String = "deepseek-v4-flash",
-    val chapterMaxChars: Int = 30000,
-    val enableContextBoost: Boolean = false,
-    val contextChapters: Int = 1,
-    val contextMaxChars: Int = 50000,
+    val chapterMaxChars: Int = 60000,
+    val maxOutputTokens: Int = 32768,
     val enableThinking: Boolean = false,
     val enableExplainThinking: Boolean = false,
     val autoTranslateNext: Boolean = false, // 英文阅读时预译下一章

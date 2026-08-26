@@ -137,7 +137,6 @@ class LlmApiService : TranslationService {
     fun buildUserPrompt(
         chapterTitle: String,
         chapterContent: String,
-        prevChapterTranslation: String? = null,
         sourceLanguage: String = SourceLanguageDetector.ZH
     ): String {
         // 插图段（ADR-002 D4）保留编号但剔除内容：prompt 出现编号空洞，模型输出自然缺失
@@ -149,14 +148,6 @@ class LlmApiService : TranslationService {
             .joinToString("\n") { (n, p) -> "[$n] ${p.trim()}" }
 
         val sb = StringBuilder()
-        if (prevChapterTranslation != null) {
-            sb.appendLine(
-                if (isEnSource) "上一章中译 (供术语 / 风格衔接参考):"
-                else "上一章英译 (供术语 / 风格衔接参考):"
-            )
-            sb.appendLine(prevChapterTranslation)
-            sb.appendLine("---")
-        }
         sb.appendLine("Chapter: $chapterTitle")
         sb.appendLine(
             if (isEnSource) "请将以下整章英文翻译为中文, 保留每个段落的 [N] 标记:"
@@ -166,17 +157,10 @@ class LlmApiService : TranslationService {
         return sb.toString()
     }
 
-    override fun truncateMiddle(text: String, maxLen: Int): String {
-        if (text.length <= maxLen) return text
-        val half = maxLen / 2
-        return text.take(half) + "\n[... middle truncated ...]\n" + text.takeLast(half)
-    }
-
     override fun translateStream(
         settings: LlmSettings,
         chapterTitle: String,
         chapterContent: String,
-        prevChapterTranslation: String?,
         sourceLanguage: String
     ): Flow<TranslationEvent> = flow {
         var call: okhttp3.Call? = null
@@ -184,7 +168,7 @@ class LlmApiService : TranslationService {
         var finishReason: String? = null
         try {
             emit(TranslationEvent.Started)
-            val userPrompt = buildUserPrompt(chapterTitle, chapterContent, prevChapterTranslation, sourceLanguage)
+            val userPrompt = buildUserPrompt(chapterTitle, chapterContent, sourceLanguage)
             val requestMap = mutableMapOf<String, Any>(
                 "model" to settings.model,
                 "messages" to listOf(
@@ -193,7 +177,7 @@ class LlmApiService : TranslationService {
                 ),
                 "temperature" to settings.temperature.coerceIn(0f, 2f),
                 "top_p" to settings.topP.coerceIn(0f, 1f),
-                "max_tokens" to 16000,
+                "max_tokens" to settings.maxOutputTokens,
                 "stream" to true
             )
             // 思考模式：同时发送 OpenAI 兼容格式和 Qwen chat_template_kwargs 格式，

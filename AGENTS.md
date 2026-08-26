@@ -66,7 +66,7 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - 阅读位置统一使用 `ReadingPosition(chapterId, offset)`。`Book.lastReadChapterId` 和 `Book.lastReadOffset` 是持久化恢复数据；页码只能是当前 `BookWindow`/`ChapterPaginator` 的派生状态。
 - 初始恢复必须是一次性、原子、无副作用的：先读取 Book 位置快照，再等待章节列表；不要通过会写库的普通导航函数恢复默认位置。后续章节 Flow 只刷新当前章节。
 - 位置变化统一经过 ViewModel 的进度入口；分页从 `window.offsetOfPage()` 取 offset，滚动从可见 `ScrollItem` 取 offset。写入必须串行，退出前调用 `flushProgress()`。
-- 翻译走 `TranslationService` 接口（`LlmApiService` 实现，方法：`translateStream`/`testConnection`/`truncateMiddle`）的 `translateStream(settings, chapterTitle, chapterContent, prevChapterTranslation, sourceLanguage)`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文；`sourceLanguage`（书原文语言，ADR-003）决定 prompt 方向，`prevChapterTranslation` 始终取上一章译文（目标语言版本）。LLM 配置存于 `llm_profiles` 表（多档案，`LlmProfileRepository` 管理，`isActive` 标记当前生效档案）；`LlmSettings` 是翻译/连接测试使用的运行时子集。
+- 翻译走 `TranslationService` 接口（`LlmApiService` 实现，方法：`translateStream`/`testConnection`）的 `translateStream(settings, chapterTitle, chapterContent, sourceLanguage)`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文；`sourceLanguage`（书原文语言，ADR-003）决定 prompt 方向。LLM 配置存于 `llm_profiles` 表（多档案，`LlmProfileRepository` 管理，`isActive` 标记当前生效档案）；`LlmSettings` 是翻译/连接测试使用的运行时子集。
 - 翻译状态机集中在 `TranslationCoordinator`（注入 `TranslationService`）：开始翻译时写入 `chapters.translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧任务无法污染新任务。
 
 ## 阅读内容与五种翻页模式

@@ -35,9 +35,8 @@ import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.ThemeMode
 import com.vibereading.app.ui.components.CHAPTER_MAX_CHARS_RANGE
-import com.vibereading.app.ui.components.CONTEXT_CHAPTERS_RANGE
-import com.vibereading.app.ui.components.CONTEXT_MAX_CHARS_RANGE
 import com.vibereading.app.ui.components.DECIMAL_PARAM_STEP
+import com.vibereading.app.ui.components.MAX_OUTPUT_TOKENS_RANGE
 import com.vibereading.app.ui.components.TEMPERATURE_RANGE
 import com.vibereading.app.ui.components.StepperValueInput
 import com.vibereading.app.ui.components.TOP_P_RANGE
@@ -247,7 +246,10 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
+                        Text("超过该字符数的章节跳过翻译", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    }
                     StepperValueInput(
                         value = ls.chapterMaxChars,
                         range = CHAPTER_MAX_CHARS_RANGE,
@@ -257,65 +259,23 @@ fun SettingsScreen(
                     )
                 }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                // 上下文增强翻译
+                // 最大输出Token：翻译请求的最大输出 token 数
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("上下文增强翻译", style = MaterialTheme.typography.bodyMedium)
-                        Text("包含前几章英译作为上下文", fontSize = 12.sp, color = VibeColors.WarmGray)
+                        Text("最大输出Token", style = MaterialTheme.typography.bodyMedium)
+                        Text("模型单次翻译输出的最大 token 数", fontSize = 12.sp, color = VibeColors.WarmGray)
                     }
-                    Switch(
-                        checked = ls.enableContextBoost,
-                        onCheckedChange = { vm.updateContextBoost(it) },
-                        colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                    StepperValueInput(
+                        value = ls.maxOutputTokens,
+                        range = MAX_OUTPUT_TOKENS_RANGE,
+                        step = 1024,
+                        accentColor = accentColor,
+                        onValueChange = vm::updateMaxOutputTokens
                     )
-                }
-
-                // 上下文增强子设置
-                if (ls.enableContextBoost) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("上下文章节数", style = MaterialTheme.typography.bodySmall)
-                                StepperValueInput(
-                                    value = ls.contextChapters,
-                                    range = CONTEXT_CHAPTERS_RANGE,
-                                    step = 1,
-                                    accentColor = accentColor,
-                                    fieldWidth = 44.dp,
-                                    onValueChange = vm::updateContextChapters
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("总字符限制", style = MaterialTheme.typography.bodySmall)
-                                StepperValueInput(
-                                    value = ls.contextMaxChars,
-                                    range = CONTEXT_MAX_CHARS_RANGE,
-                                    step = 5000,
-                                    accentColor = accentColor,
-                                    onValueChange = vm::updateContextMaxChars
-                                )
-                            }
-                        }
-                    }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))

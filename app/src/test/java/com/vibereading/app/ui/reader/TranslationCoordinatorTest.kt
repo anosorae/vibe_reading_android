@@ -19,7 +19,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -35,27 +34,22 @@ class FakeTranslationService(
 ) : TranslationService {
     var lastTitle: String? = null
     var lastContent: String? = null
-    var lastPrevTranslation: String? = null
     var lastSourceLanguage: String? = null
 
     override fun translateStream(
         settings: LlmSettings,
         chapterTitle: String,
         chapterContent: String,
-        prevChapterTranslation: String?,
         sourceLanguage: String
     ): Flow<TranslationEvent> = flow {
         lastTitle = chapterTitle
         lastContent = chapterContent
-        lastPrevTranslation = prevChapterTranslation
         lastSourceLanguage = sourceLanguage
         emit(TranslationEvent.Started)
         events.forEach { emit(it) }
     }
 
     override suspend fun testConnection(settings: LlmSettings): Result<String> = Result.success("ok")
-
-    override fun truncateMiddle(text: String, maxLen: Int): String = text
 }
 
 /**
@@ -126,7 +120,6 @@ class TranslationCoordinatorTest {
         assertEquals("EN TEXT", done.translatedContent)
         assertEquals(0L, done.translationRunId)
         assertEquals("正文", service.lastContent)
-        assertNull(service.lastPrevTranslation)
         // 默认中文书方向
         assertEquals("zh", service.lastSourceLanguage)
     }
@@ -200,7 +193,6 @@ class TranslationCoordinatorTest {
                 settings: LlmSettings,
                 chapterTitle: String,
                 chapterContent: String,
-                prevChapterTranslation: String?,
                 sourceLanguage: String
             ): Flow<TranslationEvent> = flow {
                 emit(TranslationEvent.Started)
@@ -209,7 +201,6 @@ class TranslationCoordinatorTest {
             }
 
             override suspend fun testConnection(settings: LlmSettings): Result<String> = Result.success("ok")
-            override fun truncateMiddle(text: String, maxLen: Int): String = text
         }
         val coordinator = coordinator(slowService)
         coordinator.translate(chapter, settings)
@@ -227,31 +218,5 @@ class TranslationCoordinatorTest {
         newCoordinator.translate(chapter, settings)
         val done = awaitStatus(Chapter.STATUS_DONE)
         assertEquals("FINAL", done.translatedContent)
-    }
-
-    @Test
-    fun `context boost passes previous chapter translation`() = runBlocking {
-        // 前一章直接完成，提供 translatedContent 供上下文引用
-        val prevId = db.chapterDao().insertAll(
-            listOf(ChapterEntity(bookId = bookId, title = "前一章", chapterIndex = 0, content = "旧正文"))
-        )[0]
-        db.chapterDao().startTranslationRun(bookId, prevId, 1L, 1)
-        db.chapterDao().completeTranslationRun(bookId, prevId, 1L, "OLD EN", 2)
-
-        // 第二章：contextBoost 开启，应把前一章英译传给服务
-        val secondId = db.chapterDao().insertAll(
-            listOf(ChapterEntity(bookId = bookId, title = "当前章", chapterIndex = 1, content = "新正文"))
-        )[0]
-        val secondChapter = chapterRepo.getChapterById(bookId, secondId)!!
-        val boostSettings = settings.copy(enableContextBoost = true, contextChapters = 1)
-
-        val service = FakeTranslationService(listOf(TranslationEvent.Done("NEW EN")))
-        val coordinator = coordinator(service)
-        coordinator.translate(secondChapter, boostSettings)
-        withTimeout(10_000) {
-            while (service.lastPrevTranslation == null) delay(20)
-        }
-
-        assertEquals("OLD EN", service.lastPrevTranslation)
     }
 }

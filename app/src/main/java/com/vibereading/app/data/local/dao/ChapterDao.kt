@@ -19,9 +19,6 @@ interface ChapterDao {
     @Query("SELECT * FROM chapters WHERE bookId = :bookId ORDER BY chapterIndex")
     suspend fun getChaptersByBookList(bookId: Long): List<ChapterEntity>
 
-    @Query("SELECT * FROM chapters WHERE bookId = :bookId AND status = :doneStatus ORDER BY chapterIndex DESC LIMIT :limit")
-    suspend fun getRecentDoneChapters(bookId: Long, doneStatus: Int, limit: Int): List<ChapterEntity>
-
     @Insert
     suspend fun insertAll(chapters: List<ChapterEntity>): List<Long>
 

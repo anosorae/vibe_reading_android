@@ -20,9 +20,6 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     suspend fun getChaptersByBookList(bookId: Long): List<Chapter> =
         chapterDao.getChaptersByBookList(bookId).map { it.toDomain() }
 
-    suspend fun getRecentDoneChapters(bookId: Long, limit: Int): List<Chapter> =
-        chapterDao.getRecentDoneChapters(bookId, Chapter.STATUS_DONE, limit).map { it.toDomain() }
-
     suspend fun insertAll(chapters: List<Chapter>) =
         chapterDao.insertAll(chapters.map { it.toEntity() })
 

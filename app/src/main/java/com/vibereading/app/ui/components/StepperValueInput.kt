@@ -42,9 +42,10 @@ import kotlin.math.pow
 /** 「单章字符上限」的合法区间；输入越界在失焦/确认时夹取。 */
 val CHAPTER_MAX_CHARS_RANGE: IntRange = 1000..200000
 
+/** 「最大输出Token」的合法区间；输入越界在失焦/确认时夹取。 */
+val MAX_OUTPUT_TOKENS_RANGE: IntRange = 256..65536
+
 /** 翻译参数共用区间与步长（首页设置与阅读页翻译设置两处界面共用）。 */
-val CONTEXT_CHAPTERS_RANGE: IntRange = 1..3
-val CONTEXT_MAX_CHARS_RANGE: IntRange = 5000..500000
 val TEMPERATURE_RANGE: ClosedFloatingPointRange<Float> = 0f..2f
 val TOP_P_RANGE: ClosedFloatingPointRange<Float> = 0f..1f
 const val DECIMAL_PARAM_STEP: Float = 0.1f

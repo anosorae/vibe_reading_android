@@ -31,9 +31,6 @@ class SettingsRepository(
         val API_BASE = stringPreferencesKey("api_base")
         val MODEL = stringPreferencesKey("model")
         val CHAPTER_MAX_CHARS = intPreferencesKey("chapter_max_chars")
-        val ENABLE_CONTEXT_BOOST = booleanPreferencesKey("enable_context_boost")
-        val CONTEXT_CHAPTERS = intPreferencesKey("context_chapters")
-        val CONTEXT_MAX_CHARS = intPreferencesKey("context_max_chars")
         val ENABLE_THINKING = booleanPreferencesKey("enable_thinking")
         val MIGRATED = booleanPreferencesKey("llm_migrated_to_room")
     }
@@ -54,11 +51,8 @@ class SettingsRepository(
             apiKey = prefs[LlmKeys.API_KEY]?.trim() ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
             apiBase = prefs[LlmKeys.API_BASE]?.trim()?.trimEnd('/')?.ifEmpty { defaultApiBase } ?: defaultApiBase,
             model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { "deepseek-v4-flash" },
-            chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 30000,
-            enableContextBoost = prefs[LlmKeys.ENABLE_CONTEXT_BOOST] ?: false,
-            contextChapters = prefs[LlmKeys.CONTEXT_CHAPTERS]?.coerceIn(1, 3) ?: 1,
-            contextMaxChars = prefs[LlmKeys.CONTEXT_MAX_CHARS] ?: 50000,
-            enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: false
+chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 60000,
+                    enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: false
         )
     }
 
@@ -69,9 +63,6 @@ class SettingsRepository(
             prefs.remove(LlmKeys.API_BASE)
             prefs.remove(LlmKeys.MODEL)
             prefs.remove(LlmKeys.CHAPTER_MAX_CHARS)
-            prefs.remove(LlmKeys.ENABLE_CONTEXT_BOOST)
-            prefs.remove(LlmKeys.CONTEXT_CHAPTERS)
-            prefs.remove(LlmKeys.CONTEXT_MAX_CHARS)
             prefs.remove(LlmKeys.ENABLE_THINKING)
             prefs[LlmKeys.MIGRATED] = true
         }

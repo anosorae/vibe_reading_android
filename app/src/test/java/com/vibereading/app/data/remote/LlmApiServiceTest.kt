@@ -53,11 +53,29 @@ class LlmApiServiceTest {
         assertEquals(listOf(TranslationEvent.Started, TranslationEvent.Chunk("Hello"), TranslationEvent.Progress(5), TranslationEvent.Chunk(" world"), TranslationEvent.Progress(11), TranslationEvent.Done("Hello world")), events)
 
         val request = server.takeRequest()
+        val body = request.body.readUtf8()
         assertEquals("POST", request.method)
         assertEquals("/v1/chat/completions", request.path)
         assertEquals("Bearer test-key", request.getHeader("Authorization"))
         assertEquals("text/event-stream", request.getHeader("Accept"))
-        assertTrue(request.body.readUtf8().contains("\"model\":\"test-model\""))
+        assertTrue(body.contains("\"model\":\"test-model\""))
+        // 默认最大输出 token（maxOutputTokens 可配置，wire 字段保持 OpenAI 兼容的 max_tokens）
+        assertTrue(body.contains("\"max_tokens\":32768"))
+    }
+
+    @Test
+    fun `max output tokens follows configurable setting`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n" + "data: [DONE]\n\n")
+        )
+
+        val events = service.translateStream(settings().copy(maxOutputTokens = 8192), "Title", "Paragraph").toList()
+        assertTrue(events.contains(TranslationEvent.Done("Hello")))
+
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body.contains("\"max_tokens\":8192"))
     }
 
     @Test

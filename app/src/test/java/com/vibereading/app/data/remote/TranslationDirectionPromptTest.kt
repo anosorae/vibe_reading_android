@@ -38,26 +38,6 @@ class TranslationDirectionPromptTest {
     }
 
     @Test
-    fun enSource_previousTranslationLabel_saysChinese() {
-        val prompt = service.buildUserPrompt(
-            "Chapter One", "Hello world.", prevChapterTranslation = "上一章的中文译文",
-            sourceLanguage = "en"
-        )
-        assertTrue("上一章译文应标为中译", prompt.contains("上一章中译"))
-        assertTrue(prompt.contains("上一章的中文译文"))
-    }
-
-    @Test
-    fun zhSource_previousTranslationLabel_saysEnglish() {
-        val prompt = service.buildUserPrompt(
-            "第一章", "正文", prevChapterTranslation = "previous English",
-            sourceLanguage = "zh"
-        )
-        assertTrue("上一章译文应标为英译", prompt.contains("上一章英译"))
-        assertTrue(prompt.contains("previous English"))
-    }
-
-    @Test
     fun illustrationParagraphs_keptOutOfPrompt_inBothDirections() {
         val link = IllustrationLink.build("9/x.png", 800, 600)
         val zhPrompt = service.buildUserPrompt("第一章", "第一段。\n\n$link")

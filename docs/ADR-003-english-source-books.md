@@ -38,7 +38,7 @@ TXT/EPUB 导入时按章节顺序取首个「抽样量 ≥60 字符」的章节�
 
 ### D4 翻译管线按方向参数化
 
-`TranslationService.translateStream` 增加 `sourceLanguage` 参数（按书传递，不放进全局 `LlmSettings`/档案——那是跨书配置，原文语言是书属性）；`SYSTEM_PROMPT`/`buildUserPrompt` 按方向生成「中文→英文」或「英文→中文」，`[N]` 标记契约与 `parseBilingualParagraphs` 零改动。上下文增强 `loadContext` 继续取上一章**译文**（目标语言版本），代码零改动，仅 prompt 措辞按方向泛化。
+`TranslationService.translateStream` 增加 `sourceLanguage` 参数（按书传递，不放进全局 `LlmSettings`/档案——那是跨书配置，原文语言是书属性）；`SYSTEM_PROMPT`/`buildUserPrompt` 按方向生成「中文→英文」或「英文→中文」，`[N]` 标记契约与 `parseBilingualParagraphs` 零改动。~~上下文增强 `loadContext` 继续取上一章**译文**（目标语言版本）~~（该功能已随设置项移除，翻译为单章、不带任何上文，与方向决策无关），仅 prompt 措辞按方向泛化。
 
 翻译门控：英文书两种显示模式都预译当前+下一章（英文模式的气泡与中文模式正文共用同一份中文译文）；中文书保持仅 `en` 模式翻译。英文书 `en` 模式下译文到达不触发布局重排（正文=原文恒定），译文未就绪时点击气泡弹窗显示「译文生成中…」占位；未译回退与现状对称：中文书 `en` 模式→中文原文、英文书 `zh` 模式→英文原文，均自动翻译自愈。
 

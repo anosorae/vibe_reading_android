@@ -53,6 +53,10 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     suspend fun resetChapter(bookId: Long, chapterId: Long): Int =
         chapterDao.resetChapter(bookId, chapterId)
 
+    /** 整书重置翻译：更正书籍原文语言后清空全部章节译文并恢复 PENDING（ADR-003）。 */
+    suspend fun resetAllChapters(bookId: Long): Int =
+        chapterDao.resetAllChaptersForBook(bookId)
+
     private fun ChapterEntity.toDomain() = Chapter(
         id = id, bookId = bookId, title = title, section = section,
         chapterIndex = chapterIndex, content = content,

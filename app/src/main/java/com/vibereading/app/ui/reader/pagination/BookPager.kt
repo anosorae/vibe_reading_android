@@ -384,13 +384,15 @@ fun PageRenderer(
                             val isLastPara = idx == lastSpacedIdx
                             val key = ParagraphKey(unit.chapterId, unit.paraIndex)
                             if (mode == "zh") {
-                                // zh 模式：mainLayout 即中文排版，直接渲染 cnText（无气泡）
+                                // zh 模式：mainLayout 即中文侧排版，直接渲染 cnText（无气泡）；
+                                // 英文书译文未就绪回退英文原文（ADR-003）
+                                val bodyText = unit.cnText.ifBlank { unit.enText.orEmpty() }
                                 val bodyStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
                                     lineHeight = (pageStyle.body.lineHeight.value +
                                         with(density) { unit.lineHeightExtraPx.toSp().value }).sp
                                 ) else pageStyle.body
                                 SelectableParagraphText(
-                                    text = unit.cnText,
+                                    text = bodyText,
                                     style = bodyStyle,
                                     color = palette.bodyText,
                                     modifier = Modifier
@@ -406,7 +408,7 @@ fun PageRenderer(
                                 )
                             } else {
                                 // en 模式
-                                val hasTranslation = unit.enText != null && unit.enText.isNotBlank()
+                                val hasTranslation = unit.enText?.isNotBlank() == true && unit.cnText.isNotBlank()
                                 if (hasTranslation) {
                                     BilingualParagraph(
                                         englishText = unit.enText!!,
@@ -420,13 +422,14 @@ fun PageRenderer(
                                         paragraphKey = key
                                     )
                                 } else {
-                                    // 未翻译：原文直接显示（无气泡，避免原文=气泡内容重复）
+                                    // 双语未就绪：显示存在的一侧（中文书=中文原文回退，英文书=英文原文），
+                                    // 无气泡，避免气泡内容与正文重复
                                     val bodyStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
                                         lineHeight = (pageStyle.body.lineHeight.value +
                                             with(density) { unit.lineHeightExtraPx.toSp().value }).sp
                                     ) else pageStyle.body
                                     SelectableParagraphText(
-                                        text = unit.cnText,
+                                        text = unit.enText ?: unit.cnText,
                                         style = bodyStyle,
                                         color = palette.bodyText,
                                         modifier = Modifier
@@ -591,7 +594,7 @@ fun renderPageBitmap(
 
                 is PageUnit.Para -> {
                     val isLastPara = idx == lastSpacedIdx
-                    val hasTranslation = mode == "en" && unit.enText?.isNotBlank() == true
+                    val hasTranslation = mode == "en" && unit.enText?.isNotBlank() == true && unit.cnText.isNotBlank()
                     // lineHeightExtraPx > 0 时用调整后的 lineHeight 重新测量，
                     // 与 PageRenderer 的 Text(style=bodyStyle) 排版一致，避免卷页时行距跳变
                     // 约束含 minWidth（对齐 Compose Text 的 Modifier.fillMaxWidth()），
@@ -601,7 +604,8 @@ fun renderPageBitmap(
                             lineHeight = (pageStyle.body.lineHeight.value +
                                 density.run { unit.lineHeightExtraPx.toSp().value }).sp
                         )
-                        val text = if (mode == "zh") unit.cnText else (unit.enText ?: unit.cnText)
+                        val text = if (mode == "zh") unit.cnText.ifBlank { unit.enText.orEmpty() }
+                            else (unit.enText ?: unit.cnText)
                         val cw = contentWidthPx.coerceAtLeast(1)
                         measurer.measure(
                             text = AnnotatedString(text),
@@ -628,7 +632,7 @@ fun renderPageBitmap(
                             val bubbleY = (cursorY - bubbleH - padPx(ReaderMetrics.BUBBLE_BOTTOM_DP)).toInt()
                             val bubblePaint = Paint().apply {
                                 isAntiAlias = true
-                                color = palette.sourceBubble
+                                color = palette.bubble
                             }
                             // 圆角半径对齐 BilingualParagraph 的 RoundedCornerShape(3.dp)
                             val radius = padPx(3)

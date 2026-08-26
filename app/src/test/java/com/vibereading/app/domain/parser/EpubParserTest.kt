@@ -175,13 +175,13 @@ ${if (includeNcx) "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-
     @Test
     fun toChapterDicts_producesTxtContractWithIllustrationLinks() {
         val book = EpubParser.parse(buildEpub(), sizeStub)
-        val dicts = EpubParser.toChapterDicts(bookId = 7L, book = book) { href ->
+        val dicts = EpubParser.toChapterDicts(bookId = 7L, book = book, nameOf = { href ->
             when (href) {
                 "oebps/images/cover.jpg" -> "aaaa1111.jpg"
                 "oebps/images/i.png" -> "bbbb2222.png"
                 else -> null
             }
-        }
+        })
         // 契约校验：content 按 \n\n 分段后每段都能被 ReadingContentParser 还原为同数量段落
         dicts.forEach { dict ->
             val parts = dict.content.split("\n\n")
@@ -198,7 +198,7 @@ ${if (includeNcx) "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-
         assertTrue(ch1Dict.content.contains(IllustrationLink.build("7/bbbb2222.png", 120, 60)))
 
         // 未知 href 的插图被丢弃而不是产出坏链接
-        val droppedDicts = EpubParser.toChapterDicts(7L, book) { null }
+        val droppedDicts = EpubParser.toChapterDicts(7L, book, nameOf = { null })
         droppedDicts.forEach { d ->
             d.content.split("\n\n").forEach { p ->
                 assertNull("丢弃的插图不应残留链接", IllustrationLink.parse(p.trim())?.let { p })
@@ -232,6 +232,38 @@ ${if (includeNcx) "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-
         assertTrue(preface.paragraphs.any {
             it is EpubParser.Paragraph.Image && it.zipHref == "oebps/images/i.png"
         })
+    }
+
+    @Test
+    fun localizeGeneratedTitle_followsBookSourceLanguage() {
+        assertEquals("卷首", localizeGeneratedTitle(FRONT_MATTER_TITLE, "zh"))
+        assertEquals("书末", localizeGeneratedTitle(BACK_MATTER_TITLE, "zh"))
+        assertEquals("Front Matter", localizeGeneratedTitle(FRONT_MATTER_TITLE, "en"))
+        assertEquals("Back Matter", localizeGeneratedTitle(BACK_MATTER_TITLE, "en"))
+        // 真实章节标题不做本地化
+        assertEquals("Chapter One", localizeGeneratedTitle("Chapter One", "en"))
+        assertEquals("第一章", localizeGeneratedTitle("第一章", "zh"))
+    }
+
+    @Test
+    fun toChapterDicts_dropsEmptyChapters_andLocalizesGeneratedTitles() {
+        val book = EpubParser.EpubBook(
+            meta = EpubParser.EpubMeta("Test", null),
+            coverBytes = null,
+            chapters = listOf(
+                EpubParser.EpubChapter(FRONT_MATTER_TITLE, null, emptyList()), // 空卷首 → 剔除
+                EpubParser.EpubChapter("卷首", null, listOf(EpubParser.Paragraph.Text("前言文字。"))),
+                EpubParser.EpubChapter("Chapter One", null, listOf(EpubParser.Paragraph.Text("Hello world."))),
+                EpubParser.EpubChapter(BACK_MATTER_TITLE, null, emptyList())    // 空书末 → 剔除
+            ),
+            images = emptyMap()
+        )
+        val zhDicts = EpubParser.toChapterDicts(7L, book, { null }, "zh")
+        assertEquals(listOf("卷首", "Chapter One"), zhDicts.map { it.title })
+        // 英文原版：保留的非空卷首标题本地化为 Front Matter
+        val enDicts = EpubParser.toChapterDicts(7L, book, { null }, "en")
+        assertEquals(listOf("Front Matter", "Chapter One"), enDicts.map { it.title })
+        assertEquals("Hello world.", enDicts[1].content)
     }
 
     @Test

@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -65,6 +67,10 @@ fun BookshelfScreen(
     var menuBook by remember { mutableStateOf<BookShelfItem?>(null) }
     // 待删除确认的书籍
     var confirmDeleteBook by remember { mutableStateOf<BookShelfItem?>(null) }
+    // 原版语言选择对话框的书籍（ADR-003 误判修正）
+    var sourceLangPickerBook by remember { mutableStateOf<BookShelfItem?>(null) }
+    // 修正原文语言前的破坏性确认：(书籍, 目标语言)
+    var confirmSourceLang by remember { mutableStateOf<Pair<BookShelfItem, String>?>(null) }
     // 搜索框展开状态
     var searchExpanded by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
@@ -336,6 +342,18 @@ fun BookshelfScreen(
                     }
                 )
                 ListItem(
+                    headlineContent = { Text("本书原文语言") },
+                    supportingContent = {
+                        Text(if (item.book.sourceLanguage == "en") "英文原版" else "中文原版")
+                    },
+                    leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
+                    trailingContent = { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) },
+                    modifier = Modifier.clickable {
+                        sourceLangPickerBook = item
+                        menuBook = null
+                    }
+                )
+                ListItem(
                     headlineContent = { Text("删除", color = VibeColors.RedMuted) },
                     leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null, tint = VibeColors.RedMuted) },
                     modifier = Modifier.clickable {
@@ -364,6 +382,75 @@ fun BookshelfScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmDeleteBook = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 原文语言选择对话框（ADR-003 误判修正；与当前一致时直接关闭，不弹确认）
+    sourceLangPickerBook?.let { item ->
+        var picked by remember(item.book.id) {
+            mutableStateOf(item.book.sourceLanguage)
+        }
+        AlertDialog(
+            onDismissRequest = { sourceLangPickerBook = null },
+            title = { Text("本书原文语言") },
+            text = {
+                Column {
+                    listOf("zh" to "中文原版", "en" to "英文原版").forEach { (lang, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { picked = lang }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            RadioButton(
+                                selected = picked == lang,
+                                onClick = { picked = lang }
+                            )
+                            Text(label, modifier = Modifier.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    sourceLangPickerBook = null
+                    if (picked != item.book.sourceLanguage) {
+                        confirmSourceLang = item to picked
+                    }
+                }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sourceLangPickerBook = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // 修正原文语言破坏性确认：方向变了，旧译文全部作废
+    confirmSourceLang?.let { (item, targetLang) ->
+        AlertDialog(
+            onDismissRequest = { confirmSourceLang = null },
+            title = { Text("修正原文语言") },
+            text = {
+                Text("将《${item.book.title}》的原文语言改为「${if (targetLang == "en") "英文原版" else "中文原版"}」？\n\n此操作会清空本书已生成的章节译文，并重置阅读模式为对应原文。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.correctSourceLanguage(item.book.id, targetLang)
+                    confirmSourceLang = null
+                }) {
+                    Text("确认", color = VibeColors.RedMuted)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSourceLang = null }) {
                     Text("取消")
                 }
             }

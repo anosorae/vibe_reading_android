@@ -35,17 +35,20 @@ class FakeTranslationService(
 ) : TranslationService {
     var lastTitle: String? = null
     var lastContent: String? = null
-    var lastPrevEnglish: String? = null
+    var lastPrevTranslation: String? = null
+    var lastSourceLanguage: String? = null
 
     override fun translateStream(
         settings: LlmSettings,
         chapterTitle: String,
         chapterContent: String,
-        prevChapterEnglish: String?
+        prevChapterTranslation: String?,
+        sourceLanguage: String
     ): Flow<TranslationEvent> = flow {
         lastTitle = chapterTitle
         lastContent = chapterContent
-        lastPrevEnglish = prevChapterEnglish
+        lastPrevTranslation = prevChapterTranslation
+        lastSourceLanguage = sourceLanguage
         emit(TranslationEvent.Started)
         events.forEach { emit(it) }
     }
@@ -123,7 +126,21 @@ class TranslationCoordinatorTest {
         assertEquals("EN TEXT", done.translatedContent)
         assertEquals(0L, done.translationRunId)
         assertEquals("正文", service.lastContent)
-        assertNull(service.lastPrevEnglish)
+        assertNull(service.lastPrevTranslation)
+        // 默认中文书方向
+        assertEquals("zh", service.lastSourceLanguage)
+    }
+
+    @Test
+    fun `english source book passes source language to service`() = runBlocking {
+        val service = FakeTranslationService(listOf(TranslationEvent.Done("中文译文")))
+        val coordinator = coordinator(service)
+
+        coordinator.translate(chapter, settings, "en")
+
+        val done = awaitStatus(Chapter.STATUS_DONE)
+        assertEquals("中文译文", done.translatedContent)
+        assertEquals("en", service.lastSourceLanguage)
     }
 
     @Test
@@ -183,7 +200,8 @@ class TranslationCoordinatorTest {
                 settings: LlmSettings,
                 chapterTitle: String,
                 chapterContent: String,
-                prevChapterEnglish: String?
+                prevChapterTranslation: String?,
+                sourceLanguage: String
             ): Flow<TranslationEvent> = flow {
                 emit(TranslationEvent.Started)
                 emit(TranslationEvent.Chunk("partial"))
@@ -231,9 +249,9 @@ class TranslationCoordinatorTest {
         val coordinator = coordinator(service)
         coordinator.translate(secondChapter, boostSettings)
         withTimeout(10_000) {
-            while (service.lastPrevEnglish == null) delay(20)
+            while (service.lastPrevTranslation == null) delay(20)
         }
 
-        assertEquals("OLD EN", service.lastPrevEnglish)
+        assertEquals("OLD EN", service.lastPrevTranslation)
     }
 }

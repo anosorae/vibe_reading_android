@@ -131,6 +131,7 @@ fun ScrollReader(
                 item is ScrollItem.Paragraph -> ReadingParagraphItem(
                     paragraph = item.paragraph,
                     mode = state.mode,
+                    sourceLanguage = state.sourceLanguage,
                     pageStyle = pageStyle,
                     palette = palette,
                     selectionState = selectionState,

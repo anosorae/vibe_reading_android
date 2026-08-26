@@ -11,7 +11,7 @@ import com.vibereading.app.ui.theme.VibeDarkColors
 data class ReaderPalette(
     val bodyText: Color,        // 正文文字（暗=米白0.9，亮=炭黑）——分页/滚动/双语英文/卷页位图正文
     val titleText: Color,       // 章节标题（暗=米白0.9，亮=墨黑）
-    val sourceBubble: Color,    // 原文气泡半透明色块
+    val bubble: Color,           // 中文气泡半透明色块
     val popupBg: Color,         // 原文弹窗背景
     val cnText: Color,          // 弹窗中文原文 / 弱化提示文字
     val popupBorder: Color,     // 弹窗左侧描边
@@ -23,7 +23,7 @@ data class ReaderPalette(
             ReaderPalette(
                 bodyText = VibeColors.Cream.copy(alpha = 0.9f),
                 titleText = VibeColors.Cream.copy(alpha = 0.9f),
-                sourceBubble = VibeColors.SiennaLight.copy(alpha = 0.25f),
+                bubble = VibeColors.SiennaLight.copy(alpha = 0.25f),
                 popupBg = VibeDarkColors.Surface,
                 cnText = VibeColors.Stone,
                 popupBorder = VibeColors.Sand.copy(alpha = 0.3f),
@@ -34,7 +34,7 @@ data class ReaderPalette(
             ReaderPalette(
                 bodyText = VibeColors.Charcoal,
                 titleText = VibeColors.Ink,
-                sourceBubble = VibeColors.Sienna.copy(alpha = 0.3f),
+                bubble = VibeColors.Sienna.copy(alpha = 0.3f),
                 popupBg = VibeColors.Parchment,
                 cnText = VibeColors.WarmGray,
                 popupBorder = VibeColors.Sand,

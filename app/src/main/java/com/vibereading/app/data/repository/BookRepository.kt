@@ -42,11 +42,16 @@ class BookRepository(private val bookDao: BookDao) {
     suspend fun updateLanguageMode(bookId: Long, mode: String): Boolean =
         bookDao.updateLanguageMode(bookId, mode) > 0
 
+    /** 更正本书原文语言（"zh" 或 "en"）；译文清空由 ChapterRepository.resetAllChapters 负责。 */
+    suspend fun updateSourceLanguage(bookId: Long, sourceLanguage: String): Boolean =
+        bookDao.updateSourceLanguage(bookId, sourceLanguage) > 0
+
     private fun BookEntity.toDomain() = Book(
         id = id, title = title, filePath = filePath,
         totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
         lastReadAt = lastReadAt, languageMode = languageMode,
+        sourceLanguage = sourceLanguage,
         format = format, coverPath = coverPath, createdAt = createdAt
     )
 
@@ -55,6 +60,7 @@ class BookRepository(private val bookDao: BookDao) {
         totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
         lastReadAt = lastReadAt, languageMode = languageMode,
+        sourceLanguage = sourceLanguage,
         format = format, coverPath = coverPath, createdAt = createdAt
     )
 

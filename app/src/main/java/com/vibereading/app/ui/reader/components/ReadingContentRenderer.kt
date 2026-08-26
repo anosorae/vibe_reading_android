@@ -60,17 +60,20 @@ fun ReadingChapterTitle(
 fun ReadingParagraphItem(
     paragraph: ReadingParagraph,
     mode: String,
+    sourceLanguage: String,
     pageStyle: PageStyle,
     palette: ReaderPalette,
     showSpacer: Boolean = true,
     selectionState: TextSelectionState? = null,
     paragraphKey: Any? = null
 ) {
-    val translated = paragraph.translatedText?.takeIf { it.isNotBlank() }
-    if (mode == "en" && translated != null) {
+    // ADR-003 插槽：中文侧/英文侧由书籍原文语言决定
+    val chinese = paragraph.chineseSide(sourceLanguage)
+    val english = paragraph.englishSide(sourceLanguage)
+    if (mode == "en" && english != null && chinese != null) {
         BilingualParagraph(
-            englishText = translated,
-            chineseText = paragraph.sourceText,
+            englishText = english,
+            chineseText = chinese,
             pageStyle = pageStyle,
             palette = palette,
             showSpacer = showSpacer,
@@ -78,9 +81,11 @@ fun ReadingParagraphItem(
             paragraphKey = paragraphKey
         )
     } else {
-        // zh 模式或未翻译段落显示中文原文：按中文分词选词（词典为英→中，查词会提示仅支持英文）
+        // zh 模式显示中文侧，英文模式在双语未就绪时回退存在的一侧
+        // （中文书=中文原文，英文书=英文原文）。中文正文按中文分词选词
+        // （词典为英→中，查词会提示仅支持英文）
         SelectableParagraphText(
-            text = if (mode == "en") translated ?: paragraph.sourceText else paragraph.sourceText,
+            text = if (mode == "en") english ?: chinese ?: "" else chinese ?: english ?: "",
             style = pageStyle.body,
             color = palette.bodyText,
             modifier = Modifier

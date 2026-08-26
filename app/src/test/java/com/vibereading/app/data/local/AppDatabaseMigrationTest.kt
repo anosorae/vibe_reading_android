@@ -36,7 +36,7 @@ class AppDatabaseMigrationTest {
         try {
             // 用 Room + MIGRATION_5_6 打开：Room 严格校验迁移结果与当前实体 schema 一致
             val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12)
+                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13)
                 .build()
             runBlocking {
                 val book = db.bookDao().getBookById(1L)!!
@@ -52,6 +52,8 @@ class AppDatabaseMigrationTest {
             val sqlite = db.openHelper.writableDatabase
             assertFalse("translatedChapters 应被移除", "translatedChapters" in columns(sqlite, "books"))
             assertTrue("translationRunId 应存在", "translationRunId" in columns(sqlite, "chapters"))
+            // v12→v13：books 新增 sourceLanguage 列（ADR-003）
+            assertTrue("sourceLanguage 应存在", "sourceLanguage" in columns(sqlite, "books"))
             assertNoForeignKeyViolations(sqlite)
             db.close()
         } finally {
@@ -60,8 +62,8 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migrate2To11_fullChain_preservesData() {
-        val dbName = "migrate-2-11"
+    fun migrate2To13_fullChain_preservesData() {
+        val dbName = "migrate-2-13"
         val db = createV2Database(context, dbName)
 
         AppDatabase.MIGRATION_2_3.migrate(db)
@@ -74,6 +76,7 @@ class AppDatabaseMigrationTest {
         AppDatabase.MIGRATION_9_10.migrate(db)
         AppDatabase.MIGRATION_10_11.migrate(db)
         AppDatabase.MIGRATION_11_12.migrate(db)
+        AppDatabase.MIGRATION_12_13.migrate(db)
 
         try {
             // v5→v6 后：lastReadPage（v3 加入）被 lastReadOffset 替代，translatedChapters 被移除
@@ -83,6 +86,8 @@ class AppDatabaseMigrationTest {
             assertTrue("lastReadOffset 应存在", "lastReadOffset" in bookColumns)
             // v9→v10：books 新增 languageMode 列，默认中文
             assertTrue("languageMode 应存在", "languageMode" in bookColumns)
+            // v12→v13：books 新增 sourceLanguage 列，存量书默认中文（ADR-003）
+            assertTrue("sourceLanguage 应存在", "sourceLanguage" in bookColumns)
             val chapterColumns = columns(db, "chapters")
             assertTrue("errorMessage 应存在", "errorMessage" in chapterColumns)
             assertTrue("translationRunId 应存在", "translationRunId" in chapterColumns)
@@ -98,13 +103,14 @@ class AppDatabaseMigrationTest {
             assertTrue("autoTranslateNext 应存在", "autoTranslateNext" in profileColumns)
 
             // 数据保留：进度 offset 归零（旧页码不转换），译文/状态保留
-            db.query("SELECT lastReadChapterId, lastReadOffset, lastReadAt, languageMode FROM books WHERE id = 1").use { c ->
+            db.query("SELECT lastReadChapterId, lastReadOffset, lastReadAt, languageMode, sourceLanguage FROM books WHERE id = 1").use { c ->
                 assertTrue(c.moveToFirst())
                 assertEquals(1L, c.getLong(0))
                 assertEquals(0, c.getInt(1))
                 assertEquals(1000L, c.getLong(2))
-                // v9→v10：languageMode 默认中文
+                // v9→v10：languageMode 默认中文；v12→v13：sourceLanguage 默认中文
                 assertEquals("zh", c.getString(3))
+                assertEquals("zh", c.getString(4))
             }
             db.query("SELECT translatedContent, status, translationRunId, errorMessage FROM chapters WHERE id = 1").use { c ->
                 assertTrue(c.moveToFirst())

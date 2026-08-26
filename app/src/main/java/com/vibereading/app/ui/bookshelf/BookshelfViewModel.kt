@@ -16,6 +16,7 @@ import com.vibereading.app.domain.model.Book
 import com.vibereading.app.domain.model.BookShelfItem
 import com.vibereading.app.domain.model.ThemeSettings
 import com.vibereading.app.domain.parser.EpubParser
+import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.domain.parser.TxtParser
 import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.Dispatchers
@@ -136,7 +137,7 @@ class BookshelfViewModel(
         }
     }
 
-    /** TXT 导入：解码 → 分章 → 入库（原有路径，保持不变）。 */
+    /** TXT 导入：解码 → 分章 → 判定原文语言 → 入库。 */
     private suspend fun importTxt(bytes: ByteArray, fileName: String): String {
         val text = TxtParser.decodeBytes(bytes)
         val chapterDicts = TxtParser.parseText(text)
@@ -144,8 +145,17 @@ class BookshelfViewModel(
 
         val title = fileName.removeSuffix(".txt").removeSuffix(".TXT")
             .ifBlank { "未知书名" }
+        // 跳过空首章取首个有足够文本的章节判定（ADR-003）
+        val sourceLanguage = SourceLanguageDetector.detectFirstNonBlank(chapterDicts.map { it.content })
 
-        val bookId = bookRepo.insert(Book(title = title, totalChapters = chapterDicts.size))
+        val bookId = bookRepo.insert(
+            Book(
+                title = title,
+                totalChapters = chapterDicts.size,
+                sourceLanguage = sourceLanguage,
+                languageMode = sourceLanguage // 首开即原文模式（ADR-003）
+            )
+        )
         chapterRepo.insertAll(TxtParser.toChapters(bookId, chapterDicts))
         return "「$title」上传成功，共 ${chapterDicts.size} 章"
     }
@@ -164,10 +174,23 @@ class BookshelfViewModel(
 
         val title = parsed.meta.title?.takeIf { it.isNotBlank() }
             ?: fileName.removeSuffix(".epub").ifBlank { "未知书名" }
-
-        val bookId = bookRepo.insert(
-            Book(title = title, totalChapters = parsed.chapters.size, format = "epub")
+        // 跳过「卷首」等空/纯封面章节取首个有足够文本的章节判定（ADR-003）
+        val sourceLanguage = SourceLanguageDetector.detectFirstNonBlank(
+            parsed.chapters.map { chapter ->
+                chapter.paragraphs
+                    .filterIsInstance<EpubParser.Paragraph.Text>()
+                    .joinToString("\n\n") { it.value }
+            }
         )
+
+        val newBook = Book(
+            title = title,
+            totalChapters = parsed.chapters.size,
+            format = "epub",
+            sourceLanguage = sourceLanguage,
+            languageMode = sourceLanguage // 首开即原文模式（ADR-003）
+        )
+        val bookId = bookRepo.insert(newBook)
         val nameByHref = BookImageStore.saveImages(bookId, parsed.images) { href ->
             val ext = href.substringAfterLast('.', "")
             if (ext.length in 1..5) ".$ext" else ".jpg"
@@ -175,9 +198,13 @@ class BookshelfViewModel(
         parsed.coverBytes?.let { BookImageStore.saveCover(bookId, it) }?.let { coverPath ->
             bookRepo.getBookByIdOnce(bookId)?.let { book -> bookRepo.update(book.copy(coverPath = coverPath)) }
         }
-        val dicts = EpubParser.toChapterDicts(bookId, parsed) { href -> nameByHref[href] }
+        val dicts = EpubParser.toChapterDicts(bookId, parsed, { href -> nameByHref[href] }, sourceLanguage)
+        // 空章节（如纯封面页产生的空卷首）剔除后修正总章数
+        if (dicts.size != newBook.totalChapters) {
+            bookRepo.update(newBook.copy(totalChapters = dicts.size))
+        }
         chapterRepo.insertAll(TxtParser.toChapters(bookId, dicts))
-        return "「$title」导入成功，共 ${parsed.chapters.size} 章"
+        return "「$title」导入成功，共 ${dicts.size} 章"
     }
 
     fun deleteBook(bookId: Long) {
@@ -189,6 +216,22 @@ class BookshelfViewModel(
                 AppLog.put("删书清理图片失败 bookId=$bookId", e)
             }
             bookRepo.delete(bookId)
+        }
+    }
+
+    /**
+     * 修正书籍原文语言（ADR-003）：清空全部章节译文并重置显示模式为新原文语言。
+     * 旧译文按原方向生成，方向反了是垃圾数据，必须清除，用户随后按新方向重新翻译。
+     */
+    fun correctSourceLanguage(bookId: Long, sourceLanguage: String) {
+        viewModelScope.launch {
+            try {
+                chapterRepo.resetAllChapters(bookId)
+                bookRepo.updateSourceLanguage(bookId, sourceLanguage)
+                bookRepo.updateLanguageMode(bookId, sourceLanguage) // 显示模式重置为新的原文语言
+            } catch (e: Exception) {
+                AppLog.put("修正书籍原文语言失败 bookId=$bookId", e)
+            }
         }
     }
 

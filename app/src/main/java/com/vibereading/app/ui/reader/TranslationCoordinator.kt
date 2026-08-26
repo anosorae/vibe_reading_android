@@ -7,6 +7,7 @@ import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.domain.parser.ReadingContentParser
+import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.TranslationForegroundService
 import android.content.Context
@@ -66,8 +67,8 @@ class TranslationCoordinator(
     /** 当前正在翻译的章节 ID（可能在后台运行，UI 不在前台展示）。 */
     val currentRunningChapterId: Long? get() = runningChapterId
 
-    /** 启动翻译；同一章已有活动任务则忽略。 */
-    fun translate(chapter: Chapter, settings: LlmSettings) {
+    /** 启动翻译；同一章已有活动任务则忽略。[sourceLanguage] 为书籍原文语言（ADR-003），决定翻译方向。 */
+    fun translate(chapter: Chapter, settings: LlmSettings, sourceLanguage: String = SourceLanguageDetector.ZH) {
         if (runningChapterId == chapter.id && translateJob?.isActive == true) return
         val run = ++runId
         val chapterId = chapter.id
@@ -124,12 +125,13 @@ class TranslationCoordinator(
                     )
                 }
 
-                val prevEnglish = if (settings.enableContextBoost) loadContext(chapter, settings) else null
+                val prevTranslation = if (settings.enableContextBoost) loadContext(chapter, settings) else null
                 translationService.translateStream(
                     settings = settings,
                     chapterTitle = chapter.title,
                     chapterContent = chapter.content,
-                    prevChapterEnglish = prevEnglish
+                    prevChapterTranslation = prevTranslation,
+                    sourceLanguage = sourceLanguage
                 ).collect { event ->
                     when (event) {
                         TranslationEvent.Started -> {

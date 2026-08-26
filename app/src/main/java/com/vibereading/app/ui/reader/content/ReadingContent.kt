@@ -3,6 +3,7 @@ package com.vibereading.app.ui.reader.content
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.domain.parser.ReadingContentParser
+import com.vibereading.app.domain.parser.SourceLanguageDetector
 
 /**
  * 章节原文中的一个稳定段落范围。
@@ -25,6 +26,20 @@ data class ReadingParagraph(
 ) {
     val hasSourceOffset: Boolean
         get() = sourceStartOffset >= 0 && sourceEndOffset >= sourceStartOffset
+
+    /**
+     * 中文侧文本（ADR-003 插槽互换）：中文书=中文原文，英文书=中文译文；
+     * 英文书译文未就绪时返回 null（正文回退原文，气泡不显示）。
+     */
+    fun chineseSide(sourceLanguage: String): String? =
+        if (sourceLanguage == SourceLanguageDetector.EN) translatedText?.takeIf { it.isNotBlank() } else sourceText
+
+    /**
+     * 英文侧文本（ADR-003 插槽互换）：中文书=英文译文，英文书=英文原文；
+     * 中文书未翻译段落返回 null（渲染回退中文原文）。
+     */
+    fun englishSide(sourceLanguage: String): String? =
+        if (sourceLanguage == SourceLanguageDetector.EN) sourceText else translatedText?.takeIf { it.isNotBlank() }
 }
 
 /** 统一的章节阅读内容模型；分页和滚动均从这里构造段落数据。 */

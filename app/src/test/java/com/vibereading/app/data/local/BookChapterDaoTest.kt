@@ -195,4 +195,42 @@ class BookChapterDaoTest {
         assertEquals(ids[1], items[0].lastReadChapter?.id)
         assertEquals("第2章", items[0].lastReadChapter?.title)
     }
+
+    @Test
+    fun `source language correction clears all translations and resets display mode`() = runBlocking {
+        val bookId = 1L
+        val ids = seedBookAndChapters(bookId)
+        // 两章已完成翻译（旧方向）
+        db.chapterDao().startTranslationRun(bookId, ids[0], 1L, 1)
+        db.chapterDao().completeTranslationRun(bookId, ids[0], 1L, "EN 1", 2)
+        db.chapterDao().startTranslationRun(bookId, ids[1], 2L, 1)
+        db.chapterDao().completeTranslationRun(bookId, ids[1], 2L, "EN 2", 2)
+        db.bookDao().updateLanguageMode(bookId, "en")
+        assertEquals("en", db.bookDao().getBookById(bookId)!!.languageMode)
+
+        // 修正为英文原版：清空全部译文 + 重置显示模式为新原文语言
+        db.chapterDao().resetAllChaptersForBook(bookId)
+        db.bookDao().updateSourceLanguage(bookId, "en")
+        db.bookDao().updateLanguageMode(bookId, "en")
+
+        val book = db.bookDao().getBookById(bookId)!!
+        assertEquals("en", book.sourceLanguage)
+        assertEquals("en", book.languageMode)
+        val chapters = db.chapterDao().getChaptersByBookList(bookId)
+        assertTrue(chapters.all { it.translatedContent == null })
+        assertTrue(chapters.all { it.status == 0 }) // PENDING
+        assertTrue(chapters.all { it.errorMessage == null })
+        assertTrue(chapters.all { it.translationRunId == 0L })
+        // 书架已译章节数回落为 0
+        assertEquals(0, db.bookDao().getBooksWithProgress().first()[0].translatedCount)
+    }
+
+    @Test
+    fun `source language defaults to zh for existing books`() = runBlocking {
+        val bookId = 1L
+        seedBookAndChapters(bookId)
+        val book = db.bookDao().getBookById(bookId)!!
+        assertEquals("zh", book.sourceLanguage)
+        assertEquals("zh", book.languageMode)
+    }
 }

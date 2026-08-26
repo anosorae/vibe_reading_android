@@ -60,4 +60,8 @@ interface BookDao {
     /** 保存本书阅读语言模式（"zh" 或 "en"），按书绑定。 */
     @Query("UPDATE books SET languageMode = :mode WHERE id = :bookId")
     suspend fun updateLanguageMode(bookId: Long, mode: String): Int
+
+    /** 更正本书原文语言（"zh" 或 "en"）；译文清空由 ChaptersDao.resetAllChaptersForBook 负责。 */
+    @Query("UPDATE books SET sourceLanguage = :sourceLanguage WHERE id = :bookId")
+    suspend fun updateSourceLanguage(bookId: Long, sourceLanguage: String): Int
 }

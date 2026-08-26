@@ -118,7 +118,7 @@ class IllustrationPaginationTest {
             id = 5L, bookId = 9L, title = "第一章", chapterIndex = 0,
             content = "正文段落。\n\n$link"
         )
-        val items = BookWindow.buildChapterItems(chapter)
+        val items = BookWindow.buildChapterItems(chapter, "zh")
         assertEquals(3, items.size) // Title + 正文 Para + 插图 Image
         assertTrue(items[1] is FlowItem.Para)
         val image = items[2] as FlowItem.Image

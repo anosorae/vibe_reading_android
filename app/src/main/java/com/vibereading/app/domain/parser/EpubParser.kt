@@ -8,6 +8,25 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipInputStream
 
+/** 结构占位标题：首个 TOC 条目前的 spine 页合并为「卷首」（ADR-002 D2）。 */
+const val FRONT_MATTER_TITLE = "卷首"
+
+/** 结构占位标题：末个 TOC 资源之后的 spine 页合并为「书末」（ADR-002 D2）。 */
+const val BACK_MATTER_TITLE = "书末"
+
+/**
+ * 卷首/书末是解析器生成的结构占位标题，随书籍原文语言本地化（ADR-003）：
+ * 英文原版书显示 Front Matter / Back Matter，中文书保持「卷首/书末」。
+ */
+fun localizeGeneratedTitle(title: String, sourceLanguage: String): String {
+    if (sourceLanguage == SourceLanguageDetector.ZH) return title
+    return when (title) {
+        FRONT_MATTER_TITLE -> "Front Matter"
+        BACK_MATTER_TITLE -> "Back Matter"
+        else -> title
+    }
+}
+
 /**
  * EPUB 解析（ADR-002 D1/D2）：导入期一次性把 EPUB 容器转换为与 [TxtParser] 相同契约的
  * 「`\n\n` 分段纯文本章节」结构。纯 Kotlin + Jsoup，可 JVM 单测。
@@ -127,13 +146,16 @@ object EpubParser {
     /**
      * 把解析结果物化为 ChapterDict 列表（与 TxtParser 相同的 `\n\n` 分段契约）。
      * [nameOf] 把包内图片 href 映射为落盘文件名；返回 null 时该插图被丢弃。
+     * [sourceLanguage]（ADR-003）用于本地化「卷首/书末」结构占位标题；
+     * 内容全空的章节（如纯封面页产生的空卷首）直接剔除，避免出现空白页。
      */
     fun toChapterDicts(
         bookId: Long,
         book: EpubBook,
-        nameOf: (zipHref: String) -> String?
+        nameOf: (zipHref: String) -> String?,
+        sourceLanguage: String = SourceLanguageDetector.ZH
     ): List<TxtParser.ChapterDict> {
-        return book.chapters.map { chapter ->
+        return book.chapters.mapNotNull { chapter ->
             val parts = ArrayList<String>()
             chapter.paragraphs.forEach { para ->
                 when (para) {
@@ -143,10 +165,12 @@ object EpubParser {
                     }
                 }
             }
+            val content = parts.filter { it.isNotEmpty() }.joinToString("\n\n")
+            if (content.isEmpty()) return@mapNotNull null
             TxtParser.ChapterDict(
-                title = chapter.title,
+                title = localizeGeneratedTitle(chapter.title, sourceLanguage),
                 section = chapter.section,
-                content = parts.filter { it.isNotEmpty() }.joinToString("\n\n")
+                content = content
             )
         }
     }
@@ -366,7 +390,7 @@ object EpubParser {
         // 卷首：首个 TOC 资源之前的 spine 页面
         val front = ArrayList<Element>()
         for (i in 0 until firstIdx) front += bodyChildren(entries, spineHrefs[i])
-        if (front.hasTextOrImage()) chapters += RawChapter("卷首", null, front)
+        if (front.hasTextOrImage()) chapters += RawChapter(FRONT_MATTER_TITLE, null, front)
 
         // TOC 章：按 base href 分组（保持出现序），组内多锚点切块
         val grouped = LinkedHashMap<String, MutableList<TocEntry>>()
@@ -410,7 +434,7 @@ object EpubParser {
         // 书末：最后一个 TOC 资源之后的 spine 页面
         val back = ArrayList<Element>()
         for (i in (lastIdx + 1)..spineHrefs.lastIndex) back += bodyChildren(entries, spineHrefs[i])
-        if (back.hasTextOrImage()) chapters += RawChapter("书末", null, back)
+        if (back.hasTextOrImage()) chapters += RawChapter(BACK_MATTER_TITLE, null, back)
 
         return chapters
     }

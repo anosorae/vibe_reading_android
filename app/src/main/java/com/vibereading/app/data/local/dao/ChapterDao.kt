@@ -71,4 +71,8 @@ interface ChapterDao {
     /** 用户重置翻译：无条件清译文、错误和 runId，恢复 PENDING。 */
     @Query("UPDATE chapters SET status = 0, translatedContent = NULL, errorMessage = NULL, translationRunId = 0 WHERE id = :chapterId AND bookId = :bookId")
     suspend fun resetChapter(bookId: Long, chapterId: Long): Int
+
+    /** 整书重置翻译：更正书籍原文语言后清空全部章节译文并恢复 PENDING（ADR-003）。 */
+    @Query("UPDATE chapters SET status = 0, translatedContent = NULL, errorMessage = NULL, translationRunId = 0 WHERE bookId = :bookId")
+    suspend fun resetAllChaptersForBook(bookId: Long): Int
 }

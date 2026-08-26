@@ -24,6 +24,7 @@ class BookWindow(
     val chapters: List<Chapter>,
     private val style: PageStyle,
     private val mode: String,
+    private val sourceLanguage: String = "zh",   // 书籍原文语言（ADR-003）：决定段落插槽方向
     private val contentWidthPx: Float,
     private val contentHeightPx: Float,
     private val measurer: TextMeasurer,           // 主线程测量
@@ -169,7 +170,7 @@ class BookWindow(
         val chapter = chapters.first { it.id == chapterId }
         return ChapterPaginator(
             chapterId = chapterId,
-            items = buildChapterItems(chapter),
+            items = buildChapterItems(chapter, sourceLanguage),
             style = style,
             mode = mode,
             contentWidthPx = contentWidthPx,
@@ -193,10 +194,14 @@ class BookWindow(
     }
 
     companion object {
-        /** 章节 → 章节内排版条目（标题 + 段落；en 模式配对英译）。
-         *  以 parseBilingualParagraphs 为唯一数据源——cnText 和 enText 均来自配对结果，
-         *  避免独立拆分中文段落导致索引不对齐（如整章无 \n\n 分隔时 cnText 为全章文本）。 */
-        fun buildChapterItems(chapter: Chapter): List<FlowItem> {
+        /**
+         * 章节 → 章节内排版条目（标题 + 段落；en 模式配对双语）。
+         * 以 parseBilingualParagraphs 为唯一数据源——cnText/enText 均来自配对结果，
+         * 避免独立拆分中文段落导致索引不对齐（如整章无 \n\n 分隔时 cnText 为全章文本）。
+         * cnText/enText 是「中文侧/英文侧」插槽（ADR-003）：中文书 cnText=原文、enText=译文；
+         * 英文书互换。offset 恒指向章节原文范围，不随插槽方向变化。
+         */
+        fun buildChapterItems(chapter: Chapter, sourceLanguage: String): List<FlowItem> {
             val content = ReadingContent.fromChapter(chapter)
             return buildList {
                 add(FlowItem.Title(
@@ -222,8 +227,8 @@ class BookWindow(
                         add(FlowItem.Para(
                             chapterId = content.chapterId,
                             paraIndex = paragraph.index,
-                            cnText = paragraph.sourceText,
-                            enText = paragraph.translatedText,
+                            cnText = paragraph.chineseSide(sourceLanguage).orEmpty(),
+                            enText = paragraph.englishSide(sourceLanguage),
                             sourceStartOffset = paragraph.sourceStartOffset,
                             sourceEndOffset = paragraph.sourceEndOffset
                         ))

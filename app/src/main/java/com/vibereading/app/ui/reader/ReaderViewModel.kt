@@ -20,6 +20,7 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.domain.model.ReadingPosition
 import com.vibereading.app.domain.model.toLlmProfile
 import com.vibereading.app.domain.model.toLlmSettings
+import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +43,8 @@ data class ReaderUiState(
     val streamingCharCount: Int = 0,
     val isStreaming: Boolean = false,
     val translationPhase: TranslationPhase = TranslationPhase.IDLE,
-    val mode: String = "zh",          // "zh" or "en"
+    val mode: String = "zh",          // "zh" 或 "en"（显示模式，默认=原文语言，按书绑定）
+    val sourceLanguage: String = "zh",  // 书籍原文语言（ADR-003）：决定翻译方向与渲染插槽
     val readingSettings: ReadingSettings = ReadingSettings(),
     val llmSettings: LlmSettings = LlmSettings(),
     val profiles: List<LlmProfile> = emptyList(),
@@ -110,7 +112,7 @@ class ReaderViewModel(
         viewModelScope.launch {
             val book = bookRepo.getBookByIdOnce(bookId) ?: return@launch
             val savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
-            _uiState.update { it.copy(mode = book.languageMode) } // 阅读模式按书绑定，默认中文
+            _uiState.update { it.copy(mode = book.languageMode, sourceLanguage = book.sourceLanguage) } // 显示模式按书绑定，默认=原文语言；原文语言决定翻译方向
             chapterRepo.getChaptersByBook(bookId).collect { chapters ->
                 _uiState.update { it.copy(bookTitle = book.title, chapters = chapters) }
                 if (!restoreCompleted && chapters.isNotEmpty()) {
@@ -135,7 +137,7 @@ class ReaderViewModel(
                         )
                     }
                     activeChapterIdFlow.value = chapter.id
-                    if (_uiState.value.mode == "en") maybeTranslateChapter(chapter.id)
+                    if (needsTranslation()) maybeTranslateChapter(chapter.id)
                     prefetchNextChapterIfNeeded()
                 } else if (restoreCompleted) {
                     val current = _uiState.value.activeChapterId
@@ -202,7 +204,7 @@ class ReaderViewModel(
                     _editModel.value = ls.model
                 }
                 // 配置变更后重新评估当前章节是否需要翻译
-                if (_uiState.value.mode == "en") {
+                if (needsTranslation()) {
                     _uiState.value.activeChapterId?.let { maybeTranslateChapter(it) }
                 }
             }
@@ -252,7 +254,7 @@ class ReaderViewModel(
             }
             activeChapterIdFlow.value = chapterId
             if (persist) enqueueProgress(position)
-            if (_uiState.value.mode == "en") maybeTranslateChapter(chapterId)
+            if (needsTranslation()) maybeTranslateChapter(chapterId)
             prefetchNextChapterIfNeeded()
         }
     }
@@ -310,7 +312,7 @@ class ReaderViewModel(
     fun switchMode(mode: String) {
         _uiState.update { it.copy(mode = mode) }
         viewModelScope.launch { bookRepo.updateLanguageMode(bookId, mode) }
-        if (mode == "en") {
+        if (needsTranslation()) {
             _uiState.value.activeChapterId?.let { maybeTranslateChapter(it) }
             prefetchNextChapterIfNeeded()
         }
@@ -579,8 +581,14 @@ class ReaderViewModel(
         if (settings.apiKey.isBlank()) return
         when (chapter.status) {
             Chapter.STATUS_PENDING, Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG ->
-                translationCoordinator.translate(chapter, settings)
+                translationCoordinator.translate(chapter, settings, _uiState.value.sourceLanguage)
         }
+    }
+
+    /** 当前阅读是否需要译文：英文显示模式，或英文原版书（两种模式都预译，ADR-003）。 */
+    private fun needsTranslation(): Boolean {
+        val s = _uiState.value
+        return s.mode == "en" || s.sourceLanguage == SourceLanguageDetector.EN
     }
 
     /**
@@ -590,7 +598,7 @@ class ReaderViewModel(
     private fun prefetchNextChapterIfNeeded() {
         val s = _uiState.value
         if (!s.llmSettings.autoTranslateNext) return
-        if (s.mode != "en") return
+        if (!needsTranslation()) return
         if (translationCoordinator.currentRunningChapterId != null) return
         val current = s.activeChapter ?: return
         val idx = s.chapters.indexOfFirst { it.id == current.id }
@@ -606,7 +614,7 @@ class ReaderViewModel(
         val chapter = _uiState.value.chapters.find { it.id == chapterId } ?: return
         viewModelScope.launch {
             translationCoordinator.cancelAndReset()
-            translationCoordinator.translate(chapter, _uiState.value.llmSettings)
+            translationCoordinator.translate(chapter, _uiState.value.llmSettings, _uiState.value.sourceLanguage)
         }
     }
 

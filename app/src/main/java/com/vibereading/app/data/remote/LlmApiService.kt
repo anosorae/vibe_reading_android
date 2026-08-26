@@ -5,6 +5,7 @@ import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.WordExplanation
 import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.domain.parser.ReadingContentParser.splitParagraphs
+import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +75,23 @@ class LlmApiService : TranslationService {
 
 严禁输出任何解释、标题、注释或额外内容。"""
 
+        /** 英文原版书方向（英文→中文，ADR-003）：契约与 [SYSTEM_PROMPT] 完全一致。 */
+        const val SYSTEM_PROMPT_EN_TO_ZH = """你是一位资深中英文学翻译。
+将用户给定的整章英文翻译为中文, 保留原文语气、风格、文学性。
+
+源文中的每个段落以 [1], [2], [3] 等标记开头。你必须在中文译文中保留完全相同的段落标记, 使得每个标记段落与原文一一对应。
+
+输出格式:
+[1] 第一段的中文译文
+[2] 第二段的中文译文
+......
+
+严禁输出任何解释、标题、注释或额外内容。"""
+
+        /** 按书籍原文语言选择翻译方向 prompt（ADR-003）。 */
+        fun translationSystemPrompt(sourceLanguage: String): String =
+            if (sourceLanguage == SourceLanguageDetector.EN) SYSTEM_PROMPT_EN_TO_ZH else SYSTEM_PROMPT
+
         const val EXPLAIN_SYSTEM_PROMPT = """你是一个面向语言学习者的词典助手。
 
 ## 目标
@@ -119,23 +137,31 @@ class LlmApiService : TranslationService {
     fun buildUserPrompt(
         chapterTitle: String,
         chapterContent: String,
-        prevChapterEnglish: String? = null
+        prevChapterTranslation: String? = null,
+        sourceLanguage: String = SourceLanguageDetector.ZH
     ): String {
         // 插图段（ADR-002 D4）保留编号但剔除内容：prompt 出现编号空洞，模型输出自然缺失
         // 该标记，由 parseBilingualParagraphs 的「缺失标记→保留原文」兜底接住，解析器零改动。
+        val isEnSource = sourceLanguage == SourceLanguageDetector.EN
         val paragraphs = splitParagraphs(chapterContent)
             .mapIndexed { i, p -> (i + 1) to p }
             .filterNot { (_, p) -> IllustrationLink.parse(p.trim()) != null }
             .joinToString("\n") { (n, p) -> "[$n] ${p.trim()}" }
 
         val sb = StringBuilder()
-        if (prevChapterEnglish != null) {
-            sb.appendLine("上一章英译 (供术语 / 风格衔接参考):")
-            sb.appendLine(prevChapterEnglish)
+        if (prevChapterTranslation != null) {
+            sb.appendLine(
+                if (isEnSource) "上一章中译 (供术语 / 风格衔接参考):"
+                else "上一章英译 (供术语 / 风格衔接参考):"
+            )
+            sb.appendLine(prevChapterTranslation)
             sb.appendLine("---")
         }
         sb.appendLine("Chapter: $chapterTitle")
-        sb.appendLine("请将以下整章中文翻译为英文, 保留每个段落的 [N] 标记:")
+        sb.appendLine(
+            if (isEnSource) "请将以下整章英文翻译为中文, 保留每个段落的 [N] 标记:"
+            else "请将以下整章中文翻译为英文, 保留每个段落的 [N] 标记:"
+        )
         sb.append(paragraphs)
         return sb.toString()
     }
@@ -150,18 +176,19 @@ class LlmApiService : TranslationService {
         settings: LlmSettings,
         chapterTitle: String,
         chapterContent: String,
-        prevChapterEnglish: String?
+        prevChapterTranslation: String?,
+        sourceLanguage: String
     ): Flow<TranslationEvent> = flow {
         var call: okhttp3.Call? = null
         var sawDone = false
         var finishReason: String? = null
         try {
             emit(TranslationEvent.Started)
-            val userPrompt = buildUserPrompt(chapterTitle, chapterContent, prevChapterEnglish)
+            val userPrompt = buildUserPrompt(chapterTitle, chapterContent, prevChapterTranslation, sourceLanguage)
             val requestMap = mutableMapOf<String, Any>(
                 "model" to settings.model,
                 "messages" to listOf(
-                    mapOf("role" to "system", "content" to SYSTEM_PROMPT),
+                    mapOf("role" to "system", "content" to translationSystemPrompt(sourceLanguage)),
                     mapOf("role" to "user", "content" to userPrompt)
                 ),
                 "temperature" to settings.temperature.coerceIn(0f, 2f),

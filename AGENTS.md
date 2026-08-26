@@ -14,14 +14,14 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - Android 验证优先使用 android-emulator MCP：`android_preflight` → `android_discover_project` → `android_build_and_run` 或 `build_app` + `install_app` + `launch_app`。除非用户明确要求，不主动截图或执行额外 UI 自动化。
 - 单测使用 Robolectric 4.14/NATIVE 真实换行测量；断言结构化结果（offset 范围、切段拼接、双语原子性、页高和位置映射），不要固定易变的像素值。
 - 项目为单模块 `:app`，包名 `com.vibereading.app`，minSdk 26，target/compileSdk 35，Kotlin 2.1.0，Compose BOM 2024.12.01，Gradle 8.11.1。
-- Room schema 通过 KSP 输出到 `app/schemas`；当前数据库版本为 12，三个实体 `BookEntity`/`ChapterEntity`/`LlmProfileEntity`，迁移链 `MIGRATION_2_3` … `MIGRATION_11_12` 全部手写注册（v6→v7 新增 `llm_profiles` 表，v7→v8 增 `temperature`/`topP`，v9→v10 books 增 `languageMode`，v11→v12 books 增 `format`/`coverPath` 支持 EPUB）。实体模型使用 `lastReadOffset`；`chapters.translationRunId` 提供翻译任务的数据库级 stale 防护；书架「已译章节数」由 chapters 表 DONE 状态实时派生，`books.translatedChapters` 冗余列已移除。
+- Room schema 通过 KSP 输出到 `app/schemas`；当前数据库版本为 13，三个实体 `BookEntity`/`ChapterEntity`/`LlmProfileEntity`，迁移链 `MIGRATION_2_3` … `MIGRATION_12_13` 全部手写注册（v6→v7 新增 `llm_profiles` 表，v7→v8 增 `temperature`/`topP`，v9→v10 books 增 `languageMode`，v11→v12 books 增 `format`/`coverPath` 支持 EPUB，v12→v13 books 增 `sourceLanguage` 支持英文原版书 ADR-003）。实体模型使用 `lastReadOffset`；`chapters.translationRunId` 提供翻译任务的数据库级 stale 防护；书架「已译章节数」由 chapters 表 DONE 状态实时派生，`books.translatedChapters` 冗余列已移除。
 
 ## 目录结构
 
 - `app/src/main/java/com/vibereading/app/`
   - `data/` — Room 本地库：`local/entity`（`BookEntity`/`ChapterEntity`/`LlmProfileEntity`）、`local/dao`（`BookDao`/`ChapterDao`/`LlmProfileDao`，含 `AppDatabase` 迁移链）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（`BookRepository`/`ChapterRepository`/`SettingsRepository`/`LlmProfileRepository`）、`dict/`（`DictDatabase` 内嵌词典只读访问）、`image/`（`BookImageStore`：EPUB 插图/封面落盘 `files/books/{id}/images` 与 `files/covers`、内存 LRU 位图缓存、删书清理）
   - `domain/model/` — 纯 Kotlin 领域模型：`Book`、`BookShelfItem`、`Chapter`、`ReadingPosition`、`ReadingSettings`（含 `LlmSettings`，两者同文件）、`LlmProfile`、`ThemeSettings`、`DictEntry`、`WordExplanation`
-  - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`、`EpubParser`（EPUB 导入期一次性转纯文本章节，ADR-002）、`IllustrationLink`（插图链接语法唯一数据源）；负责保留原文段落的 UTF-16 起止 offset
+  - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`、`EpubParser`（EPUB 导入期一次性转纯文本章节，ADR-002）、`IllustrationLink`（插图链接语法唯一数据源）、`SourceLanguageDetector`（导入期原文语言判定，ADR-003）；负责保留原文段落的 UTF-16 起止 offset
   - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`（全局设置，含调试/日志入口）、`log`（日志查看器）、`navigation`、`theme`
     - `reader/ReaderScreen.kt` — 阅读器容器、五种翻页交互、生命周期 flush、滚动/分页接线（页面协调）
     - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
@@ -66,7 +66,7 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 - 阅读位置统一使用 `ReadingPosition(chapterId, offset)`。`Book.lastReadChapterId` 和 `Book.lastReadOffset` 是持久化恢复数据；页码只能是当前 `BookWindow`/`ChapterPaginator` 的派生状态。
 - 初始恢复必须是一次性、原子、无副作用的：先读取 Book 位置快照，再等待章节列表；不要通过会写库的普通导航函数恢复默认位置。后续章节 Flow 只刷新当前章节。
 - 位置变化统一经过 ViewModel 的进度入口；分页从 `window.offsetOfPage()` 取 offset，滚动从可见 `ScrollItem` 取 offset。写入必须串行，退出前调用 `flushProgress()`。
-- 翻译走 `TranslationService` 接口（`LlmApiService` 实现，方法：`translateStream`/`testConnection`/`truncateMiddle`）的 `translateStream()`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文。LLM 配置存于 `llm_profiles` 表（多档案，`LlmProfileRepository` 管理，`isActive` 标记当前生效档案）；`LlmSettings` 是翻译/连接测试使用的运行时子集。
+- 翻译走 `TranslationService` 接口（`LlmApiService` 实现，方法：`translateStream`/`testConnection`/`truncateMiddle`）的 `translateStream(settings, chapterTitle, chapterContent, prevChapterTranslation, sourceLanguage)`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文；`sourceLanguage`（书原文语言，ADR-003）决定 prompt 方向，`prevChapterTranslation` 始终取上一章译文（目标语言版本）。LLM 配置存于 `llm_profiles` 表（多档案，`LlmProfileRepository` 管理，`isActive` 标记当前生效档案）；`LlmSettings` 是翻译/连接测试使用的运行时子集。
 - 翻译状态机集中在 `TranslationCoordinator`（注入 `TranslationService`）：开始翻译时写入 `chapters.translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧任务无法污染新任务。
 
 ## 阅读内容与五种翻页模式
@@ -87,6 +87,8 @@ VibeReading 是一个双语 TXT 阅读器：导入小说后，逐章调用 LLM�
 ## 领域规则与关键 gotchas
 
 - 章节状态只能使用 `Chapter.STATUS_*` 常量：`PENDING=0`、`IN_PROGRESS=1`、`DONE=2`、`FAILED=-1`、`TOO_LONG=3`，禁止魔法数字。
+- 原文语言与显示模式分离（ADR-003）：`Book.sourceLanguage`（`zh`/`en`）是书的不变属性，决定翻译方向与段落插槽；`languageMode` 只是显示模式（默认=原文语言，按书持久化）。导入时按章节顺序取首个「抽样量 ≥60 字符」的章节判定（跳过「卷首」等空章节，`SourceLanguageDetector.detectFirstNonBlank`）；书架长按菜单「本书原文语言」可修正，修正会清空全部章节译文并重置显示模式。渲染的「中文侧/英文侧」由 `ReadingParagraph.chineseSide/englishSide` 插槽决定，offset 恒指原文范围。
+- 翻译方向随原文语言：`translateStream` 带 `sourceLanguage` 参数，`SYSTEM_PROMPT`/`buildUserPrompt` 按方向生成（中文→英文 / 英文→中文），`[N]` 契约与 `parseBilingualParagraphs` 不变；英文原版书两种显示模式都预译当前+下一章，中文书保持仅 en 模式翻译。译文未就绪时 en 模式按单语排版（无气泡），zh 模式回退原文。
 - 双语译文必须保留 `[1] [2] ...` 标记，并与原文段落一一对应。无效标记不能静默绑定到其他段落；修改 prompt/解析器时必须更新 offset 对齐测试。
 - `ReadingPosition.offset` 是非负 UTF-16 code-unit 偏移，使用半开区间语义；offset 超过章节长度时按当前章节内容长度规范化。
 - 运行时页码变化不是数据迁移事件。不要把 page index 写回 `BookEntity`、DAO 或 Room；Room 进度 SQL 只更新章节 ID、原文 offset 和时间。

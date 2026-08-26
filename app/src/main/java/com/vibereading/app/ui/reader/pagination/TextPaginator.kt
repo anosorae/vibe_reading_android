@@ -107,8 +107,8 @@ sealed class FlowItem {
     data class Para(
         override val chapterId: Long,
         val paraIndex: Int,
-        val cnText: String,
-        val enText: String?,     // en 模式下英文译文；未翻译为 null（渲染回退原文）
+        val cnText: String,          // 中文侧文本（ADR-003 插槽）：zh 正文 / en 弹窗数据源；英文书译文未就绪为空
+        val enText: String?,         // 英文侧文本（ADR-003 插槽）：英文书恒为原文；未翻译段落为 null（渲染回退中文侧）
         val sourceStartOffset: Int = 0,
         val sourceEndOffset: Int = sourceStartOffset + cnText.length
     ) : FlowItem() {
@@ -155,10 +155,10 @@ sealed class PageUnit {
     data class Para(
         override val chapterId: Long,
         val paraIndex: Int,
-        val cnText: String,            // zh：正文；en：中文原文（弹窗数据源）
-        val enText: String?,           // en 模式下译文（拆分的续段为 null）
+        val cnText: String,            // 中文侧文本（ADR-003 插槽）：zh 正文 / en 弹窗数据源
+        val enText: String?,           // 英文侧文本（ADR-003 插槽）：拆分的续段为 null
         val splitFirst: Boolean = false,   // 拆分子段的第一段（不加段距，视觉上与续段相连）
-        val pairHead: Boolean = true,      // en 首片段可显示原文气泡；续段无气泡
+        val pairHead: Boolean = true,      // en 首片段可显示中文气泡；续段无气泡
         val lineCount: Int = 0,            // 本单元本页实际行数（底部对齐用）
         val lineHeightExtraPx: Float = 0f, // 底部对齐分配给每行的额外高度
         val mainLayout: TextLayoutResult? = null,  // zh=正文布局 / en=英文布局
@@ -314,8 +314,9 @@ class ChapterPaginator(
 
                 is FlowItem.Para -> {
                     if (mode == "zh") {
-                        // zh 模式：以中文原文排版分页
-                        val text = if (isChunk) chunk!!.text else item.cnText
+                        // zh 模式：以中文侧文本排版分页；英文书译文未就绪回退英文原文（ADR-003）
+                        val text = if (isChunk) chunk!!.text
+                            else item.cnText.ifBlank { item.enText.orEmpty() }
                         val layout = measureLayout(text, style.body)
                         val h = layout.size.height.toFloat()
                         if (h > contentHeightPx && layout.lineCount > 1) {
@@ -363,10 +364,11 @@ class ChapterPaginator(
                             pos++
                         }
                     } else {
-                        // en 模式：以英文译文排版分页（中文原文通过弹窗显示，不参与排版测量）
+                        // en 模式：以英文侧文本排版分页（中文侧通过弹窗显示，不参与排版测量）；
+                        // 双语对只有两侧都在才成立（英文书译文未就绪时按单语英文原文排版，无气泡）
                         val en = if (isChunk) chunk!!.text
                             else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
-                        val hasTranslation = !isChunk && item.enText?.isNotBlank() == true
+                        val hasTranslation = !isChunk && item.cnText.isNotBlank() && item.enText?.isNotBlank() == true
                         val head = if (isChunk) chunk!!.isHead else true
                         val enLayout = measureLayout(en, style.body)
                         val h = enLayout.size.height.toFloat()

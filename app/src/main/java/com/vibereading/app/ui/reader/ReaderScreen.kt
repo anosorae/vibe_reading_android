@@ -191,12 +191,13 @@ fun ReaderScreen(
             ?: ""
     }
     val window = remember(
-        measurer, pageStyle, state.mode, paginationFingerprint, contentWidthPx, contentHeightPx, isPagerMode
+        measurer, pageStyle, state.mode, state.sourceLanguage, paginationFingerprint, contentWidthPx, contentHeightPx, isPagerMode
     ) {
         BookWindow(
             chapters = state.chapters,
             style = pageStyle,
             mode = state.mode,
+            sourceLanguage = state.sourceLanguage,
             contentWidthPx = contentWidthPx,
             contentHeightPx = contentHeightPx,
             measurer = measurer,

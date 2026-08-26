@@ -32,13 +32,14 @@ import com.vibereading.app.ui.reader.pagination.ReaderMetrics
 import java.util.Locale
 
 /**
- * 双语段落（滚动模式与分页模式共用）：英文 + 尾部气泡（点击弹窗查看中文原文）。
+ * 双语段落（滚动模式与分页模式共用，ADR-003 插槽模型）：英文侧正文 + 尾部中文气泡
+ * （点击弹窗查看中文侧文本：中文书=中文原文，英文书=中文译文）。
  * 气泡与弹窗均为视觉叠加层，不影响排版测量，无需重排。
  *
  * - [lineHeightExtraPx]：分页模式底部对齐分配到每行的额外行高（px），滚动模式恒 0。
  * - [pairHead]：是否为双语对首片段——仅首片段显示气泡，续段不重复。
  * - [showSpacer]：是否在段尾加段距（分页末段不加，对齐排版器 buildPage 的 realUsed）。
- * - [selectionState]/[paragraphKey]：长按选词状态与段落标识（英文译文参与选词）。
+ * - [selectionState]/[paragraphKey]：长按选词状态与段落标识（英文侧正文参与选词）。
  */
 @Composable
 fun BilingualParagraph(
@@ -76,7 +77,7 @@ fun BilingualParagraph(
                 highlightColor = palette.selectionHighlight
             )
             if (chineseText.isNotBlank() && pairHead) {
-                SourceBubble(chineseText = chineseText, pageStyle = pageStyle, palette = palette)
+                ChineseBubble(chineseText = chineseText, pageStyle = pageStyle, palette = palette)
             }
         }
         if (showSpacer) {
@@ -85,10 +86,10 @@ fun BilingualParagraph(
     }
 }
 
-/** 原文气泡 + 弹窗（视觉叠加层，不参与排版测量）。需在 Box 作用域内调用以使用 align 定位。
+/** 中文气泡 + 弹窗（视觉叠加层，不参与排版测量）。需在 Box 作用域内调用以使用 align 定位。
  *  触控区 44dp × 44dp（视觉气泡仅 18×6dp），扩展区透明不干扰视觉，确保易点按。 */
 @Composable
-private fun BoxScope.SourceBubble(
+private fun BoxScope.ChineseBubble(
     chineseText: String,
     pageStyle: PageStyle,
     palette: ReaderPalette
@@ -125,7 +126,7 @@ private fun BoxScope.SourceBubble(
             ) {
                 Surface(
                     shape = RoundedCornerShape(3.dp),
-                    color = palette.sourceBubble,
+                    color = palette.bubble,
                     modifier = Modifier.fillMaxSize()
                 ) {}
             }

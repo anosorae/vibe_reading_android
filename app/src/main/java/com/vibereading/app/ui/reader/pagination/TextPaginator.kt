@@ -23,9 +23,10 @@ import com.vibereading.app.ui.reader.content.ReadingParagraph
  *   由 `BookWindow`（章窗口模型）持有 ±1 窗口；
  * - **真实页宽测量**：`measureLayout` 传 `Constraints(maxWidth = contentWidth)`，
  *   行高/切段基于真实换行（修复旧实现无约束测量导致「所见≠所排」）；
- * - **mode 感知排版**：zh 模式测量 cnText 分页，en 模式测量 enText 分页（无则回退 cnText），
- *   双语对原子化不可拆，放不下整段移下一页；单段超高退化为按行切分（首片段可显示气泡，
- *   续段无气泡）；zh/en 模式页面布局独立，切换模式需重建窗口重新排版；
+ * - **mode 感知排版**：zh 模式测量 cnText 分页，en 模式测量 enText 分页（无则回退 cnText）；
+ *   段落放不下本页剩余空间时按行边界切开填满当前页（ADR-004），续段顶格续排到下一页
+ *   （无首行缩进，双语对每个带译文的片段都显示中文气泡）；zh/en 模式页面布局独立，
+ *   切换模式需重建窗口重新排版；
  * - 每页排版后按 `bottomJustify` 把剩余高度均匀分到各行（末行沉底，对齐 Legado
  *   `TextPage.upLinesPosition`）；
  * - [TextLayoutResult] 挂在 [PageUnit] 上：渲染层 `Text` 以同文本同样式渲染
@@ -158,7 +159,7 @@ sealed class PageUnit {
         val cnText: String,            // 中文侧文本（ADR-003 插槽）：zh 正文 / en 弹窗数据源
         val enText: String?,           // 英文侧文本（ADR-003 插槽）：拆分的续段为 null
         val splitFirst: Boolean = false,   // 拆分子段的第一段（不加段距，视觉上与续段相连）
-        val pairHead: Boolean = true,      // en 首片段可显示中文气泡；续段无气泡
+        val continuation: Boolean = false, // 同段跨页续排片段：顶格无首行缩进（渲染端同口径）
         val lineCount: Int = 0,            // 本单元本页实际行数（底部对齐用）
         val lineHeightExtraPx: Float = 0f, // 底部对齐分配给每行的额外高度
         val mainLayout: TextLayoutResult? = null,  // zh=正文布局 / en=英文布局
@@ -214,11 +215,10 @@ private fun pageSourceRange(units: List<PageUnit>): Pair<Int?, Int?> {
     return start to end
 }
 
-/** 切段续排状态：超长段的第一段已排完，剩余文本随 [para] 进入下一页。 */
+/** 切段续排状态：段落按行切分填满当前页后的剩余文本，随 [para] 续排到下一页（顶格）。 */
 private data class PendingChunk(
     val para: FlowItem.Para,
-    val text: String,
-    val isHead: Boolean = true
+    val text: String
 )
 
 /**
@@ -315,19 +315,28 @@ class ChapterPaginator(
                 is FlowItem.Para -> {
                     if (mode == "zh") {
                         // zh 模式：以中文侧文本排版分页；英文书译文未就绪回退英文原文（ADR-003）
+                        val cont = isChunk
                         val text = if (isChunk) chunk!!.text
                             else item.cnText.ifBlank { item.enText.orEmpty() }
-                        val layout = measureLayout(text, style.body)
+                        // 续段顶格：同段跨页的延续文本不带首行缩进（渲染端同口径）
+                        val paraStyle = if (cont) style.body.copy(textIndent = null) else style.body
+                        val layout = measureLayout(text, paraStyle)
                         val h = layout.size.height.toFloat()
-                        if (h > contentHeightPx && layout.lineCount > 1) {
-                            // 长段落：本页剩余放得下首行就在剩余高度内切段，否则先翻页用整页高
-                            if (units.isNotEmpty() && contentHeightPx - used < layout.getLineBottom(0)) pageDone()
-                            val bound = (contentHeightPx - used).coerceAtLeast(layout.getLineBottom(0))
+                        val remaining = contentHeightPx - used
+                        if (h > contentHeightPx || (units.isNotEmpty() && h > remaining)) {
+                            // 放不下整段：本页剩余放得下首行就在剩余高度内按行切段填满当前页
+                            //（ADR-004），否则先翻页再用整页高切段续排；翻页后整段可能直接放下
+                            if (units.isNotEmpty() && remaining < layout.getLineBottom(0)) {
+                                pageDone()
+                                continue
+                            }
+                            val bound = if (units.isNotEmpty()) remaining else contentHeightPx
                             val (c1, c2) = splitLayout(text, layout, bound)
-                            val l1 = if (c1 != text) measureLayout(c1, style.body) else layout
+                            val l1 = if (c1 != text) measureLayout(c1, paraStyle) else layout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, c1, null,
-                                splitFirst = true, lineCount = l1.lineCount, mainLayout = l1,
+                                splitFirst = true, continuation = cont,
+                                lineCount = l1.lineCount, mainLayout = l1,
                                 sourceStartOffset = item.sourceStartOffset,
                                 sourceEndOffset = item.sourceEndOffset
                             )
@@ -338,24 +347,10 @@ class ChapterPaginator(
                             } else {
                                 pos++
                             }
-                        } else if (h > contentHeightPx) {
-                            // 极端：单行超高（防御）。单行无法按行切分时允许本页溢出，
-                            // 但必须保留完整 continuation，不能用固定长度截断正文。
-                            val continuation = text
-                            val tl = measureLayout(continuation, style.body)
-                            if (units.isNotEmpty()) pageDone()
-                            units += PageUnit.Para(
-                                item.chapterId, item.paraIndex, continuation, null,
-                                lineCount = tl.lineCount, mainLayout = tl,
-                                sourceStartOffset = item.sourceStartOffset,
-                                sourceEndOffset = item.sourceEndOffset
-                            )
-                            used += tl.size.height.toFloat()
-                            pos++
                         } else {
-                            if (units.isNotEmpty() && h > contentHeightPx - used) pageDone()
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, text, null,
+                                continuation = cont,
                                 lineCount = layout.lineCount, mainLayout = layout,
                                 sourceStartOffset = item.sourceStartOffset,
                                 sourceEndOffset = item.sourceEndOffset
@@ -366,25 +361,32 @@ class ChapterPaginator(
                     } else {
                         // en 模式：以英文侧文本排版分页（中文侧通过弹窗显示，不参与排版测量）；
                         // 双语对只有两侧都在才成立（英文书译文未就绪时按单语英文原文排版，无气泡）
+                        val cont = isChunk
                         val en = if (isChunk) chunk!!.text
                             else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
                         val hasTranslation = !isChunk && item.cnText.isNotBlank() && item.enText?.isNotBlank() == true
-                        val head = if (isChunk) chunk!!.isHead else true
-                        val enLayout = measureLayout(en, style.body)
+                        // 续段顶格：同段跨页的延续文本不带首行缩进（渲染端同口径）
+                        val paraStyle = if (cont) style.body.copy(textIndent = null) else style.body
+                        val enLayout = measureLayout(en, paraStyle)
                         val h = enLayout.size.height.toFloat()
                         // 双语对额外占位：PageBilingualParagraph 的 4dp top + 4dp bottom padding
                         val padPx = if (hasTranslation) bilingualPadPx else 0f
+                        val totalH = h + padPx
                         val remaining = contentHeightPx - used
-                        if (h + padPx > contentHeightPx) {
-                            // 单段超高：按行切分英文，不丢内容
-                            if (units.isNotEmpty() && remaining < enLayout.getLineBottom(0) + padPx) pageDone()
-                            val bound = (contentHeightPx - used - padPx)
+                        if (totalH > contentHeightPx || (units.isNotEmpty() && totalH > remaining)) {
+                            // 放不下整段（ADR-004）：本页剩余放得下首行就在剩余高度内按行切分
+                            // 填满当前页（每个带译文的片段都可显示中文气泡），否则先翻页再切
+                            if (units.isNotEmpty() && remaining < enLayout.getLineBottom(0) + padPx) {
+                                pageDone()
+                                continue
+                            }
+                            val bound = ((if (units.isNotEmpty()) remaining else contentHeightPx) - padPx)
                                 .coerceAtLeast(enLayout.getLineBottom(0))
                             val (c1, c2) = splitLayout(en, enLayout, bound)
-                            val l1 = if (c1 != en) measureLayout(c1, style.body) else enLayout
+                            val l1 = if (c1 != en) measureLayout(c1, paraStyle) else enLayout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, item.cnText, c1,
-                                splitFirst = true, pairHead = head,
+                                splitFirst = true, continuation = cont,
                                 lineCount = l1.lineCount,
                                 mainLayout = l1,
                                 sourceStartOffset = item.sourceStartOffset,
@@ -392,19 +394,15 @@ class ChapterPaginator(
                             )
                             used += l1.size.height.toFloat() + padPx
                             if (c2.isNotBlank()) {
-                                pending = PendingChunk(item, c2, isHead = false)
+                                pending = PendingChunk(item, c2)
                                 pageDone()
                             } else {
                                 pos++
                             }
                         } else {
-                            if (units.isNotEmpty() && h + padPx > remaining) {
-                                pageDone() // 整段移到下一页
-                                continue
-                            }
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, item.cnText, en,
-                                pairHead = head,
+                                continuation = cont,
                                 lineCount = enLayout.lineCount,
                                 mainLayout = enLayout,
                                 sourceStartOffset = item.sourceStartOffset,

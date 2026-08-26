@@ -37,7 +37,8 @@ import java.util.Locale
  * 气泡与弹窗均为视觉叠加层，不影响排版测量，无需重排。
  *
  * - [lineHeightExtraPx]：分页模式底部对齐分配到每行的额外行高（px），滚动模式恒 0。
- * - [pairHead]：是否为双语对首片段——仅首片段显示气泡，续段不重复。
+ * - [continuation]：是否为同段跨页续排片段——顶格无首行缩进；中文气泡在所有带译文的
+ *   片段段尾都会显示（ADR-004），点任一气泡弹出整段中文侧文本。
  * - [showSpacer]：是否在段尾加段距（分页末段不加，对齐排版器 buildPage 的 realUsed）。
  * - [selectionState]/[paragraphKey]：长按选词状态与段落标识（英文侧正文参与选词）。
  */
@@ -48,16 +49,18 @@ fun BilingualParagraph(
     pageStyle: PageStyle,
     palette: ReaderPalette,
     lineHeightExtraPx: Float = 0f,
-    pairHead: Boolean = true,
+    continuation: Boolean = false,
     showSpacer: Boolean = true,
     selectionState: TextSelectionState? = null,
     paragraphKey: Any? = null
 ) {
     val density = LocalDensity.current
+    // 续段顶格：与排版器测量口径一致，无首行缩进
+    val baseStyle = if (continuation) pageStyle.body.copy(textIndent = null) else pageStyle.body
     // 分页模式 lineHeightExtraPx > 0 时调整行高，与 PageRenderer 的 Text 排版一致
-    val enStyle = if (lineHeightExtraPx > 0f) pageStyle.body.copy(
+    val enStyle = if (lineHeightExtraPx > 0f) baseStyle.copy(
         lineHeight = (pageStyle.body.lineHeight.value + with(density) { lineHeightExtraPx.toSp().value }).sp
-    ) else pageStyle.body
+    ) else baseStyle
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -76,7 +79,7 @@ fun BilingualParagraph(
                 locale = Locale.ENGLISH,
                 highlightColor = palette.selectionHighlight
             )
-            if (chineseText.isNotBlank() && pairHead) {
+            if (chineseText.isNotBlank()) {
                 ChineseBubble(chineseText = chineseText, pageStyle = pageStyle, palette = palette)
             }
         }

@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -120,28 +121,93 @@ class ChapterPaginatorTest {
         }
     }
 
-    // ── en：双语对原子化 ──
+    // ── en：双语对按行切分填页（ADR-004），每个片段都带中文气泡数据源 ──
 
     @Test
-    fun en_bilingualPair_isNeverSplit() {
-        // 每个 en 段都很长（多行），但任何一页都放得下整个对
+    fun en_bilingualPair_splitsToFill_everyFragmentHasBubbleData() {
+        // 每个 en 段占大半页（多行）：放不下剩余空间时按行切分填满当前页（ADR-004），
+        // 每个带译文的片段都携带整段 cnText（点任一气泡弹出完整译文），
+        // 英文切段拼接不丢字
         val cnTexts = (0 until 10).map { "中文段落 $it 的原文内容。" }
         val enTexts = (0 until 10).map { i ->
-            "Paragraph $i is a fairly long English sentence that wraps across several lines inside the content area."
+            ("Paragraph $i is a fairly long English sentence that wraps across several " +
+                "lines inside the content area. ").repeat(4).trim()
         }
         val p = ChapterPaginator(
             1L, items(cnTexts, enTexts), style(),
             "en", contentWidthPx = 400f, contentHeightPx = 400f, measurer = measurer
         )
-        val seen = HashSet<Int>()
+        assertTrue("应跨多页触发切分", p.pages.size >= 2)
+        val enByPara = HashMap<Int, StringBuilder>()
+        var fragments = 0
         for (page in p.pages) {
-            val heads = page.units.filter { it is PageUnit.Para }.map { (it as PageUnit.Para) }
-            heads.forEach { u ->
-                assertTrue("双语对不应被拆分（paraIndex=${u.paraIndex}）", u.pairHead)
-                assertTrue("paraIndex 不应重复出现", seen.add(u.paraIndex))
+            page.units.filterIsInstance<PageUnit.Para>().forEach { u ->
+                assertTrue(
+                    "每个片段都应有气泡数据源（整段中文侧文本）paraIndex=${u.paraIndex}",
+                    u.cnText.isNotBlank()
+                )
+                assertEquals("气泡数据源应为整段译文", cnTexts[u.paraIndex], u.cnText)
+                fragments++
+                enByPara.getOrPut(u.paraIndex) { StringBuilder() }.append(u.enText.orEmpty())
             }
         }
-        assertEquals("所有段落都应排入", 10, seen.size)
+        assertTrue("双语对应被实际切分填页（片段数 $fragments）", fragments > 10)
+        assertEquals("所有段落都应排入", 10, enByPara.size)
+        enTexts.forEachIndexed { i, text ->
+            assertEquals(
+                "第 $i 段英文切段拼接不应丢字",
+                text.replace(" ", ""),
+                enByPara.getValue(i).toString().replace(" ", "")
+            )
+        }
+    }
+
+    // ── zh：切分填满页面（ADR-004）──
+
+    @Test
+    fun zh_paragraphs_fillPages_withoutLargeSlack() {
+        // 多个中等长度段落：旧逻辑整段挪页会留下大片空白；新逻辑按行切分后，
+        // 除末页外每页剩余高度应不足一行
+        val paras = (0 until 20).joinToString("\n\n") {
+            "填充测试段落 $it：这段中文内容足够长，在窄页面里会占据好几行的宽度，" +
+                "确保段落本身超过单页剩余空间的概率足够高。"
+        }
+        val height = 500f
+        val p = ChapterPaginator(
+            1L, items(paras.split("\n\n")), style(),
+            "zh", contentWidthPx = 400f, contentHeightPx = height, measurer = measurer
+        )
+        assertTrue("应跨多页", p.pages.size >= 3)
+        for ((i, page) in p.pages.dropLast(1).withIndex()) {
+            val slack = height - page.usedHeightPx
+            assertTrue("第 $i 页剩余 ${slack}px 未按行切分填满（ADR-004）", slack <= 30f)
+        }
+    }
+
+    @Test
+    fun zh_continuationChunk_hasNoFirstLineIndent() {
+        // 跨页续排的续段顶格（无首行缩进），首片段保留缩进（ADR-004）
+        val indented = style().copy(
+            body = body.copy(textIndent = TextIndent(firstLine = 50.sp))
+        )
+        val longPara = (0 until 100).joinToString("") { "跨页续排缩进测试内容。" }
+        val p = ChapterPaginator(
+            1L, items(listOf(longPara)), indented,
+            "zh", contentWidthPx = 300f, contentHeightPx = 200f, measurer = measurer
+        )
+        assertTrue("应跨页产生续段", p.pages.size >= 2)
+        val firstPara = p.pages.first().units.filterIsInstance<PageUnit.Para>().first()
+        assertFalse(firstPara.continuation)
+        assertTrue(
+            "首片段首行应带缩进（left=${firstPara.mainLayout!!.getBoundingBox(0).left}）",
+            firstPara.mainLayout!!.getBoundingBox(0).left > 0f
+        )
+        val continuationUnits = p.pages.drop(1).flatMap { it.units }
+            .filterIsInstance<PageUnit.Para>().filter { it.continuation }
+        assertTrue("续页应存在顶格续段", continuationUnits.isNotEmpty())
+        continuationUnits.forEach { u ->
+            assertEquals("续段首行应顶格", 0f, u.mainLayout!!.getBoundingBox(0).left, 0.5f)
+        }
     }
 
     // ── bottomJustify ──

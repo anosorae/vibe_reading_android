@@ -385,12 +385,14 @@ fun PageRenderer(
                             val key = ParagraphKey(unit.chapterId, unit.paraIndex)
                             if (mode == "zh") {
                                 // zh 模式：mainLayout 即中文侧排版，直接渲染 cnText（无气泡）；
-                                // 英文书译文未就绪回退英文原文（ADR-003）
+                                // 英文书译文未就绪回退英文原文（ADR-003）；
+                                // 续段顶格与排版器测量口径一致（同段跨页延续无首行缩进）
                                 val bodyText = unit.cnText.ifBlank { unit.enText.orEmpty() }
-                                val bodyStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
+                                val baseStyle = if (unit.continuation) pageStyle.body.copy(textIndent = null) else pageStyle.body
+                                val bodyStyle = if (unit.lineHeightExtraPx > 0f) baseStyle.copy(
                                     lineHeight = (pageStyle.body.lineHeight.value +
                                         with(density) { unit.lineHeightExtraPx.toSp().value }).sp
-                                ) else pageStyle.body
+                                ) else baseStyle
                                 SelectableParagraphText(
                                     text = bodyText,
                                     style = bodyStyle,
@@ -413,7 +415,7 @@ fun PageRenderer(
                                     BilingualParagraph(
                                         englishText = unit.enText!!,
                                         chineseText = unit.cnText,
-                                        pairHead = unit.pairHead,
+                                        continuation = unit.continuation,
                                         pageStyle = pageStyle,
                                         palette = palette,
                                         lineHeightExtraPx = unit.lineHeightExtraPx,
@@ -423,11 +425,12 @@ fun PageRenderer(
                                     )
                                 } else {
                                     // 双语未就绪：显示存在的一侧（中文书=中文原文回退，英文书=英文原文），
-                                    // 无气泡，避免气泡内容与正文重复
-                                    val bodyStyle = if (unit.lineHeightExtraPx > 0f) pageStyle.body.copy(
+                                    // 无气泡，避免气泡内容与正文重复；续段顶格与排版器测量口径一致
+                                    val baseStyle = if (unit.continuation) pageStyle.body.copy(textIndent = null) else pageStyle.body
+                                    val bodyStyle = if (unit.lineHeightExtraPx > 0f) baseStyle.copy(
                                         lineHeight = (pageStyle.body.lineHeight.value +
                                             with(density) { unit.lineHeightExtraPx.toSp().value }).sp
-                                    ) else pageStyle.body
+                                    ) else baseStyle
                                     SelectableParagraphText(
                                         text = unit.enText ?: unit.cnText,
                                         style = bodyStyle,
@@ -600,7 +603,9 @@ fun renderPageBitmap(
                     // 约束含 minWidth（对齐 Compose Text 的 Modifier.fillMaxWidth()），
                     // 保证 TextAlign.Justify 等对齐方式结果一致
                     val layout = if (unit.lineHeightExtraPx > 0f && measurer != null) {
-                        val adjustedStyle = pageStyle.body.copy(
+                        // 续段顶格与 PageRenderer 的 Text(style=bodyStyle) 口径一致
+                        val baseStyle = if (unit.continuation) pageStyle.body.copy(textIndent = null) else pageStyle.body
+                        val adjustedStyle = baseStyle.copy(
                             lineHeight = (pageStyle.body.lineHeight.value +
                                 density.run { unit.lineHeightExtraPx.toSp().value }).sp
                         )
@@ -624,25 +629,23 @@ fun renderPageBitmap(
                     if (hasTranslation) {
                         cursorY += padPx(ReaderMetrics.BILINGUAL_PAD_DP)
                         // 气泡指示器（对齐 BilingualParagraph 的 18×6dp 小矩形），
-                        // 仅首片段 pairHead 显示，续段不重复
-                        if (unit.pairHead) {
-                            val bubbleW = padPx(ReaderMetrics.BUBBLE_WIDTH_DP)
-                            val bubbleH = padPx(ReaderMetrics.BUBBLE_HEIGHT_DP)
-                            val bubbleX = contentWidthPx - bubbleW - padPx(ReaderMetrics.BUBBLE_END_DP)
-                            val bubbleY = (cursorY - bubbleH - padPx(ReaderMetrics.BUBBLE_BOTTOM_DP)).toInt()
-                            val bubblePaint = Paint().apply {
-                                isAntiAlias = true
-                                color = palette.bubble
-                            }
-                            // 圆角半径对齐 BilingualParagraph 的 RoundedCornerShape(3.dp)
-                            val radius = padPx(3)
-                            canvas.drawRoundRect(
-                                bubbleX.toFloat(), bubbleY.toFloat(),
-                                (bubbleX + bubbleW).toFloat(), (bubbleY + bubbleH).toFloat(),
-                                radius.toFloat(), radius.toFloat(),
-                                bubblePaint
-                            )
+                        // 每个带译文的片段段尾都显示（ADR-004），与 Compose 页一致
+                        val bubbleW = padPx(ReaderMetrics.BUBBLE_WIDTH_DP)
+                        val bubbleH = padPx(ReaderMetrics.BUBBLE_HEIGHT_DP)
+                        val bubbleX = contentWidthPx - bubbleW - padPx(ReaderMetrics.BUBBLE_END_DP)
+                        val bubbleY = (cursorY - bubbleH - padPx(ReaderMetrics.BUBBLE_BOTTOM_DP)).toInt()
+                        val bubblePaint = Paint().apply {
+                            isAntiAlias = true
+                            color = palette.bubble
                         }
+                        // 圆角半径对齐 BilingualParagraph 的 RoundedCornerShape(3.dp)
+                        val radius = padPx(3)
+                        canvas.drawRoundRect(
+                            bubbleX.toFloat(), bubbleY.toFloat(),
+                            (bubbleX + bubbleW).toFloat(), (bubbleY + bubbleH).toFloat(),
+                            radius.toFloat(), radius.toFloat(),
+                            bubblePaint
+                        )
                     }
                     cursorY += if (unit.splitFirst || isLastPara) 0f else paragraphSpacingInt.toFloat()
                 }

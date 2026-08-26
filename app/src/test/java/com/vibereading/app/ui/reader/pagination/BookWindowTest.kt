@@ -182,7 +182,7 @@ class BookWindowTest {
     }
 
     @Test
-    fun enWindow_bilingualAtomicHoldsAcrossWindow() {
+    fun enWindow_bilingualParas_allPresentAcrossWindow() {
         val cnChapters = chapters.mapIndexed { i, ch ->
             ch.copy(
                 translatedContent = (0 until 20).joinToString("\n") { j ->
@@ -205,16 +205,16 @@ class BookWindowTest {
             backgroundMeasurer = { measurer }
         )
         w.recenterSync(3)
-        // 窗口 [2,3,4]：第3章 20 段应完整、原子；第2/4章也可能部分入窗
+        // 窗口 [2,3,4]：段落可按行切分填页（ADR-004），paraIndex 允许跨页重复出现；
+        // 第3章 20 个不同段落都应入窗
         val chapter3Seen = HashSet<Int>()
         for (i in 0 until w.pageCount) {
             w.pageUnits(i).filterIsInstance<PageUnit.Para>().forEach { u ->
-                assertTrue("双语对不应拆分（chapter=${u.chapterId} para=${u.paraIndex}）", u.pairHead)
                 if (u.chapterId == 3L) {
-                    assertTrue("第3章 paraIndex 不应重复", chapter3Seen.add(u.paraIndex))
+                    chapter3Seen.add(u.paraIndex)
                 }
             }
         }
-        assertEquals("第3章所有 20 段完整且不重", 20, chapter3Seen.size)
+        assertEquals("第3章所有 20 段都应入窗", 20, chapter3Seen.size)
     }
 }

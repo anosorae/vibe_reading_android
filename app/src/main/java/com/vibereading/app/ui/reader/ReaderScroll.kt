@@ -135,7 +135,8 @@ fun ScrollReader(
                     pageStyle = pageStyle,
                     palette = palette,
                     selectionState = selectionState,
-                    paragraphKey = ParagraphKey(item.chapterId, item.paragraph.index)
+                    paragraphKey = ParagraphKey(item.chapterId, item.paragraph.index),
+                    paddingH = paddingH
                 )
             }
         }

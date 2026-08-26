@@ -421,7 +421,9 @@ fun PageRenderer(
                                         lineHeightExtraPx = unit.lineHeightExtraPx,
                                         showSpacer = !isLastPara,
                                         selectionState = selectionState,
-                                        paragraphKey = key
+                                        paragraphKey = key,
+                                        // 气泡触控区右向延伸到屏幕右缘（与滚动模式同口径）
+                                        bubbleEdgeExtendDp = (paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat()
                                     )
                                 } else {
                                     // 双语未就绪：显示存在的一侧（中文书=中文原文回退，英文书=英文原文），

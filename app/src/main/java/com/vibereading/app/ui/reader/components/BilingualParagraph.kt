@@ -52,7 +52,8 @@ fun BilingualParagraph(
     continuation: Boolean = false,
     showSpacer: Boolean = true,
     selectionState: TextSelectionState? = null,
-    paragraphKey: Any? = null
+    paragraphKey: Any? = null,
+    bubbleEdgeExtendDp: Float = 0f
 ) {
     val density = LocalDensity.current
     // 续段顶格：与排版器测量口径一致，无首行缩进
@@ -80,7 +81,12 @@ fun BilingualParagraph(
                 highlightColor = palette.selectionHighlight
             )
             if (chineseText.isNotBlank()) {
-                ChineseBubble(chineseText = chineseText, pageStyle = pageStyle, palette = palette)
+                ChineseBubble(
+                    chineseText = chineseText,
+                    pageStyle = pageStyle,
+                    palette = palette,
+                    edgeExtendDp = bubbleEdgeExtendDp
+                )
             }
         }
         if (showSpacer) {
@@ -90,12 +96,15 @@ fun BilingualParagraph(
 }
 
 /** 中文气泡 + 弹窗（视觉叠加层，不参与排版测量）。需在 Box 作用域内调用以使用 align 定位。
- *  触控区 44dp × 44dp（视觉气泡仅 18×6dp），扩展区透明不干扰视觉，确保易点按。 */
+ *  触控区 44dp 高 ×（44+[edgeExtendDp])dp 宽：视觉气泡仅 18×6dp，左侧/上方扩展至 44dp 保证易点按，
+ *  右侧按 [edgeExtendDp]（= 用户右边距 + BUBBLE_END_DP，由调用方按静态几何传入）延伸到屏幕右缘，
+ *  避免点右侧误触发翻页；扩展区透明不干扰视觉。 */
 @Composable
 private fun BoxScope.ChineseBubble(
     chineseText: String,
     pageStyle: PageStyle,
-    palette: ReaderPalette
+    palette: ReaderPalette,
+    edgeExtendDp: Float
 ) {
     var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -103,25 +112,34 @@ private fun BoxScope.ChineseBubble(
     // 触控区容器用 matchParentSize：填满父 Box 但不参与尺寸决策，
     // 否则 44dp 触控区会比短段文本高，撑大 Box 导致位图与 Compose 页高度不一致。
     // 触控区在 matchParentSize 容器内通过 align(BottomEnd) 定位到右下角，视觉位置不变。
+    // 触控区宽度比原来多出 edgeExtendDp 并用 offset 整体右移：左缘与原 44dp 区域重合、
+    // 多出的宽度全部落在右缘之外直到屏幕边缘；offset 不影响布局测量，视觉气泡反向补偿保持原位。
+    // 注意此处不得用 onGloballyPositioned 动态测量：翻页动画期间坐标每帧变化会引发
+    // 每帧重组，扰动卷页位图与真实页的一致性（上下断层回归）。
     Box(
         modifier = Modifier.matchParentSize()
     ) {
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .offset(x = edgeExtendDp.dp)
                 .padding(
                     end = ReaderMetrics.BUBBLE_END_DP.dp,
                     bottom = ReaderMetrics.BUBBLE_BOTTOM_DP.dp
                 )
-                .size(ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp)
+                .size(
+                    width = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp + edgeExtendDp.dp,
+                    height = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp
+                )
                 .pointerInput(Unit) {
                     detectTapGestures { showPopup = !showPopup }
                 }
         ) {
-            // 视觉气泡：在触控区内右下对齐，保持原视觉位置
+            // 视觉气泡：在触控区内右下对齐并反向 offset，保持原视觉位置
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
+                    .offset(x = -edgeExtendDp.dp)
                     .size(
                         width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
                         height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp

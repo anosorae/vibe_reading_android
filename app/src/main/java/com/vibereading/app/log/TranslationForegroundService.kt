@@ -7,28 +7,33 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 
 /**
- * 翻译前台服务：翻译进行期间保持进程前台状态，避免按 Home 挂起时
+ * 翻译前台服务：翻译进行期间保持进程前台状态，避免按 Home 挂起或锁屏时
  * Android 销毁 TCP socket（日志确认 `InetDiagMessage: Destroyed live tcp sockets`）。
  *
  * 服务本身不运行翻译逻辑（翻译在 `TranslationCoordinator` 的 appScope 中进行），
- * 只持有前台通知 + partial wake lock，让网络流式连接在后台继续存活。
+ * 只持有前台通知 + partial wake lock + WiFi lock，让网络流式连接在后台继续存活。
+ * 锁屏后系统会按「WiFi 休眠策略」关闭 WiFi，PARTIAL_WAKE_LOCK 只保 CPU 不保 WiFi，
+ * 因此必须同时持有 WIFI_MODE_FULL_HIGH_PERF 锁才能保持 SSE 长连接不断。
  * 参照 legado `BaseService` / `DownloadService` 的 dataSync 前台服务模式。
  */
 class TranslationForegroundService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundCompat()
         acquireWakeLock()
+        acquireWifiLock()
         return START_STICKY
     }
 
@@ -72,13 +77,32 @@ class TranslationForegroundService : Service() {
         }
     }
 
+    /**
+     * 获取 WiFi 锁，防止锁屏后系统按「WiFi 休眠策略」关闭 WiFi 导致 TCP socket 被销毁。
+     * PARTIAL_WAKE_LOCK 只保 CPU 不保 WiFi，两者必须同时持有才能让 SSE 长连接在后台存活。
+     */
+    private fun acquireWifiLock() {
+        if (wifiLock?.isHeld == true) return
+        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return
+        wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "vibereading:translation").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
     private fun releaseWakeLock() {
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
     }
 
+    private fun releaseWifiLock() {
+        wifiLock?.takeIf { it.isHeld }?.release()
+        wifiLock = null
+    }
+
     override fun onDestroy() {
         releaseWakeLock()
+        releaseWifiLock()
         super.onDestroy()
     }
 

@@ -364,7 +364,10 @@ class ChapterPaginator(
                         val cont = isChunk
                         val en = if (isChunk) chunk!!.text
                             else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
-                        val hasTranslation = !isChunk && item.cnText.isNotBlank() && item.enText?.isNotBlank() == true
+                        // 切分片段与整段同口径：双语对的每个片段（含续段）渲染时都加
+                        // 4dp top/bottom padding 和中文气泡（ADR-004），测量必须同样计入，
+                        // 否则每片段凭空多出 8dp，页面内容逐段下移、仿真卷页起手上下断层
+                        val hasTranslation = item.cnText.isNotBlank() && item.enText?.isNotBlank() == true
                         // 续段顶格：同段跨页的延续文本不带首行缩进（渲染端同口径）
                         val paraStyle = if (cont) style.body.copy(textIndent = null) else style.body
                         val enLayout = measureLayout(en, paraStyle)
@@ -435,8 +438,13 @@ class ChapterPaginator(
      */
     private fun buildPage(units: List<PageUnit>, used: Float, indexInChapter: Int): TextPage {
         // 末段段距不占页高（渲染时页尾无段距），否则短页会假性溢出/无 slack；
-        // 插图单元同样带尾距，适用同一规则
-        val lastHasSpacing = units.lastOrNull()?.let { it is PageUnit.Para || it is PageUnit.Image } == true
+        // 插图单元同样带尾距。切分产生的首片段（splitFirst）排版与渲染都不带
+        // 尾距（渲染 bottom padding = 0），不适用该豁免，否则 realUsed 虚低、slack 虚高
+        val lastHasSpacing = when (units.lastOrNull()) {
+            is PageUnit.Para -> (units.lastOrNull() as PageUnit.Para).let { !it.splitFirst }
+            is PageUnit.Image -> true
+            else -> false
+        }
         val realUsed = if (lastHasSpacing) used - style.paragraphSpacingPx else used
         val page = TextPage(chapterId, indexInChapter, units, realUsed)
         if (!style.bottomJustify) return page

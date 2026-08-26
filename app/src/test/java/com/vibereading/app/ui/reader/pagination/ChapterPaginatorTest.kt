@@ -185,6 +185,79 @@ class ChapterPaginatorTest {
     }
 
     @Test
+    fun en_bilingualFragments_padCountedInMeasurement_pageHeightMatchesRender() {
+        // 双语对上下 4dp padding 对每个带译文的片段（含续段）都必须计入测量：
+        // 渲染端（BilingualParagraph/卷页位图）对所有片段加同一 padding，
+        // 测量漏计会让实际渲染逐段超出 usedHeight，仿真卷页起手上下断层。
+        // 段距置 0 排除干扰：usedHeight 应恰好等于 Σ(排版高 + 片段双语 padding)。
+        val cnTexts = (0 until 10).map { "中文段落 $it 的原文内容。" }
+        val enTexts = (0 until 10).map { i ->
+            ("Paragraph $i is a fairly long English sentence that wraps across several " +
+                "lines inside the content area. ").repeat(4).trim()
+        }
+        val p = ChapterPaginator(
+            1L, items(cnTexts, enTexts), style().copy(paragraphSpacingPx = 0f),
+            "en", contentWidthPx = 400f, contentHeightPx = 400f, measurer = measurer
+        )
+        assertTrue("应跨多页触发切分", p.pages.size >= 2)
+        val pad = ReaderMetrics.bilingualPadPx(1f)
+        var checkedPages = 0
+        for ((i, page) in p.pages.withIndex()) {
+            // 标题页高度单独构成，不在本断言范围
+            if (page.units.any { it is PageUnit.Title }) continue
+            checkedPages++
+            // 复刻渲染端判定：cnText 与 enText 都非空的片段渲染双语 padding + 气泡
+            val rendered = page.units.fold(0f) { acc, u ->
+                val para = u as PageUnit.Para
+                val bilingual = para.cnText.isNotBlank() && para.enText?.isNotBlank() == true
+                acc + (para.mainLayout?.size?.height?.toFloat() ?: 0f) + (if (bilingual) pad else 0f)
+            }
+            assertEquals(
+                "第 $i 页测量高度应含全部片段双语 padding（测量=渲染口径）",
+                rendered, page.usedHeightPx, 0.5f
+            )
+            assertTrue(
+                "第 $i 页渲染高度 ${rendered}px 不应超出内容区 $400px",
+                rendered <= 400f + 0.5f
+            )
+        }
+        assertTrue("应有不含标题的正文页参与断言", checkedPages > 0)
+    }
+
+    @Test
+    fun splitFirstLastPage_realUsedNotReducedByPhantomSpacing() {
+        // 以切分首片段结尾的页：排版与渲染都不带尾段距，
+        // realUsed 不应虚减一个 paragraphSpacing（否则 slack 虚高、底部对齐过度拉伸）
+        val longPara = (0 until 200).joinToString(" ") { "这是第${it}句很长很长的中文内容用来触发换行。" }
+        val p = ChapterPaginator(
+            1L, items(listOf(longPara)), style(),
+            "zh", contentWidthPx = 400f, contentHeightPx = 500f, measurer = measurer
+        )
+        assertTrue("应跨多页", p.pages.size >= 3)
+        var checked = 0
+        val spacing = style().paragraphSpacingPx
+        for (page in p.pages) {
+            // 标题块高度单独构成，不在本断言范围
+            if (page.units.any { it is PageUnit.Title }) continue
+            // 复刻渲染端高度：每个单元排版高 + 段尾距（末单元与 splitFirst 不带）
+            val lastIdx = page.units.indexOfLast { it is PageUnit.Para }
+            val rendered = page.units.foldIndexed(0f) { idx, acc, u ->
+                val para = u as? PageUnit.Para ?: return@foldIndexed acc
+                val spacer = if (idx != lastIdx && !para.splitFirst) spacing else 0f
+                acc + (para.mainLayout?.size?.height?.toFloat() ?: 0f) + spacer
+            }
+            val last = page.units.lastOrNull() as? PageUnit.Para ?: continue
+            if (!last.splitFirst) continue
+            checked++
+            assertEquals(
+                "splitFirst 结尾的页 realUsed 应等于渲染高度",
+                rendered, page.usedHeightPx, 0.5f
+            )
+        }
+        assertTrue("应存在以切分首片段结尾的页", checked > 0)
+    }
+
+    @Test
     fun zh_continuationChunk_hasNoFirstLineIndent() {
         // 跨页续排的续段顶格（无首行缩进），首片段保留缩进（ADR-004）
         val indented = style().copy(

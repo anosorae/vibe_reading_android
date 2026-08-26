@@ -45,6 +45,7 @@ import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.DictPopup
 import com.vibereading.app.ui.reader.components.ExplainPopup
+import com.vibereading.app.ui.reader.components.IllustrationPreviewOverlay
 import com.vibereading.app.ui.reader.components.PageInfoOverlays
 import com.vibereading.app.ui.reader.components.LlmSettingsSheet
 import com.vibereading.app.ui.reader.components.ReaderSettingsSheet
@@ -211,6 +212,9 @@ fun ReaderScreen(
     val pagerState = rememberPagerState(initialPage = 0) { window.pageCount }
     val scope = rememberCoroutineScope()
     val simFlip = remember { SimFlipState() }
+
+    // 全屏插图预览（ADR-002 D5）：非空 = 预览叠加层可见；视觉叠加层，不参与排版
+    var previewIllustrationPath by remember { mutableStateOf<String?>(null) }
     // 仿真卷页动画协程句柄：新手势/切模式时取消旧动画，防止新旧 touchX/Y 互相干扰
     var simFlipJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     // 长按选词状态（瞬时交互：翻页/滚动/切章/开浮层时清除）
@@ -336,11 +340,13 @@ fun ReaderScreen(
     fun curlBitmaps(cur: Int, target: Int): Pair<Bitmap, Bitmap>? {
         val curBmp = renderPageBitmap(
             window, cur, state.mode, pageStyle, geometry, palette, density,
-            bgColor.toArgb(), accentColor.toArgb(), measurer
+            bgColor.toArgb(), accentColor.toArgb(), measurer,
+            imageResolver = { path, w -> com.vibereading.app.data.image.BookImageStore.loadBitmap(path, w) }
         ) ?: return null
         val targetBmp = renderPageBitmap(
             window, target, state.mode, pageStyle, geometry, palette, density,
-            bgColor.toArgb(), accentColor.toArgb(), measurer
+            bgColor.toArgb(), accentColor.toArgb(), measurer,
+            imageResolver = { path, w -> com.vibereading.app.data.image.BookImageStore.loadBitmap(path, w) }
         )
         if (targetBmp == null) { curBmp.recycle(); return null }
         return curBmp to targetBmp
@@ -966,7 +972,8 @@ fun ReaderScreen(
                         navBarPx = navBarPx,
                         simFlip = simFlip,
                         // 卷页动画进行中或菜单栏显示时禁用长按选词
-                        selectionState = if (simFlip.isRunning || anyOverlayVisible) null else selectionState
+                        selectionState = if (simFlip.isRunning || anyOverlayVisible) null else selectionState,
+                        onIllustrationClick = { previewIllustrationPath = it }
                     )
                 }
             }
@@ -997,7 +1004,8 @@ fun ReaderScreen(
                             pendingJumpChapter = id
                             vm.navigateTo(id, 0)
                         },
-                        selectionState = if (anyOverlayVisible) null else selectionState
+                        selectionState = if (anyOverlayVisible) null else selectionState,
+                        onIllustrationClick = { previewIllustrationPath = it }
                     )
                 }
             }
@@ -1158,6 +1166,11 @@ fun ReaderScreen(
                 pageStyle = pageStyle,
                 onDismiss = { vm.dismissExplainPopup() }
             )
+        }
+
+        // ── 全屏插图预览（最上层；单击关闭，双指缩放） ──
+        previewIllustrationPath?.let { path ->
+            IllustrationPreviewOverlay(path = path) { previewIllustrationPath = null }
         }
     }
 

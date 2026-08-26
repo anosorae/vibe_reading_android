@@ -1,6 +1,7 @@
 package com.vibereading.app.ui.reader.content
 
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.domain.parser.ReadingContentParser
 
 /**
@@ -10,13 +11,17 @@ import com.vibereading.app.domain.parser.ReadingContentParser
  * [Chapter.content] 的 UTF-16 字符偏移计。合法双语段落使用原文范围；无法由
  * marker 绑定原文的译文保留在内容列表中，并使用 -1 表示「没有原文范围」，
  * 绝不把它伪造成章节开头 offset=0。
+ *
+ * [illustration] 非空表示本段是插图段（ADR-002 D3）：整段就是一个插图链接，
+ * 双语两侧共用同一张图、无气泡、不参与翻译/选词。
  */
 data class ReadingParagraph(
     val index: Int,
     val sourceText: String,
     val translatedText: String? = null,
     val sourceStartOffset: Int,
-    val sourceEndOffset: Int
+    val sourceEndOffset: Int,
+    val illustration: IllustrationLink? = null
 ) {
     val hasSourceOffset: Boolean
         get() = sourceStartOffset >= 0 && sourceEndOffset >= sourceStartOffset
@@ -35,13 +40,17 @@ data class ReadingContent(
         fun fromChapter(chapter: Chapter): ReadingContent {
             val originals = ReadingContentParser.parseOriginalParagraphs(chapter.content)
             val translation = chapter.translatedContent?.takeIf { it.isNotBlank() }
+            // 插图段判定只看原文；即使模型对空洞编号回了散落译文也不当作文本显示
+            fun illustrationOf(text: String): IllustrationLink? =
+                IllustrationLink.parse(text.trim())
             val paragraphs = if (translation == null) {
                 originals.mapIndexed { index, paragraph ->
                     ReadingParagraph(
                         index = index,
                         sourceText = paragraph.text,
                         sourceStartOffset = paragraph.startOffset,
-                        sourceEndOffset = paragraph.endOffset
+                        sourceEndOffset = paragraph.endOffset,
+                        illustration = illustrationOf(paragraph.text)
                     )
                 }
             } else {
@@ -49,13 +58,17 @@ data class ReadingContent(
                 ReadingContentParser.parseBilingualParagraphs(translation, chapter.content)
                     .mapIndexed { index, pair ->
                         val original = pair.original
+                        val illustration = original?.text?.let { illustrationOf(it) }
                         ReadingParagraph(
                             index = index,
                             sourceText = original?.text.orEmpty(),
-                            translatedText = pair.translatedText.takeIf { it.isNotBlank() },
+                            translatedText = if (illustration != null) null else {
+                                pair.translatedText.takeIf { it.isNotBlank() }
+                            },
                             // -1 是无原文范围的兼容哨兵，供旧的 Int offset API 使用。
                             sourceStartOffset = original?.startOffset ?: NO_SOURCE_OFFSET,
-                            sourceEndOffset = original?.endOffset ?: NO_SOURCE_OFFSET
+                            sourceEndOffset = original?.endOffset ?: NO_SOURCE_OFFSET,
+                            illustration = illustration
                         )
                     }
             }

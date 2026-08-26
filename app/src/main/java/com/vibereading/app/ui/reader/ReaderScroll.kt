@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.ReadingChapterTitle
+import com.vibereading.app.ui.reader.components.ReadingIllustrationBlock
 import com.vibereading.app.ui.reader.components.ReadingParagraphItem
 import com.vibereading.app.ui.reader.components.ParagraphKey
 import com.vibereading.app.ui.reader.components.TextSelectionState
@@ -88,7 +89,8 @@ fun ScrollReader(
     statusBarPx: Int,
     navBarPx: Int,
     onJumpChapter: (Long) -> Unit,
-    selectionState: TextSelectionState? = null
+    selectionState: TextSelectionState? = null,
+    onIllustrationClick: ((String) -> Unit)? = null
 ) {
     val density = LocalDensity.current
     // 内容区顶部/底部扣除系统栏高度（用缓存值，沉浸式切换不触发滚动内容跳动）
@@ -110,14 +112,23 @@ fun ScrollReader(
                 is ScrollItem.Paragraph -> "para-${item.chapterId}-${item.paragraph.index}"
             }
         }) { _, item ->
-            when (item) {
-                is ScrollItem.Title -> ReadingChapterTitle(
+            when {
+                item is ScrollItem.Title -> ReadingChapterTitle(
                     section = item.section,
                     title = item.title,
                     palette = palette,
                     pageStyle = pageStyle
                 )
-                is ScrollItem.Paragraph -> ReadingParagraphItem(
+                // 插图段（ADR-002）：双语两侧共用同一张图，无气泡不参与选词
+                item is ScrollItem.Paragraph && item.paragraph.illustration != null ->
+                    ReadingIllustrationBlock(
+                        link = item.paragraph.illustration!!,
+                        showSpacer = true,
+                        onClick = if (onIllustrationClick != null) {
+                            { onIllustrationClick(item.paragraph.illustration!!.path) }
+                        } else null
+                    )
+                item is ScrollItem.Paragraph -> ReadingParagraphItem(
                     paragraph = item.paragraph,
                     mode = state.mode,
                     pageStyle = pageStyle,

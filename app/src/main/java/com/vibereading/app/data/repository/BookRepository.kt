@@ -46,14 +46,16 @@ class BookRepository(private val bookDao: BookDao) {
         id = id, title = title, filePath = filePath,
         totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
-        lastReadAt = lastReadAt, languageMode = languageMode, createdAt = createdAt
+        lastReadAt = lastReadAt, languageMode = languageMode,
+        format = format, coverPath = coverPath, createdAt = createdAt
     )
 
     private fun Book.toEntity() = BookEntity(
         id = id, title = title, filePath = filePath,
         totalChapters = totalChapters,
         lastReadChapterId = lastReadChapterId, lastReadOffset = lastReadOffset,
-        lastReadAt = lastReadAt, languageMode = languageMode, createdAt = createdAt
+        lastReadAt = lastReadAt, languageMode = languageMode,
+        format = format, coverPath = coverPath, createdAt = createdAt
     )
 
     private fun BookWithProgress.toShelfItem() = BookShelfItem(

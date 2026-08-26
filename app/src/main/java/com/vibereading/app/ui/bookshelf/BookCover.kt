@@ -1,5 +1,7 @@
 package com.vibereading.app.ui.bookshelf
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -16,21 +19,62 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import androidx.compose.ui.text.style.TextAlign
+import com.vibereading.app.data.image.BookImageStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
- * 默认封面：按书名 hash 从色板选一组渐变色 → 横排书名 → 书脊高光 + 圆角 + 阴影。
+ * 书架封面：有 [coverPath]（EPUB 内置封面落盘，ADR-002 D6）时加载真实封面，
+ * 失败/为空回退程序化渐变占位（按书名 hash 选色 → 横排书名 → 书脊高光）。
  */
 @Composable
 fun BookCover(
     title: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    coverPath: String? = null
 ) {
+    val bitmap = coverPath?.let { path ->
+        produceState<android.graphics.Bitmap?>(initialValue = null, key1 = path) {
+            value = withContext(Dispatchers.IO) {
+                try {
+                    BookImageStore.coverFile(path).takeIf { it.exists() }
+                        ?.let { BitmapFactory.decodeFile(it.absolutePath) }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }.value
+    }
+
+    Box(modifier = modifier) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .shadow(2.dp, RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(6.dp))
+            )
+        } else {
+            GradientCover(title = title, modifier = Modifier.fillMaxSize())
+        }
+    }
+}
+
+/** 渐变占位封面：按书名 hash 从色板选一组渐变色 → 横排书名 → 书脊高光。 */
+@Composable
+private fun GradientCover(title: String, modifier: Modifier = Modifier) {
     val palette = CoverPalettes.PALETTE
     val (from, to) = palette[(title.hashCode() % palette.size + palette.size) % palette.size]
 

@@ -159,6 +159,9 @@ dependencies {
     // JSON
     implementation("com.google.code.gson:gson:2.11.0")
 
+    // HTML/XML 解析（EPUB 正文提取；ADR-002）
+    implementation("org.jsoup:jsoup:1.18.3")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 

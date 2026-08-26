@@ -168,7 +168,9 @@ fun BookshelfScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { fileLauncher.launch(arrayOf("text/plain")) },
+                onClick = { // TXT 与 EPUB 一起可选（ADR-002）；部分文件管理器对 epub 上报的 MIME 不规范，
+        // 同时给出具体类型与通配扩展名兜底
+        fileLauncher.launch(arrayOf("text/plain", "application/epub+zip", "*/*")) },
                 containerColor = accentColor,
                 contentColor = androidx.compose.ui.graphics.Color.White
             ) {
@@ -202,7 +204,7 @@ fun BookshelfScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "点击右下角 + 上传 TXT 书籍",
+                        "点击右下角 + 上传 TXT / EPUB 书籍",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -454,6 +456,7 @@ private fun BookRow(
     ) {
         BookCover(
             title = book.title,
+            coverPath = book.coverPath,
             modifier = Modifier.width(56.dp).height(76.dp)
         )
 
@@ -542,6 +545,7 @@ private fun BookGridCard(
         ) {
             BookCover(
                 title = book.title,
+                coverPath = book.coverPath,
                 modifier = Modifier.fillMaxSize()
             )
 

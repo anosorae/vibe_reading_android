@@ -207,14 +207,27 @@ class BookWindow(
                     errorMessage = content.errorMessage
                 ))
                 content.paragraphs.forEach { paragraph ->
-                    add(FlowItem.Para(
-                        chapterId = content.chapterId,
-                        paraIndex = paragraph.index,
-                        cnText = paragraph.sourceText,
-                        enText = paragraph.translatedText,
-                        sourceStartOffset = paragraph.sourceStartOffset,
-                        sourceEndOffset = paragraph.sourceEndOffset
-                    ))
+                    val illustration = paragraph.illustration
+                    if (illustration != null) {
+                        add(FlowItem.Image(
+                            chapterId = content.chapterId,
+                            paraIndex = paragraph.index,
+                            path = illustration.path,
+                            imageWidthPx = illustration.widthPx,
+                            imageHeightPx = illustration.heightPx,
+                            sourceStartOffset = paragraph.sourceStartOffset,
+                            sourceEndOffset = paragraph.sourceEndOffset
+                        ))
+                    } else {
+                        add(FlowItem.Para(
+                            chapterId = content.chapterId,
+                            paraIndex = paragraph.index,
+                            cnText = paragraph.sourceText,
+                            enText = paragraph.translatedText,
+                            sourceStartOffset = paragraph.sourceStartOffset,
+                            sourceEndOffset = paragraph.sourceEndOffset
+                        ))
+                    }
                 }
             }
         }

@@ -1,11 +1,13 @@
 package com.vibereading.app.ui.bookshelf
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.SettingsRepository
@@ -13,10 +15,13 @@ import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.Book
 import com.vibereading.app.domain.model.BookShelfItem
 import com.vibereading.app.domain.model.ThemeSettings
+import com.vibereading.app.domain.parser.EpubParser
 import com.vibereading.app.domain.parser.TxtParser
 import com.vibereading.app.log.AppLog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 书架排序方式。 */
 object ShelfSort {
@@ -113,28 +118,15 @@ class BookshelfViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw Exception("无法读取文件")
-
-                val text = TxtParser.decodeBytes(bytes)
-                val chapterDicts = TxtParser.parseText(text)
-                if (chapterDicts.isEmpty()) throw Exception("未识别到任何章节")
-
-                // Extract title from URI — use ContentResolver for reliable name
-                val title = queryFileName(context, uri)
-                    .removeSuffix(".txt").removeSuffix(".TXT")
-                    .ifBlank { "未知书名" }
-
-                val bookId = bookRepo.insert(Book(title = title, totalChapters = chapterDicts.size))
-                val chapters = TxtParser.toChapters(bookId, chapterDicts)
-                chapterRepo.insertAll(chapters)
-
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        uploadMessage = "「$title」上传成功，共 ${chapterDicts.size} 章"
-                    )
+                val fileName = queryFileName(context, uri)
+                // 解码/解析/落盘都在 IO 线程；Room suspend DAO 线程安全
+                val message = withContext(Dispatchers.IO) {
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw Exception("无法读取文件")
+                    if (fileName.endsWith(".epub", ignoreCase = true)) importEpub(bytes, fileName)
+                    else importTxt(bytes, fileName)
                 }
+                _uiState.update { it.copy(isLoading = false, uploadMessage = message) }
             } catch (e: Exception) {
                 AppLog.put("书籍上传失败", e)
                 _uiState.update {
@@ -144,8 +136,58 @@ class BookshelfViewModel(
         }
     }
 
+    /** TXT 导入：解码 → 分章 → 入库（原有路径，保持不变）。 */
+    private suspend fun importTxt(bytes: ByteArray, fileName: String): String {
+        val text = TxtParser.decodeBytes(bytes)
+        val chapterDicts = TxtParser.parseText(text)
+        if (chapterDicts.isEmpty()) throw Exception("未识别到任何章节")
+
+        val title = fileName.removeSuffix(".txt").removeSuffix(".TXT")
+            .ifBlank { "未知书名" }
+
+        val bookId = bookRepo.insert(Book(title = title, totalChapters = chapterDicts.size))
+        chapterRepo.insertAll(TxtParser.toChapters(bookId, chapterDicts))
+        return "「$title」上传成功，共 ${chapterDicts.size} 章"
+    }
+
+    /**
+     * EPUB 导入（ADR-002 D1）：一次性解包转换为纯文本章节入库，不保留原文件。
+     * 图片在导入期落盘私有目录（BookImageStore），封面写入 books.coverPath。
+     */
+    private suspend fun importEpub(bytes: ByteArray, fileName: String): String {
+        val parsed = EpubParser.parse(bytes) { imageBytes ->
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) opts.outWidth to opts.outHeight else null
+        }
+        if (parsed.chapters.isEmpty()) throw Exception("EPUB 没有可读章节")
+
+        val title = parsed.meta.title?.takeIf { it.isNotBlank() }
+            ?: fileName.removeSuffix(".epub").ifBlank { "未知书名" }
+
+        val bookId = bookRepo.insert(
+            Book(title = title, totalChapters = parsed.chapters.size, format = "epub")
+        )
+        val nameByHref = BookImageStore.saveImages(bookId, parsed.images) { href ->
+            val ext = href.substringAfterLast('.', "")
+            if (ext.length in 1..5) ".$ext" else ".jpg"
+        }
+        parsed.coverBytes?.let { BookImageStore.saveCover(bookId, it) }?.let { coverPath ->
+            bookRepo.getBookByIdOnce(bookId)?.let { book -> bookRepo.update(book.copy(coverPath = coverPath)) }
+        }
+        val dicts = EpubParser.toChapterDicts(bookId, parsed) { href -> nameByHref[href] }
+        chapterRepo.insertAll(TxtParser.toChapters(bookId, dicts))
+        return "「$title」导入成功，共 ${parsed.chapters.size} 章"
+    }
+
     fun deleteBook(bookId: Long) {
         viewModelScope.launch {
+            // 先清插图/封面磁盘文件再删库记录（ADR-002 D3）
+            try {
+                BookImageStore.deleteBookFiles(bookId)
+            } catch (e: Exception) {
+                AppLog.put("删书清理图片失败 bookId=$bookId", e)
+            }
             bookRepo.delete(bookId)
         }
     }

@@ -3,6 +3,7 @@ package com.vibereading.app.data.remote
 import com.google.gson.Gson
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.WordExplanation
+import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.domain.parser.ReadingContentParser.splitParagraphs
 import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.CancellationException
@@ -120,9 +121,12 @@ class LlmApiService : TranslationService {
         chapterContent: String,
         prevChapterEnglish: String? = null
     ): String {
+        // 插图段（ADR-002 D4）保留编号但剔除内容：prompt 出现编号空洞，模型输出自然缺失
+        // 该标记，由 parseBilingualParagraphs 的「缺失标记→保留原文」兜底接住，解析器零改动。
         val paragraphs = splitParagraphs(chapterContent)
-            .mapIndexed { i, p -> "[${i + 1}] ${p.trim()}" }
-            .joinToString("\n")
+            .mapIndexed { i, p -> (i + 1) to p }
+            .filterNot { (_, p) -> IllustrationLink.parse(p.trim()) != null }
+            .joinToString("\n") { (n, p) -> "[$n] ${p.trim()}" }
 
         val sb = StringBuilder()
         if (prevChapterEnglish != null) {

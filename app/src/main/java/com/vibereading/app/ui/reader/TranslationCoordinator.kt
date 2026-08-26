@@ -5,6 +5,8 @@ import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.domain.parser.IllustrationLink
+import com.vibereading.app.domain.parser.ReadingContentParser
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.TranslationForegroundService
 import android.content.Context
@@ -85,6 +87,22 @@ class TranslationCoordinator(
                     val msg = "章节过长 (${chapter.content.length} 字符)"
                     chapterRepo.markTooLong(bookId, chapterId, msg)
                     _state.update { it.copy(phase = TranslationPhase.FAILED, errorMessage = msg) }
+                    return@launch
+                }
+
+                // 纯插图/空章节（ADR-002）：没有可翻译的文本段（全部是空白或插图链接）
+                // 时不调 API——空 prompt 会让模型输出「请提供文本」之类的无意义寒暄。
+                // 直接走 start→complete 落 DONE，空译文读取侧回退原文（插图照常渲染）。
+                val hasTranslatableText = ReadingContentParser.splitParagraphs(chapter.content)
+                    .any { p ->
+                        val trimmed = p.trim()
+                        trimmed.isNotEmpty() && IllustrationLink.parse(trimmed) == null
+                    }
+                if (!hasTranslatableText) {
+                    if (chapterRepo.startTranslation(bookId, chapterId, run)) {
+                        chapterRepo.completeTranslation(bookId, chapterId, run, "")
+                    }
+                    _state.update { it.copy(isStreaming = false, phase = TranslationPhase.IDLE) }
                     return@launch
                 }
 

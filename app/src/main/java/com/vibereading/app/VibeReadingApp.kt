@@ -1,6 +1,7 @@
 package com.vibereading.app
 
 import android.app.Application
+import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.data.local.AppDatabase
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.CrashHandler
@@ -38,6 +39,7 @@ class VibeReadingApp : Application() {
         AppLog.init(this)
         LogUtils.init(this)
         LogUtils.logDeviceInfo()
+        BookImageStore.init(this)
         TranslationForegroundService.createNotificationChannel(this)
         super.onCreate()
     }

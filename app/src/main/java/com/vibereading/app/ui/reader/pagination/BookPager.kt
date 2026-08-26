@@ -13,10 +13,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -35,8 +37,10 @@ import com.vibereading.app.ui.reader.ReaderPageGeometry
 import com.vibereading.app.ui.reader.components.BilingualParagraph
 import com.vibereading.app.ui.reader.components.ParagraphKey
 import com.vibereading.app.ui.reader.components.ReadingChapterTitle
+import com.vibereading.app.ui.reader.components.ReadingIllustrationBlock
 import com.vibereading.app.ui.reader.components.SelectableParagraphText
 import com.vibereading.app.ui.reader.components.TextSelectionState
+import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.ui.theme.VibeColors
 import java.util.Locale
 
@@ -232,7 +236,8 @@ fun ReaderPager(
     statusBarPx: Int,
     navBarPx: Int,
     simFlip: SimFlipState,
-    selectionState: TextSelectionState? = null
+    selectionState: TextSelectionState? = null,
+    onIllustrationClick: ((String) -> Unit)? = null
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -258,7 +263,8 @@ fun ReaderPager(
                     paddingV = paddingV,
                     statusBarPx = statusBarPx,
                     navBarPx = navBarPx,
-                    selectionState = selectionState
+                    selectionState = selectionState,
+                    onIllustrationClick = onIllustrationClick
                 )
             }
         }
@@ -328,7 +334,8 @@ fun PageRenderer(
     paddingV: Int,
     statusBarPx: Int,
     navBarPx: Int,
-    selectionState: TextSelectionState? = null
+    selectionState: TextSelectionState? = null,
+    onIllustrationClick: ((String) -> Unit)? = null
 ) {
     val density = LocalDensity.current
 
@@ -344,8 +351,8 @@ fun PageRenderer(
         contentAlignment = Alignment.TopStart
     ) {
         // 末段段距不渲染（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx），
-        // 否则渲染高度溢出内容区，底行被盒子裁剪
-        val lastParaIdx = units.indexOfLast { it is PageUnit.Para }
+        // 否则渲染高度溢出内容区，底行被盒子裁剪；插图单元同样带尾距
+        val lastSpacedIdx = units.indexOfLast { it is PageUnit.Para || it is PageUnit.Image }
         // 自定义 Layout：以无界高度测量子元素，再从上到下放置；
         // 排版高度因 lineHeight 修改 / dp→px 舍入可能微溢 contentHeightPx 几像素，
         // 普通 Column 会以剩余高度=0 戋断末子元素；此 Layout 允许内容微溢至 Box
@@ -360,8 +367,21 @@ fun PageRenderer(
                             palette = palette,
                             pageStyle = pageStyle
                         )
+                        is PageUnit.Image -> {
+                            val isLastSpaced = idx == lastSpacedIdx
+                            ReadingIllustrationBlock(
+                                link = IllustrationLink(
+                                    path = unit.path,
+                                    widthPx = unit.displayWidthPx.toInt().coerceAtLeast(1),
+                                    heightPx = unit.displayHeightPx.toInt().coerceAtLeast(1)
+                                ),
+                                showSpacer = !isLastSpaced,
+                                fixedDisplayHeightPx = unit.displayHeightPx,
+                                onClick = onIllustrationClick?.let { cb -> { cb(unit.path) } }
+                            )
+                        }
                         is PageUnit.Para -> {
-                            val isLastPara = idx == lastParaIdx
+                            val isLastPara = idx == lastSpacedIdx
                             val key = ParagraphKey(unit.chapterId, unit.paraIndex)
                             if (mode == "zh") {
                                 // zh 模式：mainLayout 即中文排版，直接渲染 cnText（无气泡）
@@ -467,7 +487,8 @@ fun renderPageBitmap(
     density: androidx.compose.ui.unit.Density,
     bgColorArgb: Int,
     sectionColorArgb: Int,
-    measurer: TextMeasurer? = null
+    measurer: TextMeasurer? = null,
+    imageResolver: ((path: String, targetWidth: Int) -> Bitmap?)? = null
 ): Bitmap? {
     val units = window.pageUnits(page)
     if (units.isEmpty()) return null
@@ -504,7 +525,7 @@ fun renderPageBitmap(
         var cursorY = 0f
 
         // 末段段距不渲染（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx）
-        val lastParaIdx = units.indexOfLast { it is PageUnit.Para }
+        val lastSpacedIdx = units.indexOfLast { it is PageUnit.Para || it is PageUnit.Image }
         // 与 Compose 布局保持同一整像素舍入口径：Modifier.padding 内部按 roundToPx(dp) 取整，
         // 位图若用浮点 dp*density 累加，每段（双语 padding + 段距）会比真实页少 1~1.5px，
         // 整页累积后正文逐段偏移（亚像素漂移）。间距统一先 round 成 Int 再累加。
@@ -533,8 +554,43 @@ fun renderPageBitmap(
                     cursorY += padPx(ReaderMetrics.TITLE_BOTTOM_DP)
                 }
 
+                is PageUnit.Image -> {
+                    val isLastSpaced = idx == lastSpacedIdx
+                    // 卷页位图同步解码（BookImageStore 内存缓存命中时零开销）；失败画占位框
+                    val bmp = imageResolver?.invoke(
+                        unit.path,
+                        unit.displayWidthPx.toInt().coerceAtLeast(1)
+                    )
+                    val left = (contentWidthPx - unit.displayWidthPx) / 2f
+                    val wInt = unit.displayWidthPx.toInt().coerceAtLeast(1)
+                    val hInt = unit.displayHeightPx.toInt().coerceAtLeast(1)
+                    // createScaledBitmap 尺寸相同时返回原对象，不额外分配
+                    val scaled = bmp?.let {
+                        try {
+                            android.graphics.Bitmap.createScaledBitmap(it, wInt, hInt, true)
+                                .asImageBitmap()
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    if (scaled != null) {
+                        canvas.drawImage(scaled, Offset(left, cursorY), Paint())
+                    } else {
+                        val placeholder = Paint().apply {
+                            isAntiAlias = true
+                            color = palette.bodyText.copy(alpha = 0.10f)
+                        }
+                        canvas.drawRect(
+                            Rect(left, cursorY, left + unit.displayWidthPx, cursorY + unit.displayHeightPx),
+                            placeholder
+                        )
+                    }
+                    cursorY += unit.displayHeightPx
+                    cursorY += if (isLastSpaced) 0f else paragraphSpacingInt.toFloat()
+                }
+
                 is PageUnit.Para -> {
-                    val isLastPara = idx == lastParaIdx
+                    val isLastPara = idx == lastSpacedIdx
                     val hasTranslation = mode == "en" && unit.enText?.isNotBlank() == true
                     // lineHeightExtraPx > 0 时用调整后的 lineHeight 重新测量，
                     // 与 PageRenderer 的 Text(style=bodyStyle) 排版一致，避免卷页时行距跳变

@@ -113,6 +113,7 @@ class ChapterPaginatorTest {
                 acc + when (it) {
                     is PageUnit.Title -> (it.section?.let { 21f + 6f } ?: 0f) + 28f + 16f * 2.2f + 10f
                     is PageUnit.Para -> (it.mainLayout?.size?.height?.toFloat() ?: 0f) + 10f
+                    is PageUnit.Image -> it.displayHeightPx + 10f
                 }
             }
             assertTrue("第 $i 页(${height}) 超出内容高度 $500", height <= 500f + 0.5f)

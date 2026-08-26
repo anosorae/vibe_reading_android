@@ -120,6 +120,22 @@ sealed class FlowItem {
             sourceEndOffset = sourceEndOffset
         )
     }
+
+    /**
+     * 插图段（ADR-002 D3/D5）：固定高度内容单元，排版按链接内尺寸整图适配
+     * 内容区（超高整体缩小到单页内，不跨页拆条带）。
+     */
+    data class Image(
+        override val chapterId: Long,
+        val paraIndex: Int,
+        /** 插图链接键 `{bookId}/{fileName}`，渲染端解析到私有目录。 */
+        val path: String,
+        /** 链接内声明的原始像素尺寸。 */
+        val imageWidthPx: Int,
+        val imageHeightPx: Int,
+        val sourceStartOffset: Int = 0,
+        val sourceEndOffset: Int = sourceStartOffset
+    ) : FlowItem()
 }
 
 /** 单页显示单元（排版完成后的结果）。 */
@@ -149,6 +165,18 @@ sealed class PageUnit {
         val sourceStartOffset: Int = 0,
         val sourceEndOffset: Int = sourceStartOffset + cnText.length
     ) : PageUnit()
+
+    /** 插图单元：排版期已按内容区整图适配好的显示尺寸。 */
+    data class Image(
+        override val chapterId: Long,
+        val paraIndex: Int,
+        val path: String,
+        /** 适配后的显示像素尺寸（宽 ≤ 内容宽，高 ≤ 内容高）。 */
+        val displayWidthPx: Float,
+        val displayHeightPx: Float,
+        val sourceStartOffset: Int = 0,
+        val sourceEndOffset: Int = sourceStartOffset
+    ) : PageUnit()
 }
 
 /** 单页排版结果。 */
@@ -157,16 +185,34 @@ data class TextPage(
     val indexInChapter: Int,
     val units: List<PageUnit>,
     val usedHeightPx: Float,
-    /** 本页覆盖的原文范围（标题页或空页为 null）。 */
-    val sourceStartOffset: Int? = units
-        .filterIsInstance<PageUnit.Para>()
-        .filter { it.sourceStartOffset >= 0 && it.sourceEndOffset >= it.sourceStartOffset }
-        .minOfOrNull { it.sourceStartOffset },
-    val sourceEndOffset: Int? = units
-        .filterIsInstance<PageUnit.Para>()
-        .filter { it.sourceStartOffset >= 0 && it.sourceEndOffset >= it.sourceStartOffset }
-        .maxOfOrNull { it.sourceEndOffset }
+    /** 本页覆盖的原文范围（标题页或空页为 null）；段落与插图单元都参与范围计算。 */
+    val sourceStartOffset: Int? = pageSourceRange(units).first,
+    val sourceEndOffset: Int? = pageSourceRange(units).second
 )
+
+/** 页内带原文范围的单元（Para/Image）的 [start, end) 汇总。 */
+private fun pageSourceRange(units: List<PageUnit>): Pair<Int?, Int?> {
+    var start: Int? = null
+    var end: Int? = null
+    units.forEach { unit ->
+        when (unit) {
+            is PageUnit.Para -> {
+                if (unit.sourceStartOffset >= 0 && unit.sourceEndOffset >= unit.sourceStartOffset) {
+                    start = minOf(start ?: unit.sourceStartOffset, unit.sourceStartOffset)
+                    end = maxOf(end ?: unit.sourceEndOffset, unit.sourceEndOffset)
+                }
+            }
+            is PageUnit.Image -> {
+                if (unit.sourceStartOffset >= 0 && unit.sourceEndOffset >= unit.sourceStartOffset) {
+                    start = minOf(start ?: unit.sourceStartOffset, unit.sourceStartOffset)
+                    end = maxOf(end ?: unit.sourceEndOffset, unit.sourceEndOffset)
+                }
+            }
+            else -> {}
+        }
+    }
+    return start to end
+}
 
 /** 切段续排状态：超长段的第一段已排完，剩余文本随 [para] 进入下一页。 */
 private data class PendingChunk(
@@ -249,6 +295,20 @@ class ChapterPaginator(
                     if (units.isNotEmpty() && used + h > contentHeightPx) pageDone()
                     units += PageUnit.Title(item.chapterId, item.section, item.title, item.status, item.errorMessage, sectionLayout, titleLayout)
                     used += h
+                    pos++
+                }
+
+                is FlowItem.Image -> {
+                    // 插图（ADR-002 D5）：整图适配内容区，超高整体缩小，绝不跨页拆条带；
+                    // 剩余高度放不下则整图移下一页（适配后高 ≤ contentHeightPx，必能放下）
+                    val (dw, dh) = fitImage(item.imageWidthPx, item.imageHeightPx, contentWidthPx, contentHeightPx)
+                    if (units.isNotEmpty() && dh > contentHeightPx - used) pageDone()
+                    units += PageUnit.Image(
+                        item.chapterId, item.paraIndex, item.path, dw, dh,
+                        sourceStartOffset = item.sourceStartOffset,
+                        sourceEndOffset = item.sourceEndOffset
+                    )
+                    used += dh + style.paragraphSpacingPx
                     pos++
                 }
 
@@ -374,8 +434,10 @@ class ChapterPaginator(
      * 含章节标题的页不底部对齐（标题块本身留有留白，拉伸正文会突兀）。
      */
     private fun buildPage(units: List<PageUnit>, used: Float, indexInChapter: Int): TextPage {
-        // 末段段距不占页高（渲染时页尾无段距），否则短页会假性溢出/无 slack
-        val realUsed = if (units.lastOrNull() is PageUnit.Para) used - style.paragraphSpacingPx else used
+        // 末段段距不占页高（渲染时页尾无段距），否则短页会假性溢出/无 slack；
+        // 插图单元同样带尾距，适用同一规则
+        val lastHasSpacing = units.lastOrNull()?.let { it is PageUnit.Para || it is PageUnit.Image } == true
+        val realUsed = if (lastHasSpacing) used - style.paragraphSpacingPx else used
         val page = TextPage(chapterId, indexInChapter, units, realUsed)
         if (!style.bottomJustify) return page
         if (units.any { it is PageUnit.Title }) return page
@@ -425,6 +487,17 @@ class ChapterPaginator(
     }
 
     companion object {
+        /**
+         * 整图适配：等比缩放到 maxW×maxH 内（只缩小不放大），返回显示尺寸。
+         * 尺寸非法时按 4:3 占位，保证链接语法完整但内容异常的插图仍可渲染。
+         */
+        fun fitImage(imageW: Int, imageH: Int, maxW: Float, maxH: Float): Pair<Float, Float> {
+            if (imageW <= 0 || imageH <= 0 || maxW <= 0f || maxH <= 0f) {
+                return maxW.coerceAtLeast(1f) to (maxW.coerceAtLeast(1f) * 0.75f).coerceAtMost(maxH.coerceAtLeast(1f))
+            }
+            val scale = minOf(maxW / imageW, maxH / imageH)
+            return (imageW * scale).coerceAtLeast(1f) to (imageH * scale).coerceAtLeast(1f)
+        }
     }
 }
 

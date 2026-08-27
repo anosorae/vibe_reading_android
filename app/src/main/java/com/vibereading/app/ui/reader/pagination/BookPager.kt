@@ -623,13 +623,16 @@ fun renderPageBitmap(
                         val text = if (mode == "zh") unit.cnText.ifBlank { unit.enText.orEmpty() }
                             else (unit.enText ?: unit.cnText)
                         val cw = contentWidthPx.coerceAtLeast(1)
+                        // 与渲染端 SelectableParagraphText 同口径：无 CJK 的 Justify 文本剥离
+                        // 非零字间距（Android 15 平台回归），位图与真实页排版逐像素一致
+                        val effectiveStyle = CjkJustifier.adjustLatinTextStyle(text, adjustedStyle)
                         // 中文两端对齐：与 PageRenderer 的 SelectableParagraphText 同口径生成字距 span
                         val annotated = CjkJustifier.annotate(
-                            text, adjustedStyle, cw, measurer, unit.paragraphContinues
+                            text, effectiveStyle, cw, measurer, unit.paragraphContinues
                         )
                         measurer.measure(
                             text = annotated,
-                            style = adjustedStyle,
+                            style = effectiveStyle,
                             constraints = Constraints(minWidth = cw, maxWidth = cw)
                         )
                     } else unit.mainLayout

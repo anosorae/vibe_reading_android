@@ -278,18 +278,22 @@ fun SelectableParagraphText(
     contentWidthPx: Int = 0,
     justifyLastLine: Boolean = false
 ) {
-    // 中文两端对齐（CjkJustifier 内部门控：非 Justify/无 CJK 时原样返回纯文本）
+    // 中文两端对齐（CjkJustifier 内部门控：非 Justify/无 CJK 时原样返回纯文本）。
+    // 无 CJK 的 Justify 正文先剥离非零字间距（Android 15 平台回归：letterSpacing 会使平台
+    // inter-word 失效），与 ChapterPaginator.measureLayout / renderPageBitmap 共用同一口径，
+    // 保证渲染文本与排版测量使用同一份 style。
     val justifyMeasurer = rememberTextMeasurer()
-    val baseAnnotated = remember(text, style, contentWidthPx, justifyLastLine, justifyMeasurer) {
+    val effectiveStyle = remember(text, style) { CjkJustifier.adjustLatinTextStyle(text, style) }
+    val baseAnnotated = remember(text, effectiveStyle, contentWidthPx, justifyLastLine, justifyMeasurer) {
         if (contentWidthPx > 0) {
-            CjkJustifier.annotate(text, style, contentWidthPx, justifyMeasurer, justifyLastLine)
+            CjkJustifier.annotate(text, effectiveStyle, contentWidthPx, justifyMeasurer, justifyLastLine)
         } else {
             AnnotatedString(text)
         }
     }
 
     if (selectionState == null) {
-        Text(text = baseAnnotated, style = style, color = color, modifier = modifier)
+        Text(text = baseAnnotated, style = effectiveStyle, color = color, modifier = modifier)
         return
     }
 
@@ -316,7 +320,7 @@ fun SelectableParagraphText(
 
     Text(
         text = annotated,
-        style = style,
+        style = effectiveStyle,
         color = color,
         onTextLayout = { layoutResult = it },
         modifier = modifier

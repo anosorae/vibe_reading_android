@@ -29,7 +29,8 @@ import com.vibereading.app.log.AppLog
  *
  * 行级规则（对齐 Legado `addCharsToLineMiddle`）：
  * - 段末行不拉伸（CSS 惯例）；[justifyLastLine] 为 true 表示该片段末行在下一页延续，仍需拉伸
- * - 含 ASCII 空格的行交给平台 inter-word 对齐（现状行为，英文排版不变）
+ * - 含 ASCII 空格的行交给平台 inter-word 对齐（[adjustLatinTextStyle] 已为无 CJK 文本剥离
+ *   非零字间距，规避 Android 15 平台上 letterSpacing 使 inter-word 失效的回归，英文排版不变）
  */
 object CjkJustifier {
 
@@ -60,6 +61,24 @@ object CjkJustifier {
         val targetGainPx: Float,
         var scale: Float = 1f
     )
+
+    /**
+     * 为无 CJK 的 Justify 文本剥离非零字间距（Android 15/API 35 平台回归：正文带非零
+     * `letterSpacing` 时 `StaticLayout` 会废弃 inter-word 两端对齐，行右缘缺一个词宽、
+     * 右缘比左缘更靠内）。含 CJK 的文本保留字间距——逐字拉伸由
+     * [annotate] 负责填满，不依赖平台对齐，不受该回归影响。
+     *
+     * 分页测量（[com.vibereading.app.ui.reader.pagination.ChapterPaginator.measureLayout]）、
+     * 渲染（[com.vibereading.app.ui.reader.components.SelectableParagraphText]）与仿真位图重建
+     * （PageRenderer/renderPageBitmap）必须共用本口径，保证「排版测量与屏幕渲染」使用同一份
+     * TextStyle（AGENTS.md：测量与渲染同一口径，换行/页高一致）。
+     */
+    fun adjustLatinTextStyle(text: String, style: TextStyle): TextStyle {
+        if (style.textAlign != TextAlign.Justify) return style
+        if (containsCjk(text)) return style
+        if (style.letterSpacing.type == TextUnitType.Unspecified || style.letterSpacing.value == 0f) return style
+        return style.copy(letterSpacing = 0.em)
+    }
 
     /**
      * 为两端对齐段落生成逐行字距 span。

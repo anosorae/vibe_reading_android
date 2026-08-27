@@ -87,7 +87,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - 滚动内容 `scrollChunks` 惰性构建：分页模式不解析全书（打开书籍提速），首次进入滚动模式时构建并跨模式缓存，章节内容变化时重置；滚动模式构建期间显示加载指示。
 - 分页 `PageUnit`/`TextPage` 必须携带来源段落范围；长中文段按行切分不能丢字符；段落放不下本页剩余空间时按行边界切分填满当前页（ADR-004），续段顶格无首行缩进（测量与渲染同一口径），所有片段仍绑定同一原文范围，双语对每个带译文的片段段尾都显示中文气泡。
 - 标题、正文、段距、双语气泡必须由 `ReadingContentRenderer`、`PageStyle`、`ReaderMetrics` 和 `BilingualParagraph` 共享；不要为滚动或分页新增独立标题字号、段距或段落拆分逻辑。
-- 中文两端对齐（`CjkJustifier`）：以 Em 级 `SpanStyle.letterSpacing` 按行均摊余量，span 参与测量 → 换行/页高/选词/仿真位图天然一致；空格行走平台 inter-word 对齐，段末行不拉伸（跨页延续片段 `paragraphContinues` 除外）。新增正文渲染点必须给 `SelectableParagraphText` 传 `contentWidthPx`，位图等自测路径必须复用 `CjkJustifier.annotate`，不得另建拉伸算法。
+- 中文两端对齐（`CjkJustifier`）：以 Em 级 `SpanStyle.letterSpacing` 按行均摊余量，span 参与测量 → 换行/页高/选词/仿真位图天然一致；空格行走平台 inter-word 对齐，段末行不拉伸（跨页延续片段 `paragraphContinues` 除外）。新增正文渲染点必须给 `SelectableParagraphText` 传 `contentWidthPx`，位图等自测路径必须复用 `CjkJustifier.annotate`，不得另建拉伸算法。无 CJK 的 Justify 正文必须经 `CjkJustifier.adjustLatinTextStyle` 剥离非零字间距（Android 15 上非零 `letterSpacing` 会使平台 inter-word 失效、右缘不贴齐），分页测量 `ChapterPaginator.measureLayout` / 渲染 `SelectableParagraphText` / 仿真位图 `renderPageBitmap` 三处共用同一口径。
 
 ## 领域规则与关键 gotchas
 

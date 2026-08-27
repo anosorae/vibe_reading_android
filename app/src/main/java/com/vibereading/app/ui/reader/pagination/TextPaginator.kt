@@ -489,12 +489,15 @@ class ChapterPaginator(
         justifyLastLine: Boolean = false
     ): TextLayoutResult {
         val cw = contentWidthPx.toInt().coerceAtLeast(1)
+        // 与渲染端 SelectableParagraphText 同口径：无 CJK 的 Justify 文本剥离非零字间距
+        // （Android 15 平台回归），保证排版测量与屏幕渲染使用同一份 style（换行/页高一致）
+        val effectiveStyle = CjkJustifier.adjustLatinTextStyle(text, textStyle)
         // 中文两端对齐（CjkJustify）：span 字距参与测量，换行与页高不受影响；
         // 未命中门控（非 Justify/无 CJK）时原样返回纯文本
-        val annotated = CjkJustifier.annotate(text, textStyle, cw, measurer, justifyLastLine)
+        val annotated = CjkJustifier.annotate(text, effectiveStyle, cw, measurer, justifyLastLine)
         return measurer.measure(
             text = annotated,
-            style = textStyle,
+            style = effectiveStyle,
             constraints = Constraints(minWidth = cw, maxWidth = cw)
         )
     }

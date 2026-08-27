@@ -102,6 +102,11 @@ fun PageInfoOverlays(
     val contentBottomDp = navBarDp + padV.dp
     // 12sp 单行文字高度（用于推算页眉/页脚离正文区间距）
     val overlayTextHeightDp = 16.dp
+    // 锚点退让量：手势导航设备（如小米 HyperOS）底部 inset 可能不足 16dp，
+    // 推算结果为负会让 Compose padding 直接抛 IllegalArgumentException，必须钳到 0
+    // （负数语义本就是「贴边」，与上文允许叠入系统栏区域的取舍一致）
+    val headerOffsetDp = (contentTopDp - headerContentGap.dp - overlayTextHeightDp).coerceAtLeast(0.dp)
+    val footerOffsetDp = (contentBottomDp - footerContentGap.dp - overlayTextHeightDp).coerceAtLeast(0.dp)
 
     Box(modifier = Modifier.fillMaxSize()) {
         // ── 页眉（左上）：章节号 · 章节名 ──
@@ -119,7 +124,7 @@ fun PageInfoOverlays(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(
-                    top = contentTopDp - headerContentGap.dp - overlayTextHeightDp,
+                    top = headerOffsetDp,
                     start = maxOf(padH.dp, cutoutLeftDp)
                 )
         )
@@ -133,7 +138,7 @@ fun PageInfoOverlays(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(
-                    bottom = contentBottomDp - footerContentGap.dp - overlayTextHeightDp,
+                    bottom = footerOffsetDp,
                     start = maxOf(padH.dp, cutoutLeftDp)
                 )
         )
@@ -146,7 +151,7 @@ fun PageInfoOverlays(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(
-                    bottom = contentBottomDp - footerContentGap.dp - overlayTextHeightDp,
+                    bottom = footerOffsetDp,
                     end = maxOf(padH.dp, cutoutRightDp)
                 )
         )

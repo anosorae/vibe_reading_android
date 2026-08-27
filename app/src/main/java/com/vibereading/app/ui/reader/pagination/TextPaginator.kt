@@ -470,8 +470,11 @@ class ChapterPaginator(
         if (lastFit >= layout.lineCount - 1) return text to ""
         val splitIndex = layout.getLineEnd(lastFit, visibleEnd = true)
         val c1 = text.substring(0, splitIndex)
-        // 续段不做 trimStart：行尾空白可能被 getLineEnd 裁在断点前后，trim 会吞掉原文字符
-        val c2 = text.substring(splitIndex).trimStart('\n', '\r')
+        // 续段从下一行首字符开始：getLineStart 跳过行尾空白（英文词间空格、
+        // 中文句间空格等），避免续段首字符为空白造成伪缩进。
+        // 仍保留 trimStart('\n','\r') 兜底，处理跨行空白中可能残留的换行。
+        val nextLineStart = layout.getLineStart(lastFit + 1).coerceIn(splitIndex, text.length)
+        val c2 = text.substring(nextLineStart).trimStart('\n', '\r')
         return if (c1.isBlank()) text to "" else c1 to c2
     }
 

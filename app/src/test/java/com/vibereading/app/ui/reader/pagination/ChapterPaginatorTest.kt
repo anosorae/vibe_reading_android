@@ -280,6 +280,38 @@ class ChapterPaginatorTest {
         assertTrue("续页应存在顶格续段", continuationUnits.isNotEmpty())
         continuationUnits.forEach { u ->
             assertEquals("续段首行应顶格", 0f, u.mainLayout!!.getBoundingBox(0).left, 0.5f)
+            // 续段文本不应以空白开头（否则渲染时出现伪缩进）
+            assertFalse("续段文本不应以空白开头", u.cnText.first().isWhitespace())
+        }
+    }
+
+    @Test
+    fun en_continuationChunk_hasNoLeadingWhitespace() {
+        // 英文行在词边界处换行，行尾空格不应留在续段开头造成伪缩进
+        val cnTexts = (0 until 5).map { "中文段落 $it 原文。" }
+        val enTexts = (0 until 5).map { i ->
+            ("Paragraph $i contains enough English text to wrap across " +
+                "multiple lines when the content area is narrow. ").repeat(6).trim()
+        }
+        val indented = style().copy(
+            body = body.copy(textIndent = TextIndent(firstLine = 32.sp))
+        )
+        val p = ChapterPaginator(
+            1L, items(cnTexts, enTexts), indented,
+            "en", contentWidthPx = 300f, contentHeightPx = 300f, measurer = measurer
+        )
+        assertTrue("应跨页产生续段", p.pages.size >= 2)
+        val continuationUnits = p.pages.drop(1).flatMap { it.units }
+            .filterIsInstance<PageUnit.Para>().filter { it.continuation }
+        assertTrue("续页应存在英文续段", continuationUnits.isNotEmpty())
+        continuationUnits.forEach { u ->
+            val enText = u.enText.orEmpty()
+            if (enText.isNotBlank()) {
+                assertFalse(
+                    "英文续段不应以空白开头（实际='${enText.take(3)}'）",
+                    enText.first().isWhitespace()
+                )
+            }
         }
     }
 

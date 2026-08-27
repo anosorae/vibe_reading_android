@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -237,7 +236,8 @@ fun ReaderPager(
     navBarPx: Int,
     simFlip: SimFlipState,
     selectionState: TextSelectionState? = null,
-    onIllustrationClick: ((String) -> Unit)? = null
+    onIllustrationClick: ((String) -> Unit)? = null,
+    contentWidthPx: Int = 0
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -264,7 +264,8 @@ fun ReaderPager(
                     statusBarPx = statusBarPx,
                     navBarPx = navBarPx,
                     selectionState = selectionState,
-                    onIllustrationClick = onIllustrationClick
+                    onIllustrationClick = onIllustrationClick,
+                    contentWidthPx = contentWidthPx
                 )
             }
         }
@@ -335,7 +336,8 @@ fun PageRenderer(
     statusBarPx: Int,
     navBarPx: Int,
     selectionState: TextSelectionState? = null,
-    onIllustrationClick: ((String) -> Unit)? = null
+    onIllustrationClick: ((String) -> Unit)? = null,
+    contentWidthPx: Int = 0
 ) {
     val density = LocalDensity.current
 
@@ -406,7 +408,10 @@ fun PageRenderer(
                                     selectionState = selectionState,
                                     paragraphKey = key,
                                     locale = Locale.CHINESE,
-                                    highlightColor = palette.selectionHighlight
+                                    highlightColor = palette.selectionHighlight,
+                                    // 中文两端对齐：段落在下一页延续时本片段末行仍需拉伸
+                                    contentWidthPx = contentWidthPx,
+                                    justifyLastLine = unit.paragraphContinues
                                 )
                             } else {
                                 // en 模式
@@ -423,7 +428,8 @@ fun PageRenderer(
                                         selectionState = selectionState,
                                         paragraphKey = key,
                                         // 气泡触控区右向延伸到屏幕右缘（与滚动模式同口径）
-                                        bubbleEdgeExtendDp = (paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat()
+                                        bubbleEdgeExtendDp = (paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat(),
+                                        contentWidthPx = contentWidthPx
                                     )
                                 } else {
                                     // 双语未就绪：显示存在的一侧（中文书=中文原文回退，英文书=英文原文），
@@ -446,7 +452,10 @@ fun PageRenderer(
                                         selectionState = selectionState,
                                         paragraphKey = key,
                                         locale = Locale.CHINESE,
-                                        highlightColor = palette.selectionHighlight
+                                        highlightColor = palette.selectionHighlight,
+                                        // 中文书未译回退中文原文时同样两端对齐（英文文本被 CjkJustify 门控跳过）
+                                        contentWidthPx = contentWidthPx,
+                                        justifyLastLine = unit.paragraphContinues
                                     )
                                 }
                             }
@@ -614,8 +623,12 @@ fun renderPageBitmap(
                         val text = if (mode == "zh") unit.cnText.ifBlank { unit.enText.orEmpty() }
                             else (unit.enText ?: unit.cnText)
                         val cw = contentWidthPx.coerceAtLeast(1)
+                        // 中文两端对齐：与 PageRenderer 的 SelectableParagraphText 同口径生成字距 span
+                        val annotated = CjkJustifier.annotate(
+                            text, adjustedStyle, cw, measurer, unit.paragraphContinues
+                        )
                         measurer.measure(
-                            text = AnnotatedString(text),
+                            text = annotated,
                             style = adjustedStyle,
                             constraints = Constraints(minWidth = cw, maxWidth = cw)
                         )

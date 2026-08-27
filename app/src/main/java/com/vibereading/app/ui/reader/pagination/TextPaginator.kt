@@ -160,6 +160,7 @@ sealed class PageUnit {
         val enText: String?,           // 英文侧文本（ADR-003 插槽）：拆分的续段为 null
         val splitFirst: Boolean = false,   // 拆分子段的第一段（不加段距，视觉上与续段相连）
         val continuation: Boolean = false, // 同段跨页续排片段：顶格无首行缩进（渲染端同口径）
+        val paragraphContinues: Boolean = false, // 段落在下一页延续：本片段末行仍需两端对齐（CjkJustify 用）
         val lineCount: Int = 0,            // 本单元本页实际行数（底部对齐用）
         val lineHeightExtraPx: Float = 0f, // 底部对齐分配给每行的额外高度
         val mainLayout: TextLayoutResult? = null,  // zh=正文布局 / en=英文布局
@@ -332,10 +333,11 @@ class ChapterPaginator(
                             }
                             val bound = if (units.isNotEmpty()) remaining else contentHeightPx
                             val (c1, c2) = splitLayout(text, layout, bound)
-                            val l1 = if (c1 != text) measureLayout(c1, paraStyle) else layout
+                            val l1 = if (c1 != text) measureLayout(c1, paraStyle, justifyLastLine = c2.isNotBlank()) else layout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, c1, null,
                                 splitFirst = true, continuation = cont,
+                                paragraphContinues = c2.isNotBlank(),
                                 lineCount = l1.lineCount, mainLayout = l1,
                                 sourceStartOffset = item.sourceStartOffset,
                                 sourceEndOffset = item.sourceEndOffset
@@ -386,10 +388,11 @@ class ChapterPaginator(
                             val bound = ((if (units.isNotEmpty()) remaining else contentHeightPx) - padPx)
                                 .coerceAtLeast(enLayout.getLineBottom(0))
                             val (c1, c2) = splitLayout(en, enLayout, bound)
-                            val l1 = if (c1 != en) measureLayout(c1, paraStyle) else enLayout
+                            val l1 = if (c1 != en) measureLayout(c1, paraStyle, justifyLastLine = c2.isNotBlank()) else enLayout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, item.cnText, c1,
                                 splitFirst = true, continuation = cont,
+                                paragraphContinues = c2.isNotBlank(),
                                 lineCount = l1.lineCount,
                                 mainLayout = l1,
                                 sourceStartOffset = item.sourceStartOffset,
@@ -480,10 +483,17 @@ class ChapterPaginator(
 
     // ── 测量（真实页宽约束，minWidth=maxWidth 对齐 Compose Text 的 fillMaxWidth） ──
 
-    private fun measureLayout(text: String, textStyle: TextStyle): TextLayoutResult {
+    private fun measureLayout(
+        text: String,
+        textStyle: TextStyle,
+        justifyLastLine: Boolean = false
+    ): TextLayoutResult {
         val cw = contentWidthPx.toInt().coerceAtLeast(1)
+        // 中文两端对齐（CjkJustify）：span 字距参与测量，换行与页高不受影响；
+        // 未命中门控（非 Justify/无 CJK）时原样返回纯文本
+        val annotated = CjkJustifier.annotate(text, textStyle, cw, measurer, justifyLastLine)
         return measurer.measure(
-            text = AnnotatedString(text),
+            text = annotated,
             style = textStyle,
             constraints = Constraints(minWidth = cw, maxWidth = cw)
         )

@@ -53,7 +53,8 @@ fun BilingualParagraph(
     showSpacer: Boolean = true,
     selectionState: TextSelectionState? = null,
     paragraphKey: Any? = null,
-    bubbleEdgeExtendDp: Float = 0f
+    bubbleEdgeExtendDp: Float = 0f,
+    contentWidthPx: Int = 0
 ) {
     val density = LocalDensity.current
     // 续段顶格：与排版器测量口径一致，无首行缩进
@@ -78,7 +79,9 @@ fun BilingualParagraph(
                 selectionState = selectionState,
                 paragraphKey = paragraphKey,
                 locale = Locale.ENGLISH,
-                highlightColor = palette.selectionHighlight
+                highlightColor = palette.selectionHighlight,
+                // 译文残留中文（人名/地名/引语）时同样两端对齐，与分页器测量口径一致；纯英文被 CJK 门控跳过
+                contentWidthPx = contentWidthPx
             )
             if (chineseText.isNotBlank()) {
                 ChineseBubble(

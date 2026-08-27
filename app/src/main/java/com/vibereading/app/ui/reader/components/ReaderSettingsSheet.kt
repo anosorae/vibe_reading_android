@@ -321,7 +321,7 @@ fun ReaderSettingsSheet(
             ) {
                 Column {
                     Text("两端对齐", style = MaterialTheme.typography.bodyMedium)
-                    Text("英文排版时调整词间距", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("中文逐字拉伸，英文调整词间距", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(
                     checked = settings.justify,

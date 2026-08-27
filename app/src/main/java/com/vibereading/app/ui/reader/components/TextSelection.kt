@@ -16,11 +16,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import com.vibereading.app.log.AppLog
+import com.vibereading.app.ui.reader.pagination.CjkJustifier
 import java.text.BreakIterator
 import java.util.Locale
 
@@ -257,6 +260,9 @@ fun findWordBoundary(text: String, offset: Int, locale: Locale = Locale.ENGLISH)
  * - 长按触发后 consume 本次手势剩余事件，外层点按翻页逻辑自动跳过（`isConsumed` 判定）
  * - 同时上报 [TextLayoutResult] 和窗口位置，供 [SelectionHandles] 定位手柄
  * - 选区高亮用 AnnotatedString 背景色渲染：背景不参与测量，分页结果不受影响
+ * - 中文两端对齐：[contentWidthPx] > 0 时经 [CjkJustifier] 生成逐行字距 span（对齐分页器
+ *   测量口径），选区背景 span 与字距 span 共存于同一 AnnotatedString；span 参与测量，
+ *   命中测试/手柄读取的即是真实几何，无需额外补偿
  * - 普通点击不消费任何事件，翻页/开关工具栏手势原样交给外层
  */
 @Composable
@@ -268,10 +274,22 @@ fun SelectableParagraphText(
     selectionState: TextSelectionState? = null,
     paragraphKey: Any? = null,
     locale: Locale = Locale.ENGLISH,
-    highlightColor: Color = Color.Transparent
+    highlightColor: Color = Color.Transparent,
+    contentWidthPx: Int = 0,
+    justifyLastLine: Boolean = false
 ) {
+    // 中文两端对齐（CjkJustifier 内部门控：非 Justify/无 CJK 时原样返回纯文本）
+    val justifyMeasurer = rememberTextMeasurer()
+    val baseAnnotated = remember(text, style, contentWidthPx, justifyLastLine, justifyMeasurer) {
+        if (contentWidthPx > 0) {
+            CjkJustifier.annotate(text, style, contentWidthPx, justifyMeasurer, justifyLastLine)
+        } else {
+            AnnotatedString(text)
+        }
+    }
+
     if (selectionState == null) {
-        Text(text = text, style = style, color = color, modifier = modifier)
+        Text(text = baseAnnotated, style = style, color = color, modifier = modifier)
         return
     }
 
@@ -281,10 +299,10 @@ fun SelectableParagraphText(
     val isSelected = selectionState.isSelecting && selectionState.paragraphKey == paragraphKey
     val selStart = selectionState.selectionStart
     val selEnd = selectionState.selectionEnd
-    val annotated = remember(text, isSelected, selStart, selEnd) {
+    val annotated = remember(baseAnnotated, isSelected, selStart, selEnd) {
         if (isSelected && selStart >= 0 && selEnd <= text.length && selStart < selEnd) {
             buildAnnotatedString {
-                append(text)
+                append(baseAnnotated)
                 addStyle(
                     SpanStyle(background = highlightColor),
                     selStart,
@@ -292,7 +310,7 @@ fun SelectableParagraphText(
                 )
             }
         } else {
-            buildAnnotatedString { append(text) }
+            baseAnnotated
         }
     }
 

@@ -1,5 +1,6 @@
 package com.vibereading.app.data.repository
 
+import com.vibereading.app.BuildConfig
 import com.vibereading.app.data.local.dao.LlmProfileDao
 import com.vibereading.app.data.local.entity.LlmProfileEntity
 import com.vibereading.app.domain.model.LlmProfile
@@ -7,6 +8,7 @@ import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.toLlmProfile
 import com.vibereading.app.domain.model.toLlmSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 
 class LlmProfileRepository(
@@ -52,18 +54,53 @@ class LlmProfileRepository(
     }
 
     /**
-     * 首次启动迁移：如果 llm_profiles 表为空，从 DataStore 旧 LLM 键创建默认配置。
+     * 首次启动初始化：llm_profiles 表为空时，从 DataStore 旧 LLM 键创建默认配置；
+     * 表非空但活跃档案仍是「空 key 占位」时，用 local.properties 的调试配置补齐
+     * （DEBUG_LLM_* 是开发者本地联调配置，见 build.gradle.kts；不覆盖用户手填的 key）。
      * 调用后 DataStore 旧键会被清除。
      */
     suspend fun ensureDefaultProfile() {
-        if (dao.count() > 0) return
+        if (dao.count() > 0) {
+            applyDebugConfigIfPlaceholder()
+            return
+        }
         val migrated = settingsRepo.migrateLlmKeysToProfile()
-        val default = (migrated ?: LlmSettings()).toLlmProfile(name = "默认配置")
+        val default = (migrated ?: debugLlmSettings() ?: LlmSettings()).toLlmProfile(name = "默认配置")
         val id = dao.insert(default.toEntity(isActive = true))
         if (id > 0 && !default.apiKey.isBlank()) {
             // 有效迁移，清除旧 DataStore 键
             settingsRepo.clearMigratedLlmKeys()
         }
+    }
+
+    /** 活跃档案 apiKey 为空（自动创建的占位）且 local.properties 已配置调试 LLM 时补齐。 */
+    private suspend fun applyDebugConfigIfPlaceholder() {
+        val debugBase = BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/')
+        val debugKey = BuildConfig.DEBUG_LLM_API_KEY.trim()
+        val debugModel = BuildConfig.DEBUG_LLM_MODEL.trim()
+        if (debugBase.isEmpty() && debugKey.isEmpty() && debugModel.isEmpty()) return
+        val active = dao.getActive().firstOrNull()
+        if (active == null || active.apiKey.isNotBlank()) return // 已有手填 key 不覆盖
+        dao.update(
+            active.copy(
+                apiBase = debugBase.ifEmpty { active.apiBase },
+                apiKey = debugKey,
+                model = debugModel.ifEmpty { active.model }
+            )
+        )
+    }
+
+    /** local.properties 调试 LLM 配置 → LlmSettings（未配置时返回 null）。 */
+    private fun debugLlmSettings(): LlmSettings? {
+        val base = BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/')
+        val key = BuildConfig.DEBUG_LLM_API_KEY.trim()
+        val model = BuildConfig.DEBUG_LLM_MODEL.trim()
+        if (base.isEmpty() && key.isEmpty() && model.isEmpty()) return null
+        return LlmSettings(
+            apiBase = if (base.isNotEmpty()) base else "https://api.deepseek.com",
+            apiKey = key,
+            model = if (model.isNotEmpty()) model else "deepseek-v4-flash"
+        )
     }
 
     private fun LlmProfileEntity.toDomain(): LlmProfile = LlmProfile(

@@ -109,4 +109,35 @@ class LlmProfileRepositoryTest {
         repo.ensureDefaultProfile()
         assertEquals(1, db.llmProfileDao().count())
     }
+
+    @Test
+    fun `ensureDefaultProfile fills empty-key placeholder with debug config`() = runBlocking {
+        // 已存在的自动占位档案（无 apiKey）且 local.properties 配了调试 LLM → 启动补齐
+        val id = insertProfile("默认配置", isActive = true)
+        db.llmProfileDao().update(
+            db.llmProfileDao().getById(id)!!.copy(apiKey = "", apiBase = "https://api.deepseek.com")
+        )
+
+        repo.ensureDefaultProfile()
+
+        val active = repo.activeProfile.first()!!
+        val debugBase = com.vibereading.app.BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/')
+        val debugKey = com.vibereading.app.BuildConfig.DEBUG_LLM_API_KEY.trim()
+        if (debugKey.isNotEmpty()) {
+            assertEquals("空 key 占位档案应被调试配置补齐", debugKey, active.apiKey)
+            if (debugBase.isNotEmpty()) assertEquals(debugBase, active.apiBase)
+        }
+    }
+
+    @Test
+    fun `ensureDefaultProfile does not overwrite user key`() = runBlocking {
+        val id = insertProfile("默认配置", isActive = true)
+        db.llmProfileDao().update(
+            db.llmProfileDao().getById(id)!!.copy(apiKey = "user-filled-key")
+        )
+
+        repo.ensureDefaultProfile()
+
+        assertEquals("用户手填的 key 不应被覆盖", "user-filled-key", repo.activeProfile.first()!!.apiKey)
+    }
 }

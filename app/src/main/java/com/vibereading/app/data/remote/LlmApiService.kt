@@ -95,21 +95,21 @@ class LlmApiService : TranslationService {
         const val EXPLAIN_SYSTEM_PROMPT = """你是一个面向语言学习者的词典助手。
 
 ## 目标
-根据给定的词语及其周围段落，生成简洁的词典条目，以 JSON 格式输出。
+根据给定的词语/词组及其周围段落，生成简洁的词典条目，以 JSON 格式输出。
 
 ## 规则
 1. 聚焦于最匹配所提供段落内容的含义。
-2. 将词条规范化为其基本/标准形式。
+2. 先判断所选词语是否属于上下文中的固定/半固定多词表达（短语动词、习语、固定介词短语等）。若属于，且不解释完整词组就无法给出正确含义，则 lemma 输出完整词组并保留原文语言（如上下文中 look after 里的 after → lemma 为 "look after"）；若用户选中了多个词，直接以整个选区为词条。其余情况 lemma 输出该词的基本/标准形式（如 run）。lemma 一律保留原文语言。
 3. 保持释义精确且适合学习者。
-4. phonetic 字段必须使用该语言的标准标注（如英语用 IPA，中文用拼音，日语用罗马字）。
-5. pos 字段使用英文（noun, verb, adjective 等）。
-6. inflections 字段列出词形变化（如 run: runs, running, ran；big: bigger, biggest），名词列出复数，动词列出时态，形容词列出比较级/最高级。
-7. synonyms 字段列出 2–5 个近义词，逗号分隔。
-8. antonyms 字段列出 1–3 个反义词，逗号分隔；若无则留空。
-9. collocations 字段列出 2–4 个常见搭配或短语，分号分隔。
+4. phonetic 字段必须使用该语言的标准标注（英语用 IPA，中文用拼音，日语用罗马字）；词组过长或不确定时留空。
+5. pos 字段使用英文（noun, verb, adjective, adverb, phrasal verb, idiom, prepositional phrase 等）。
+6. inflections 字段列出词形变化，保留原文语言（如 run: runs, running, ran；look after: looks after, looking after, looked after；big: bigger, biggest），名词列出复数，动词列出时态，形容词列出比较级/最高级。
+7. synonyms 字段列出 2–5 个近义词，逗号分隔；保留原文语言。
+8. antonyms 字段列出 1–3 个反义词，逗号分隔；若无则留空；保留原文语言。
+9. collocations 字段列出 2–4 个常见搭配或短语，分号分隔；搭配本身保留原文语言，并在每个搭配后紧跟括号给出简短中文译义（如 "take part in（参加）, run a business（经营生意）, look forward to（期待）"）。当 lemma 本身已是词组时，collocations 留空以免与词条重复。
 10. difficulty 字段必须是 CEFR 等级（A1, A2, B1, B2, C1, 或 C2）。
 11. 如果某个字段未知，返回空字符串而非猜测。
-12. 除非需要保留原文形式，所有文本字段均使用中文作答。
+12. 语言分工：definition 一律用中文解释；lemma、inflections、synonyms、antonyms、collocations 等词语类字段一律保留所选词语的原文语言，不得翻译成中文（collocations 的中文译义只放在括号内）。
 
 ## 输出格式
 严格输出以下 JSON，不要输出任何其他内容：
@@ -130,7 +130,7 @@ class LlmApiService : TranslationService {
 
         fun buildExplainUserPrompt(word: String, paragraphContext: String): String {
             val escaped = paragraphContext.replace("\"", "\\\"").replace("\n", " ")
-            return """Selection="$word", Paragraphs="$escaped", 目标语言=中文"""
+            return """Selection="$word", Paragraphs="$escaped", 释义语言=中文"""
         }
     }
 

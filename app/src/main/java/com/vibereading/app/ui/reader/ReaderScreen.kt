@@ -365,25 +365,38 @@ fun ReaderScreen(
         val endX = sx + dx
         val endY = sy + dy
         simFlipJob = scope.launch {
-            val animatable = androidx.compose.animation.core.Animatable(0f)
-            animatable.animateTo(
-                targetValue = 1f,
-                animationSpec = androidx.compose.animation.core.tween(
-                    durationMillis = simFlipDurationMs(dx, dy, wf, hf).toInt(),
-                    easing = androidx.compose.animation.core.LinearEasing
-                )
-            ) {
-                simFlip.touchX = sx + (endX - sx) * value
-                simFlip.touchY = sy + (endY - sy) * value
-                // 动画帧也必须调用 adjustTouchY，保持与手势阶段相同的 Y 吸顶/吸底规则，
-                // 否则回弹动画末尾 touchY 偏离调整值，卷页几何跳变（右上角突然卷页）
-                simFlip.adjustTouchY(hf)
+            try {
+                val animatable = androidx.compose.animation.core.Animatable(0f)
+                animatable.animateTo(
+                    targetValue = 1f,
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = simFlipDurationMs(dx, dy, wf, hf).toInt(),
+                        easing = androidx.compose.animation.core.LinearEasing
+                    )
+                ) {
+                    simFlip.touchX = sx + (endX - sx) * value
+                    simFlip.touchY = sy + (endY - sy) * value
+                    // 动画帧也必须调用 adjustTouchY，保持与手势阶段相同的 Y 吸顶/吸底规则，
+                    // 否则回弹动画末尾 touchY 偏离调整值，卷页几何跳变（右上角突然卷页）
+                    simFlip.adjustTouchY(hf)
+                }
+                if (commitPage >= 0 && pagerState.currentPage != commitPage) {
+                    pagerState.scrollToPage(commitPage)
+                }
+                simFlip.cleanup()
+                simFlipJob = null
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 取消由各取消点收尾（DOWN 打断落地 / 新动画覆盖 / 切模式清理），
+                // 这里不碰状态：若在 finally 里 cleanup，可能清掉新手势刚起的卷页
+                // 位图与 isRunning，同时把新 simFlipJob 句柄置空。
+                throw e
+            } catch (e: Exception) {
+                // 异常兜底：动画中途失败（如窗口重建竞态下 scrollToPage 抛错）时若不清理，
+                // animating/isRunning 冻结在半页，直到下一次 DOWN 才被 cleanup 解冻。
+                AppLog.put("仿真卷页动画异常，已清理冻结状态", e)
+                simFlip.cleanup()
+                simFlipJob = null
             }
-            if (commitPage >= 0 && pagerState.currentPage != commitPage) {
-                pagerState.scrollToPage(commitPage)
-            }
-            simFlip.cleanup()
-            simFlipJob = null
         }
     }
 
@@ -789,7 +802,15 @@ fun ReaderScreen(
                                 }
                                 if (hadSelectionAtDown) {
                                     // 选区已在 DOWN 清除；若本次是新的长按选词（内层已消费），
-                                    // 新选区保持不动。这里只确保不触发翻页
+                                    // 新选区保持不动。但已卷起的页不能直接 break 冻结：以回弹
+                                    // 收场（isCancel=true 不提交翻页），保持视觉连续，也避免
+                                    // animating/isRunning 残留到下一次 DOWN 才被 cleanup 清掉。
+                                    if (curlActive) {
+                                        val cur = pagerState.currentPage
+                                        val target = if (simFlip.direction == PageCurl.Direction.NEXT) cur + 1 else cur - 1
+                                        simFlip.isCancel = true
+                                        simFlipAnimStart(cur, target)
+                                    }
                                     break
                                 }
                                 if (curlActive) {

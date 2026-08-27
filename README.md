@@ -1,12 +1,13 @@
 # 译读 / VibeReading
 
-**双语阅读器** — 导入 TXT 小说，逐章调用 LLM 翻译为英文，中文/英文双模式阅读。
+**双语阅读器** — 导入 TXT/EPUB 书籍，逐章调用 LLM 生成译文（中文书译英、英文书译中），中文/英文双模式阅读。
 
 ## 功能
 
-- **TXT 导入** — 通过系统文件选择器导入本地 TXT 小说，自动按章拆分
+- **TXT / EPUB 导入** — 通过系统文件选择器导入本地 TXT 或 EPUB 书籍，自动按章拆分；EPUB 正文插图内嵌展示，支持全屏预览（双指缩放）
 - **LLM 逐章翻译** — 支持 DeepSeek / OpenAI 兼容 API，SSE 流式实时显示翻译进度；可配置 API Key、Base URL、模型名、章节字数上限、最大输出 Token 等
-- **双语阅读** — 中文原文模式 / 英文译文模式（点击段落尾部气泡弹出中文原文）
+- **双语阅读** — 中文/英文双模式，方向随书籍原文语言；英文模式点击段落尾部气泡弹出中文侧文本（中文书=原文，英文书=译文）
+- **查词与解释** — 长按选词、拖拽手柄扩展短语选区；内嵌 ECDICT 离线词典查词 + LLM 单词解释
 - **五种翻页** — 滚动、平移、覆盖、无动画、仿真卷页（拖拽跟手 + 点按自动卷页）
 - **排版引擎** — 基于 `TextMeasurer` 的行级整页排版，底部对齐，仿真卷页位图与 Compose 页视觉一致
 - **阅读定制** — 字体/字号/行距/段距/页边距/字间距/首行缩进/两端对齐/5 种背景预设/夜间模式/单手模式
@@ -101,6 +102,7 @@ tag 格式为 `v` + 语义版本号。构建时会自动将 `v1.2.3` 转为 `ver
 app/build/outputs/apk/release/app-arm64-v8a-release.apk
 app/build/outputs/apk/release/app-armeabi-v7a-release.apk
 app/build/outputs/apk/release/app-x86_64-release.apk
+app/build/outputs/apk/release/app-x86-release.apk
 app/build/outputs/apk/release/app-universal-release.apk
 ```
 

@@ -102,6 +102,7 @@ private fun SelectionHandle(
 ) {
     val handleSize = ReaderMetrics.HANDLE_SIZE_DP.dp
     val handleSizePx = with(density) { handleSize.toPx() }
+    val visualSizePx = with(density) { ReaderMetrics.HANDLE_VISUAL_SIZE_DP.dp.toPx() } // 视觉区（竖线+圆点）高度
     val lineWidth = ReaderMetrics.HANDLE_LINE_WIDTH_DP.dp
     val dotRadius = ReaderMetrics.HANDLE_DOT_RADIUS_DP.dp
     val dotPadding = ReaderMetrics.HANDLE_DOT_PADDING_DP.dp
@@ -123,6 +124,10 @@ private fun SelectionHandle(
 
     // 拖拽中手指在段落局部坐标系的位置
     var dragLocalPos by remember { mutableStateOf(Offset.Zero) }
+    // 抓取瞬间「手指 → 命中点」的固定偏移（对齐 Legado ReadBookActivity.onTouch 的
+    // rawX ± cursorWidth / rawY - cursorHeight）：命中点对到手柄竖线指向的位置，
+    // 手指只负责拖动、悬在目标行下方的行间间隙里，不再遮住正在判定的字符行。
+    var grabHitOffset by remember { mutableStateOf(Offset.Zero) }
 
     Box(
         modifier = Modifier
@@ -134,7 +139,21 @@ private fun SelectionHandle(
                     // D6：立即消费 DOWN，外层翻页手势通过 down.isConsumed 判定手柄已拦截
                     down.consume()
 
-                    // 初始化手指在段落局部坐标系的位置
+                    // 命中点 = 手指 + 抓起瞬间固定的偏移：
+                    // - 水平：对到手柄竖线 X（竖线是选区边界的视觉锚点）。竖线恰在字符边界时
+                    //   getOffsetForPosition/逐字符命中会取到未选中一侧，故再微偏 0.5px 到已选区
+                    //   一侧，避免刚抓起手柄选区就跳一个字符；
+                    // - 垂直：整体抬高手柄视觉高度（触控盒更高不影响命中语义），
+                    //   命中行 = 竖线根部指向的行（对齐 Legado rawY - height）。
+                    val barLocalX = when (handleType) {
+                        HandleType.START -> handleSizePx // 竖线在盒子右边缘
+                        HandleType.END -> 0f             // 竖线在盒子左边缘
+                    }
+                    val sideEpsilon = if (handleType == HandleType.START) 0.5f else -0.5f
+                    grabHitOffset = Offset(
+                        barLocalX - down.position.x + sideEpsilon,
+                        -visualSizePx
+                    )
                     // 手柄盒左上角在父容器坐标 = (offsetX.roundToInt(), offsetY.roundToInt())
                     // 手指在容器局部 = 盒左上角 + down.position（盒内局部）
                     // 手指在窗口 = 容器局部 + containerWindowOffset
@@ -166,12 +185,14 @@ private fun SelectionHandle(
                             change.consume()
                             dragLocalPos += dragAmount
                             val layout = selectionState.layoutResult ?: continue
+                            // 命中点对到手柄竖线尖端（远离手指），而不是手指正下方
+                            val hitPos = dragLocalPos + grabHitOffset
                             val rawOffset = runCatching {
-                                layout.getOffsetForPosition(dragLocalPos)
+                                layout.getOffsetForPosition(hitPos)
                             }.onFailure { AppLog.put("getOffsetForPosition 失败", it) }
                                 .getOrNull() ?: continue
                             // 两端对齐补偿：逐字符命中测试
-                            val adjusted = perCharHitTest(layout, dragLocalPos, rawOffset)
+                            val adjusted = perCharHitTest(layout, hitPos, rawOffset)
                             selectionState.dragTo(adjusted)
                         }
                     }
@@ -194,7 +215,8 @@ private fun SelectionHandle(
                 HandleType.START -> size.width - lineW - r * 0.5f
                 HandleType.END -> lineW + r * 0.5f
             }
-            val dotCenterY = size.height - r - dotPadPx
+            // 圆点中心 Y：视觉区底部（视觉区顶部锚定行底，盒体多出的下沿是透明触控延伸，不参与绘制）
+            val dotCenterY = visualSizePx - r - dotPadPx
 
             // 竖线：从顶部到圆点上方
             drawRect(

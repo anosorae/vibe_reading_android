@@ -26,10 +26,11 @@ object ReaderMetrics {
     const val BUBBLE_TOUCH_TARGET_DP = 44
 
     /** 选择手柄尺寸 / 定位（对齐 ADR-002 D8） */
-    const val HANDLE_SIZE_DP = 24       // 触控区域（竖线+圆点的盒子大小）
+    const val HANDLE_SIZE_DP = 32       // 透明触控盒（大于视觉区，便于抓取且不压字）
+    const val HANDLE_VISUAL_SIZE_DP = 24 // 竖线+圆点视觉绘制区（顶部锚定行底，余量为透明触控延伸）
     const val HANDLE_LINE_WIDTH_DP = 2  // 竖线宽度
     const val HANDLE_DOT_RADIUS_DP = 4 // 底部圆点半径
-    const val HANDLE_DOT_PADDING_DP = 4 // 圆点距盒子底部间距
+    const val HANDLE_DOT_PADDING_DP = 4 // 圆点距视觉区底部间距
 
     /** 双语对英文段上下 padding 合计（px）——排版器 en 模式额外占位用（density 为 display density）。 */
     fun bilingualPadPx(density: Float): Float =

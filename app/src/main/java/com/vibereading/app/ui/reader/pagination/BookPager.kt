@@ -433,7 +433,9 @@ fun PageRenderer(
                                         // 气泡触控区右向延伸到屏幕右缘（与滚动模式同口径）
                                         bubbleEdgeExtendDp = (paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat(),
                                         contentWidthPx = contentWidthPx,
-                                        bubbleEnabled = bubbleEnabled
+                                        bubbleEnabled = bubbleEnabled,
+                                        // 段落在下一页延续时本片段末行仍需拉伸（与分页测量/仿真位图同口径）
+                                        justifyLastLine = unit.paragraphContinues
                                     )
                                 } else {
                                     // 双语未就绪：显示存在的一侧（中文书=中文原文回退，英文书=英文原文），

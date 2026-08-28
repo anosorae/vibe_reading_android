@@ -40,6 +40,8 @@ import java.util.Locale
  * - [continuation]：是否为同段跨页续排片段——顶格无首行缩进；中文气泡在所有带译文的
  *   片段段尾都会显示（ADR-004），点任一气泡弹出整段中文侧文本。
  * - [showSpacer]：是否在段尾加段距（分页末段不加，对齐排版器 buildPage 的 realUsed）。
+ * - [justifyLastLine]：段落在下一页延续时本片段末行仍需两端对齐（与分页器测量口径一致）；
+ *   滚动模式段落不跨页切分，保持默认 false。
  * - [selectionState]/[paragraphKey]：长按选词状态与段落标识（英文侧正文参与选词）。
  * - [bubbleEnabled]：气泡是否可点击；菜单栏/浮层显示时传 false（对齐 selectionState 的禁用先例），
  *   禁用时手势不注册、不消费点击，点击落到外层翻页手势关闭菜单。
@@ -57,7 +59,8 @@ fun BilingualParagraph(
     paragraphKey: Any? = null,
     bubbleEdgeExtendDp: Float = 0f,
     contentWidthPx: Int = 0,
-    bubbleEnabled: Boolean = true
+    bubbleEnabled: Boolean = true,
+    justifyLastLine: Boolean = false
 ) {
     val density = LocalDensity.current
     // 续段顶格：与排版器测量口径一致，无首行缩进
@@ -84,7 +87,8 @@ fun BilingualParagraph(
                 locale = Locale.ENGLISH,
                 highlightColor = palette.selectionHighlight,
                 // 译文残留中文（人名/地名/引语）时同样两端对齐，与分页器测量口径一致；纯英文被 CJK 门控跳过
-                contentWidthPx = contentWidthPx
+                contentWidthPx = contentWidthPx,
+                justifyLastLine = justifyLastLine
             )
             if (chineseText.isNotBlank()) {
                 ChineseBubble(

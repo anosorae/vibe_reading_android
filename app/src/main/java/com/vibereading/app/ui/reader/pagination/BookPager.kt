@@ -237,7 +237,8 @@ fun ReaderPager(
     simFlip: SimFlipState,
     selectionState: TextSelectionState? = null,
     onIllustrationClick: ((String) -> Unit)? = null,
-    contentWidthPx: Int = 0
+    contentWidthPx: Int = 0,
+    bubbleEnabled: Boolean = true
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -265,7 +266,8 @@ fun ReaderPager(
                     navBarPx = navBarPx,
                     selectionState = selectionState,
                     onIllustrationClick = onIllustrationClick,
-                    contentWidthPx = contentWidthPx
+                    contentWidthPx = contentWidthPx,
+                    bubbleEnabled = bubbleEnabled
                 )
             }
         }
@@ -337,7 +339,8 @@ fun PageRenderer(
     navBarPx: Int,
     selectionState: TextSelectionState? = null,
     onIllustrationClick: ((String) -> Unit)? = null,
-    contentWidthPx: Int = 0
+    contentWidthPx: Int = 0,
+    bubbleEnabled: Boolean = true
 ) {
     val density = LocalDensity.current
 
@@ -429,7 +432,8 @@ fun PageRenderer(
                                         paragraphKey = key,
                                         // 气泡触控区右向延伸到屏幕右缘（与滚动模式同口径）
                                         bubbleEdgeExtendDp = (paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat(),
-                                        contentWidthPx = contentWidthPx
+                                        contentWidthPx = contentWidthPx,
+                                        bubbleEnabled = bubbleEnabled
                                     )
                                 } else {
                                     // 双语未就绪：显示存在的一侧（中文书=中文原文回退，英文书=英文原文），

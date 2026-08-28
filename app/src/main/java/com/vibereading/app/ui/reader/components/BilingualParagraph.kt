@@ -41,6 +41,8 @@ import java.util.Locale
  *   片段段尾都会显示（ADR-004），点任一气泡弹出整段中文侧文本。
  * - [showSpacer]：是否在段尾加段距（分页末段不加，对齐排版器 buildPage 的 realUsed）。
  * - [selectionState]/[paragraphKey]：长按选词状态与段落标识（英文侧正文参与选词）。
+ * - [bubbleEnabled]：气泡是否可点击；菜单栏/浮层显示时传 false（对齐 selectionState 的禁用先例），
+ *   禁用时手势不注册、不消费点击，点击落到外层翻页手势关闭菜单。
  */
 @Composable
 fun BilingualParagraph(
@@ -54,7 +56,8 @@ fun BilingualParagraph(
     selectionState: TextSelectionState? = null,
     paragraphKey: Any? = null,
     bubbleEdgeExtendDp: Float = 0f,
-    contentWidthPx: Int = 0
+    contentWidthPx: Int = 0,
+    bubbleEnabled: Boolean = true
 ) {
     val density = LocalDensity.current
     // 续段顶格：与排版器测量口径一致，无首行缩进
@@ -88,7 +91,8 @@ fun BilingualParagraph(
                     chineseText = chineseText,
                     pageStyle = pageStyle,
                     palette = palette,
-                    edgeExtendDp = bubbleEdgeExtendDp
+                    edgeExtendDp = bubbleEdgeExtendDp,
+                    enabled = bubbleEnabled
                 )
             }
         }
@@ -107,10 +111,16 @@ private fun BoxScope.ChineseBubble(
     chineseText: String,
     pageStyle: PageStyle,
     palette: ReaderPalette,
-    edgeExtendDp: Float
+    edgeExtendDp: Float,
+    enabled: Boolean
 ) {
     var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
+
+    // 菜单栏/浮层显示时禁用气泡（enabled=false）：弹窗一并关闭，对齐打开浮层清选区的先例
+    LaunchedEffect(enabled) {
+        if (!enabled) showPopup = false
+    }
 
     // 触控区容器用 matchParentSize：填满父 Box 但不参与尺寸决策，
     // 否则 44dp 触控区会比短段文本高，撑大 Box 导致位图与 Compose 页高度不一致。
@@ -134,8 +144,9 @@ private fun BoxScope.ChineseBubble(
                     width = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp + edgeExtendDp.dp,
                     height = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp
                 )
-                .pointerInput(Unit) {
-                    detectTapGestures { showPopup = !showPopup }
+                // enabled=false 时不注册手势：点击不被消费，落到外层手势关闭菜单栏
+                .pointerInput(enabled) {
+                    if (enabled) detectTapGestures { showPopup = !showPopup }
                 }
         ) {
             // 视觉气泡：在触控区内右下对齐并反向 offset，保持原视觉位置

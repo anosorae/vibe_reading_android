@@ -67,7 +67,8 @@ fun ReadingParagraphItem(
     selectionState: TextSelectionState? = null,
     paragraphKey: Any? = null,
     paddingH: Int = 0,
-    contentWidthPx: Int = 0
+    contentWidthPx: Int = 0,
+    bubbleEnabled: Boolean = true
 ) {
     // ADR-003 插槽：中文侧/英文侧由书籍原文语言决定
     val chinese = paragraph.chineseSide(sourceLanguage)
@@ -83,7 +84,8 @@ fun ReadingParagraphItem(
             paragraphKey = paragraphKey,
             // 气泡触控区右向延伸到屏幕右缘：段落右缘到屏幕右缘 = 用户右边距，再补偿触控区自身 end padding
             bubbleEdgeExtendDp = (paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat(),
-            contentWidthPx = contentWidthPx
+            contentWidthPx = contentWidthPx,
+            bubbleEnabled = bubbleEnabled
         )
     } else {
         // zh 模式显示中文侧，英文模式在双语未就绪时回退存在的一侧

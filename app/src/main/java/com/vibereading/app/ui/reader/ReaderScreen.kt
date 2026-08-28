@@ -995,6 +995,8 @@ fun ReaderScreen(
                         simFlip = simFlip,
                         // 卷页动画进行中或菜单栏显示时禁用长按选词
                         selectionState = if (simFlip.isRunning || anyOverlayVisible) null else selectionState,
+                        // 菜单栏/浮层显示时禁用原文气泡点击（点击落回外层手势关闭菜单）
+                        bubbleEnabled = !anyOverlayVisible,
                         onIllustrationClick = { previewIllustrationPath = it },
                         // 中文两端对齐：正文内容区宽度（与排版几何同源）
                         contentWidthPx = geometry.contentWidthPx.toInt()
@@ -1029,6 +1031,8 @@ fun ReaderScreen(
                             vm.navigateTo(id, 0)
                         },
                         selectionState = if (anyOverlayVisible) null else selectionState,
+                        // 菜单栏/浮层显示时禁用原文气泡点击（点击落回外层手势关闭菜单）
+                        bubbleEnabled = !anyOverlayVisible,
                         onIllustrationClick = { previewIllustrationPath = it },
                         // 中文两端对齐：正文内容区宽度（与排版几何同源）
                         contentWidthPx = geometry.contentWidthPx.toInt()

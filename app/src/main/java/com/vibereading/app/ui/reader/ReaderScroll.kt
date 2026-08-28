@@ -91,7 +91,8 @@ fun ScrollReader(
     onJumpChapter: (Long) -> Unit,
     selectionState: TextSelectionState? = null,
     onIllustrationClick: ((String) -> Unit)? = null,
-    contentWidthPx: Int = 0
+    contentWidthPx: Int = 0,
+    bubbleEnabled: Boolean = true
 ) {
     val density = LocalDensity.current
     // 内容区顶部/底部扣除系统栏高度（用缓存值，沉浸式切换不触发滚动内容跳动）
@@ -139,7 +140,8 @@ fun ScrollReader(
                     paragraphKey = ParagraphKey(item.chapterId, item.paragraph.index),
                     paddingH = paddingH,
                     // 中文两端对齐：滚动内容区宽度（与 LazyColumn 水平 padding 后的约束一致）
-                    contentWidthPx = contentWidthPx
+                    contentWidthPx = contentWidthPx,
+                    bubbleEnabled = bubbleEnabled
                 )
             }
         }

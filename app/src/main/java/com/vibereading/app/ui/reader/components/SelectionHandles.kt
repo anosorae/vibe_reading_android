@@ -46,7 +46,8 @@ fun SelectionHandles(
     val end = selectionState.selectionEnd
     if (start < 0 || end > (selectionState.paragraphText.length)) return
 
-    // 用 getCursorRect 获取对齐后的光标位置（两端对齐时 getBoundingBox 不含 justification 偏移）
+    // 用 getCursorRect 获取对齐后的光标位置（两端对齐时 getBoundingBox 不含 justification 偏移），
+    // 并补回拉伸字符后的光标度量回退（cursorDrawnCorrection），使竖线贴住绘制的字形边缘
     val startCursor = layout.cursorRectSafely(start) ?: return
     val endCursor = layout.cursorRectSafely(end) ?: return
 
@@ -54,11 +55,11 @@ fun SelectionHandles(
     // START: getCursorRect(start).left = 首字符左边缘；END: getCursorRect(end).left = 末字符右边缘
     // Y 锚定 cursorRect.bottom（字符行底）：iOS 风格手柄从选区高亮底部向下延伸
     val startPos = Offset(
-        paraOffset.x + startCursor.left - containerWindowOffset.x,
+        paraOffset.x + startCursor.left + cursorDrawnCorrection(selectionState.charStretchPx, start) - containerWindowOffset.x,
         paraOffset.y + startCursor.bottom - containerWindowOffset.y
     )
     val endPos = Offset(
-        paraOffset.x + endCursor.left - containerWindowOffset.x,
+        paraOffset.x + endCursor.left + cursorDrawnCorrection(selectionState.charStretchPx, end) - containerWindowOffset.x,
         paraOffset.y + endCursor.bottom - containerWindowOffset.y
     )
 

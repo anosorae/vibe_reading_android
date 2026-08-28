@@ -180,7 +180,10 @@ class TextSelectionState {
         }
         val startCursor = layout.cursorRectSafely(selectionStart) ?: return
         val endCursor = layout.cursorRectSafely(selectionEnd) ?: return
-        val centerX = (startCursor.left + endCursor.left) / 2f
+        // 两端对齐拉伸后光标度量边界相对绘制左缘有回退，先补回再取选区几何中心
+        val startX = startCursor.left + cursorDrawnCorrection(charStretchPx, selectionStart)
+        val endX = endCursor.left + cursorDrawnCorrection(charStretchPx, selectionEnd)
+        val centerX = (startX + endX) / 2f
         val topY = minOf(startCursor.top, endCursor.top)
         val bottomY = maxOf(startCursor.bottom, endCursor.bottom)
         val centerY = (topY + bottomY) / 2f
@@ -250,6 +253,16 @@ internal fun perCharHitTest(
     }
     return lineEnd - 1
 }
+
+/**
+ * 光标度量边界相对绘制字形左缘的回退补偿：设备实测（API 35），两端对齐 span 拉伸后，
+ * 被拉伸字符之后的光标边界 `cursorRect(k).left` 相对绘制字形左缘回退了该字符的拉伸量
+ * （拉伸间隙在绘制与光标度量间的归属不一致；行级 lineRight 与绘制仍贴合），直接用
+ * cursorRect 定位手柄/工具栏会在拉伸字符后留下与拉伸量等宽的空隙。
+ * 按 [offset] 前一个字符的拉伸量补回；未拉伸字符后为 0。
+ */
+internal fun cursorDrawnCorrection(charStretchPx: FloatArray, offset: Int): Float =
+    charStretchPx.getOrNull(offset - 1) ?: 0f
 
 /** 段落唯一标识（章节 + 段落序号），用于选区高亮归属判断。 */
 data class ParagraphKey(val chapterId: Long, val paraIndex: Int)

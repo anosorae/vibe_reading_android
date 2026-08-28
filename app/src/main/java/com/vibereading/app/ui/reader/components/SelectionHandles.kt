@@ -191,8 +191,8 @@ private fun SelectionHandle(
                                 layout.getOffsetForPosition(hitPos)
                             }.onFailure { AppLog.put("getOffsetForPosition 失败", it) }
                                 .getOrNull() ?: continue
-                            // 两端对齐补偿：逐字符命中测试
-                            val adjusted = perCharHitTest(layout, hitPos, rawOffset)
+                            // 两端对齐补偿：按字符单元格 + 视觉间隙中点归属
+                            val adjusted = perCharHitTest(layout, hitPos, rawOffset, selectionState.charStretchPx)
                             selectionState.dragTo(adjusted)
                         }
                     }

@@ -45,7 +45,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/ReaderGeometry.kt` — 页面几何和系统栏扣除公式
     - `reader/ChapterStatusUi.kt` — 章节状态到颜色映射
     - `reader/pagination/TextPaginator.kt` — `PageStyle`、`FlowItem`、`PageUnit`、`TextPage`、`ChapterPaginator`；按当前样式排版并支持 offset→页映射
-    - `reader/pagination/CjkJustify.kt` — `CjkJustifier`：中文两端对齐逐字拉伸的唯一数据源（对齐 Legado `textFullJustify`），以 Em 级 `SpanStyle.letterSpacing` 按行均摊余量；span 参与测量，换行/页高/选词/仿真位图全部不受影响
+    - `reader/pagination/CjkJustify.kt` — `CjkJustifier`：两端对齐的唯一数据源（中英通用，对齐 Legado `textFullJustify`），以 Em 级 `SpanStyle.letterSpacing` 均摊行余量（无空格 CJK 行逐字、含空格行逐空格）；span 参与测量，换行/页高/选词/仿真位图全部不受影响
     - `reader/pagination/BookWindow.kt` — 当前章 ±1 的排版窗口和扁平页索引
     - `reader/pagination/BookPager.kt` — HorizontalPager、PageRenderer、覆盖/卷页位图
     - `reader/pagination/PageCurl.kt` — Legado 仿真卷页几何移植
@@ -87,7 +87,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - 滚动内容 `scrollChunks` 惰性构建：分页模式不解析全书（打开书籍提速），首次进入滚动模式时构建并跨模式缓存，章节内容变化时重置；滚动模式构建期间显示加载指示。
 - 分页 `PageUnit`/`TextPage` 必须携带来源段落范围；长中文段按行切分不能丢字符；段落放不下本页剩余空间时按行边界切分填满当前页（ADR-004），续段顶格无首行缩进（测量与渲染同一口径），所有片段仍绑定同一原文范围，双语对每个带译文的片段段尾都显示中文气泡。
 - 标题、正文、段距、双语气泡必须由 `ReadingContentRenderer`、`PageStyle`、`ReaderMetrics` 和 `BilingualParagraph` 共享；不要为滚动或分页新增独立标题字号、段距或段落拆分逻辑。
-- 中文两端对齐（`CjkJustifier`）：以 Em 级 `SpanStyle.letterSpacing` 按行均摊余量，span 参与测量 → 换行/页高/选词/仿真位图天然一致；空格行走平台 inter-word 对齐，段末行不拉伸（跨页延续片段 `paragraphContinues` 除外）。新增正文渲染点必须给 `SelectableParagraphText` 传 `contentWidthPx`，位图等自测路径必须复用 `CjkJustifier.annotate`，不得另建拉伸算法。无 CJK 的 Justify 正文必须经 `CjkJustifier.adjustLatinTextStyle` 剥离非零字间距（Android 15 上非零 `letterSpacing` 会使平台 inter-word 失效、右缘不贴齐），分页测量 `ChapterPaginator.measureLayout` / 渲染 `SelectableParagraphText` / 仿真位图 `renderPageBitmap` 三处共用同一口径。
+- 两端对齐（`CjkJustifier`，中英通用）：以 Em 级 `SpanStyle.letterSpacing` 均摊行余量，span 参与测量 → 换行/页高/选词/仿真位图天然一致；含空格行把余量均摊到空格间隙（不再使用平台 inter-word——平台 justify 绘制期加宽词距而 getCursorRect/getBoundingBox 不反映对齐，会导致选词与手柄整体错位），无空格 CJK 行逐字均摊，段末行不拉伸（跨页延续片段 `paragraphContinues` 除外）。span 接管（`annotateDetailed` 返回 `tookOver=true`）后测量与渲染必须用 `textAlign = Start`，未接管才回退平台 justify + `adjustLatinTextStyle`。新增正文渲染点必须给 `SelectableParagraphText` 传 `contentWidthPx`，位图等自测路径必须复用 `CjkJustifier.annotate`，不得另建拉伸算法。分页测量 `ChapterPaginator.measureLayout` / 渲染 `SelectableParagraphText` / 仿真位图 `renderPageBitmap` 三处共用同一口径。选词命中测试 `perCharHitTest` 按字符单元格归属并用 `charStretchPx` 把拉伸间隙按视觉中点切分。
 
 ## 领域规则与关键 gotchas
 

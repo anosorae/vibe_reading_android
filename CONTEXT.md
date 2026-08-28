@@ -30,7 +30,7 @@
 | **偏移到页映射 (Offset-to-Page Mapping)** | `ChapterPaginator.pageForOffset()` / `BookWindow.indexOf(chapterId, sourceOffset)` 根据当前排版把稳定原文位置映射到运行时页 | 固定页码恢复 |
 | **底部对齐 (Bottom Justify)** | 非末页把剩余高度分配到各行使末行沉底；末页豁免，避免短页行距被拉大 | 顶部对齐 |
 | **首行缩进 (First-line Indent)** | 段落首行缩进（em，默认 2em 约等于两全角空格） | 顶格 |
-| **两端对齐 (Justify)** | 段落左右两端对齐（默认开启，接近 Legado `textFullJustify`）：无空格的中文行按字距均摊余量（`CjkJustifier`），含空格的行交给平台词间对齐；段末行不拉伸 | 左对齐 |
+| **两端对齐 (Justify)** | 段落左右两端对齐（默认开启，接近 Legado `textFullJustify`）：全部由 `CjkJustifier` 以 span 字距接管——无空格的中文行逐字均摊余量，含空格的行（中英皆然）把余量均摊到空格间隙（视觉对齐平台 inter-word）；span 接管后测量与渲染用 Start 对齐（不走平台 justify），段末行不拉伸 | 左对齐 |
 | **页边距 (Page Margin)** | 内容区与屏幕边缘的用户留白；分页、滚动和五种翻页类型共用 | — |
 | **页眉页脚 (Page Header/Footer)** | 分页模式阅读页的顶部章节名与底部页码/时间/电量条带；视觉覆盖层不参与排版测量，卷页位图不渲染，与正文的间距可在阅读器设置调整；滚动模式无页眉页脚 | 正文排版 |
 | **自定义字体 (Custom Font)** | 通过 SAF 导入 TTF/OTF，持久化 `content://` URI 并取得持久权限 | 系统字体、内置字体 |

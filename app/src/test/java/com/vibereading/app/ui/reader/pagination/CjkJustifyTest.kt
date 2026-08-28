@@ -58,6 +58,9 @@ class CjkJustifyTest {
     private fun annotate(text: String, width: Int = 100, justifyLastLine: Boolean = false) =
         CjkJustifier.annotate(text, justified, width, measurer, justifyLastLine)
 
+    private fun annotateDetailed(text: String, width: Int = 100, justifyLastLine: Boolean = false) =
+        CjkJustifier.annotateDetailed(text, justified, width, measurer, justifyLastLine)
+
     // ── spike：span 级 Em letterSpacing 必须真实参与测量（整个方案的平台前提） ──
 
     @Test
@@ -163,21 +166,65 @@ class CjkJustifyTest {
     }
 
     @Test
-    fun englishText_noSpans() {
-        val text = "English words are justified by the platform inter-word mode already."
-        assertTrue(annotate(text, width = 150).spanStyles.isEmpty())
+    fun englishText_justifiedBySpaceSpans() {
+        // 英文行：余量均摊到空格（视觉对齐平台 inter-word），span 只落在空格上，
+        // 断行与自然排版一致，非末行贴齐内容宽
+        val text = "English words are justified by stretched word gaps via spans already."
+        val width = 150
+        val result = annotateDetailed(text, width)
+        assertTrue("应接管", result.tookOver)
+        assertTrue("应生成字距 span", result.annotated.spanStyles.isNotEmpty())
+        for (span in result.annotated.spanStyles) {
+            assertEquals("span 只应落在空格上：${text.substring(span.start, span.end)}", " ", text.substring(span.start, span.end))
+        }
+        val renderStyle = justified.copy(textAlign = TextAlign.Start)
+        val layout = measure(result.annotated, renderStyle, width)
+        val natural = measure(AnnotatedString(text), style.copy(textAlign = TextAlign.Start), width)
+        assertEquals("断行不应变化", natural.lineCount, layout.lineCount)
+        for (line in 0 until natural.lineCount) {
+            assertEquals("第 $line 行起点不应变化", natural.getLineStart(line), layout.getLineStart(line))
+        }
+        for (line in 0 until layout.lineCount - 1) {
+            assertTrue(
+                "第 $line 行右缘应贴齐：right=${layout.getLineRight(line)}",
+                kotlin.math.abs(layout.getLineRight(line) - width) < 1.5f
+            )
+        }
+        // 拉伸只落在空格上；段末行不拉伸（其空格为 0）；近满行可能因余量 ≤ 容差不拉伸
+        val lastLineStart = natural.getLineStart(natural.lineCount - 1)
+        var stretchedSpaces = 0
+        for (i in text.indices) {
+            val stretched = result.charStretchPx[i] > 0f
+            if (stretched) {
+                assertTrue("拉伸只应落在空格上：i=$i '${text[i]}'", text[i] == ' ')
+                if (i < lastLineStart) stretchedSpaces++
+            } else if (i >= lastLineStart && text[i] == ' ') {
+                // 段末行空格不拉伸
+            }
+        }
+        assertTrue("至少应拉伸一个非末行空格", stretchedSpaces > 0)
     }
 
     @Test
-    fun spaceContainingLines_noSpans() {
-        // 含空格的行交给平台 inter-word 对齐，不生成字距 span
+    fun cjkSpaceLine_stretchDistributedToSpaces() {
+        // 含空格的中文行同样按空格均摊（不再交给平台 inter-word）
         val text = "汉字 汉字 汉字 汉字 汉字 汉字 汉字 汉字 汉字 汉字 汉字 汉字 汉字"
-        val annotated = annotate(text, width = 120)
-        val natural = measure(AnnotatedString(text), style.copy(textAlign = TextAlign.Start), 120)
-        annotated.spanStyles.forEach { span ->
-            val line = natural.getLineForOffset(span.start)
-            val lineText = text.substring(natural.getLineStart(line), natural.getLineEnd(line, visibleEnd = true))
-            assertTrue("含空格的行不应生成字距 span：$lineText", !lineText.contains(' '))
+        val width = 120
+        val result = annotateDetailed(text, width)
+        assertTrue("应接管", result.tookOver)
+        assertTrue(result.annotated.spanStyles.isNotEmpty())
+        for (span in result.annotated.spanStyles) {
+            assertEquals(" ", text.substring(span.start, span.end))
+        }
+        val renderStyle = justified.copy(textAlign = TextAlign.Start)
+        val layout = measure(result.annotated, renderStyle, width)
+        val natural = measure(AnnotatedString(text), style.copy(textAlign = TextAlign.Start), width)
+        assertEquals(natural.lineCount, layout.lineCount)
+        for (line in 0 until layout.lineCount - 1) {
+            assertTrue(
+                "第 $line 行右缘应贴齐：right=${layout.getLineRight(line)}",
+                kotlin.math.abs(layout.getLineRight(line) - width) < 1.5f
+            )
         }
     }
 
@@ -195,10 +242,12 @@ class CjkJustifyTest {
     fun enFallback_chineseText_justified() {
         val text = "en 模式译文未就绪时回退中文原文，这段文本需要足够长以触发多行换行排版验证两端对齐。"
         val bodyEn = justified.copy(fontFamily = FontFamily.Default)
-        val annotated = CjkJustifier.annotate(text, bodyEn, 100, measurer)
-        val layout = measure(annotated, bodyEn, 100)
+        // span 接管后（含空格行拉伸空格、无空格行逐字拉伸）渲染口径为 Start
+        val result = CjkJustifier.annotateDetailed(text, bodyEn, 100, measurer)
+        assertTrue("应接管", result.tookOver)
+        val layout = measure(result.annotated, bodyEn.copy(textAlign = TextAlign.Start), 100)
         assertTrue("应产生多行", layout.lineCount >= 3)
-        assertTrue("应生成字距 span", annotated.spanStyles.isNotEmpty())
+        assertTrue("应生成字距 span", result.annotated.spanStyles.isNotEmpty())
         for (line in 0 until layout.lineCount - 1) {
             assertTrue(
                 "第 $line 行右缘应贴齐内容宽：right=${layout.getLineRight(line)}",

@@ -22,6 +22,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.ui.reader.pagination.CjkJustifier
 import java.text.BreakIterator
@@ -65,6 +66,9 @@ class TextSelectionState {
     /** 选中段落的 TextLayoutResult，用于 getBoundingBox/getOffsetForPosition。 */
     var layoutResult by mutableStateOf<TextLayoutResult?>(null)
         private set
+    /** 选中段落每字符之后的对齐字距拉伸量（px），供拖拽手柄命中测试按视觉间隙中点归属。 */
+    var charStretchPx by mutableStateOf(FloatArray(0))
+        private set
     /** 选中段落在窗口坐标系中的位置（onGloballyPositioned 获取）。 */
     var paragraphWindowOffset by mutableStateOf(Offset.Zero)
         private set
@@ -88,7 +92,8 @@ class TextSelectionState {
         position: Offset,
         paragraphText: String = "",
         layout: TextLayoutResult? = null,
-        windowOffset: Offset = Offset.Zero
+        windowOffset: Offset = Offset.Zero,
+        charStretchPx: FloatArray = FloatArray(0)
     ) {
         paragraphKey = key
         selectedText = text
@@ -97,6 +102,7 @@ class TextSelectionState {
         popupPosition = position
         this.paragraphText = paragraphText
         layoutResult = layout
+        this.charStretchPx = charStretchPx
         paragraphWindowOffset = windowOffset
         isSelecting = true
         showToolbar = true
@@ -193,6 +199,7 @@ class TextSelectionState {
         paragraphKey = null
         paragraphText = ""
         layoutResult = null
+        charStretchPx = FloatArray(0)
         paragraphWindowOffset = Offset.Zero
         draggingHandle = null
     }
@@ -201,7 +208,7 @@ class TextSelectionState {
 
 /**
  * 安全获取 [TextLayoutResult.getCursorRect]，失败时记录日志并返回 null。
- * 两端对齐时 getCursorRect 返回对齐后位置（优于 getBoundingBox 的 ink 边界）。
+ * getCursorRect 返回字符边界（对齐后位置），优于 getOffsetForPosition 的最近边界映射。
  */
 internal fun TextLayoutResult.cursorRectSafely(offset: Int) =
     runCatching { getCursorRect(offset) }
@@ -209,27 +216,39 @@ internal fun TextLayoutResult.cursorRectSafely(offset: Int) =
         .getOrNull()
 
 /**
- * 对两端对齐文本的命中测试补偿：在 [rawOffset] 所在行上逐字符遍历，
- * 用 [getBoundingBox] 的 ink 边界做命中测试，补偿 [getOffsetForPosition] 因齐行间距产生的水平偏差。
- * 供 [SelectableParagraphText] 和 [SelectionHandles] 共用。
+ * 选词命中测试：把点击点归属到视觉上最近的字符。供 [SelectableParagraphText] 和
+ * [SelectionHandles] 共用。
+ *
+ * 平台 [TextLayoutResult.getOffsetForPosition] 是「最近光标边界」语义：宽字形（CJK）的
+ * 右半边距右边界更近，会映射到右邻字符。本函数改为按字符单元格归属——
+ * [TextLayoutResult.getBoundingBox] 即 `[primary(off), primary(off+1))` 平铺单元格，
+ * 包含判定即单元格语义。
+ *
+ * 两端对齐（CjkJustifier 的字距 span）把可见拉伸间隙留在字符右侧、计入左字符单元格，
+ * 间隙内点击会系统性选中左字符；[charStretchPx]（由 CjkJustifier.annotateDetailed 按
+ * UTF-16 偏移给出每字符之后的拉伸量 px）把该字符的单元格边界回退半个间隙到视觉间隙
+ * 中点，等距时保持左字符。未拉伸字符（d=0）边界即单元格右缘，与自然排版行为一致。
  */
 internal fun perCharHitTest(
     layout: TextLayoutResult,
     localPos: Offset,
-    rawOffset: Int
+    rawOffset: Int,
+    charStretchPx: FloatArray = FloatArray(0)
 ): Int {
     val line = layout.getLineForOffset(rawOffset)
     val lineStart = layout.getLineStart(line)
     val lineEnd = layout.getLineEnd(line, visibleEnd = true)
-    var found = rawOffset
+    if (lineEnd <= lineStart) return rawOffset
     for (off in lineStart until lineEnd) {
-        val bbox = layout.getBoundingBox(off)
-        if (localPos.x >= bbox.left - 1f && localPos.x <= bbox.right + 1f) {
-            found = off
-            break
+        // 行末字符之后没有可见间隙（下一个字形在下一行），边界取无穷
+        val boundary = if (off == lineEnd - 1) {
+            Float.POSITIVE_INFINITY
+        } else {
+            layout.getBoundingBox(off).right - (charStretchPx.getOrNull(off) ?: 0f) / 2f
         }
+        if (localPos.x < boundary) return off
     }
-    return found
+    return lineEnd - 1
 }
 
 /** 段落唯一标识（章节 + 段落序号），用于选区高亮归属判断。 */
@@ -262,7 +281,7 @@ fun findWordBoundary(text: String, offset: Int, locale: Locale = Locale.ENGLISH)
  * - 选区高亮用 AnnotatedString 背景色渲染：背景不参与测量，分页结果不受影响
  * - 中文两端对齐：[contentWidthPx] > 0 时经 [CjkJustifier] 生成逐行字距 span（对齐分页器
  *   测量口径），选区背景 span 与字距 span 共存于同一 AnnotatedString；span 参与测量，
- *   命中测试/手柄读取的即是真实几何，无需额外补偿
+ *   命中测试/手柄读取的即是真实几何，长按与拖拽经 [perCharHitTest] 按视觉间隙中点归属
  * - 普通点击不消费任何事件，翻页/开关工具栏手势原样交给外层
  */
 @Composable
@@ -278,19 +297,24 @@ fun SelectableParagraphText(
     contentWidthPx: Int = 0,
     justifyLastLine: Boolean = false
 ) {
-    // 中文两端对齐（CjkJustifier 内部门控：非 Justify/无 CJK 时原样返回纯文本）。
-    // 无 CJK 的 Justify 正文先剥离非零字间距（Android 15 平台回归：letterSpacing 会使平台
-    // inter-word 失效），与 ChapterPaginator.measureLayout / renderPageBitmap 共用同一口径，
-    // 保证渲染文本与排版测量使用同一份 style。
+    // 两端对齐（CjkJustifier 内部门控：非 Justify 时原样返回纯文本）。span 接管后必须以
+    // Start 渲染，避免平台 inter-word justify 在 span 之上二次拉伸空格；未接管时回退平台
+    // justify（无 CJK 文本先剥离非零字间距，规避 Android 15 平台回归），与
+    // ChapterPaginator.measureLayout / renderPageBitmap 共用同一口径。
     val justifyMeasurer = rememberTextMeasurer()
-    val effectiveStyle = remember(text, style) { CjkJustifier.adjustLatinTextStyle(text, style) }
-    val baseAnnotated = remember(text, effectiveStyle, contentWidthPx, justifyLastLine, justifyMeasurer) {
+    val justifiedInfo = remember(text, style, contentWidthPx, justifyLastLine, justifyMeasurer) {
         if (contentWidthPx > 0) {
-            CjkJustifier.annotate(text, effectiveStyle, contentWidthPx, justifyMeasurer, justifyLastLine)
+            CjkJustifier.annotateDetailed(text, style, contentWidthPx, justifyMeasurer, justifyLastLine)
         } else {
-            AnnotatedString(text)
+            CjkJustifier.JustifiedText(AnnotatedString(text), FloatArray(0), false)
         }
     }
+    val effectiveStyle = if (justifiedInfo.tookOver) {
+        style.copy(textAlign = TextAlign.Start)
+    } else {
+        CjkJustifier.adjustLatinTextStyle(text, style)
+    }
+    val baseAnnotated = justifiedInfo.annotated
 
     if (selectionState == null) {
         Text(text = baseAnnotated, style = effectiveStyle, color = color, modifier = modifier)
@@ -325,7 +349,7 @@ fun SelectableParagraphText(
         onTextLayout = { layoutResult = it },
         modifier = modifier
             .onGloballyPositioned { windowPosition = it.positionInWindow() }
-            .pointerInput(selectionState, paragraphKey, text, locale) {
+            .pointerInput(selectionState, paragraphKey, text, locale, justifiedInfo) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     val longPress = awaitLongPressOrCancellation(down.id)
@@ -339,11 +363,10 @@ fun SelectableParagraphText(
                         val charOffset = runCatching {
                             layout.getOffsetForPosition(pressPosition)
                         }.getOrNull()
-                        // 两端对齐时，getOffsetForPosition 返回的字符可能偏左（视觉位置因齐行间距偏右），
-                        // 在该行上逐字符遍历，用 getBoundingBox 的 ink 边界做命中测试。
-                        // 兼容两端对齐、居中等所有对齐方式，尽可能补偿 getOffsetForPosition 的映射偏差。
+                        // getOffsetForPosition 是「最近光标边界」语义，宽字形右半边会取到右邻字符；
+                        // perCharHitTest 按字符单元格归属，并把对齐拉伸间隙按视觉中点切分。
                         val adjustedOffset = if (charOffset != null) {
-                            perCharHitTest(layout, pressPosition, charOffset)
+                            perCharHitTest(layout, pressPosition, charOffset, justifiedInfo.charStretchPx)
                         } else null
                         val wordRange = adjustedOffset?.let {
                             findWordBoundary(text, it, locale)
@@ -359,7 +382,8 @@ fun SelectableParagraphText(
                                 position = windowPosition + pressPosition,
                                 paragraphText = text,
                                 layout = layout,
-                                windowOffset = windowPosition
+                                windowOffset = windowPosition,
+                                charStretchPx = justifiedInfo.charStretchPx
                             )
                         }
                     }

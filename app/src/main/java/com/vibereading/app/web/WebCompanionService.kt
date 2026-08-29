@@ -7,6 +7,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -23,6 +25,9 @@ import com.vibereading.app.ui.reader.TranslationCoordinatorProvider
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.security.SecureRandom
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Web 伴读前台服务（ADR-005）：托管内嵌 HTTP 服务器，让同一 WiFi 下的电脑浏览器
@@ -37,6 +42,7 @@ class WebCompanionService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var server: CompanionServer? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -52,6 +58,8 @@ class WebCompanionService : Service() {
         if (started) {
             acquireWakeLock()
             acquireWifiLock()
+            registerNetworkCallback()
+            publishUrl()
         } else {
             // 端口被占等情况：服务无法提供功能，自行结束避免留下空前台通知
             stopSelf()
@@ -116,6 +124,49 @@ class WebCompanionService : Service() {
             .build()
     }
 
+    /**
+     * legado 式网络切换跟随：不轮询，注册默认网络回调，WiFi/数据网络切换后
+     * 本机 IP 变化时刷新内存地址并更新通知栏。回调默认在主线程执行，
+     * 网卡枚举开销极小且仅在网络事件时触发。
+     */
+    private fun registerNetworkCallback() {
+        if (networkCallback != null) return
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) = refreshAddress()
+            override fun onLost(network: Network) = refreshAddress()
+        }
+        runCatching { cm.registerDefaultNetworkCallback(callback) }
+            .onSuccess { networkCallback = callback }
+            .onFailure { AppLog.put("伴读服务注册网络回调失败", it) }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        runCatching { cm.unregisterNetworkCallback(callback) }
+            .onFailure { AppLog.put("伴读服务注销网络回调失败", it) }
+    }
+
+    /** 地址变化时更新共享 StateFlow 与通知栏；不变则不动通知（setOnlyAlertOnce 已兜底）。 */
+    private fun refreshAddress() {
+        val newUrl = currentUrl()
+        if (newUrl == urlFlow.value) return
+        _urlFlow.value = newUrl
+        if (newUrl != null) {
+            runCatching {
+                val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(NOTIFICATION_ID, buildNotification(running = true))
+            }.onFailure { AppLog.put("伴读通知地址刷新失败", it) }
+        }
+    }
+
+    /** 把当前地址发布到共享 StateFlow（服务启动后调用一次；此后由网络回调驱动）。 */
+    private fun publishUrl() {
+        _urlFlow.value = currentUrl()
+    }
+
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -138,8 +189,10 @@ class WebCompanionService : Service() {
     override fun onDestroy() {
         runCatching { server?.stop() }.onFailure { AppLog.put("伴读服务器停止异常", it) }
         server = null
+        unregisterNetworkCallback()
         currentToken = null
         isRunning = false
+        _urlFlow.value = null
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
         wifiLock?.takeIf { it.isHeld }?.release()
@@ -164,6 +217,13 @@ class WebCompanionService : Service() {
         var currentToken: String? = null
             private set
 
+        /**
+         * 含 Token 的服务地址共享流；null = 服务未运行或尚未拿到局域网地址。
+         * 由服务自身在网络切换时刷新（legado 式事件驱动），订阅方无需轮询。
+         */
+        private val _urlFlow = MutableStateFlow<String?>(null)
+        val urlFlow: StateFlow<String?> = _urlFlow.asStateFlow()
+
         /** 含 Token 的服务地址；多网卡（如热点+WiFi）取首个站点本地地址。 */
         fun currentUrl(): String? {
             val token = currentToken ?: return null
@@ -178,12 +238,14 @@ class WebCompanionService : Service() {
             // 先定 Token 再拉起服务：调用方（设置页）在 start() 返回后即可展示完整地址
             val token = currentToken ?: newToken()
             currentToken = token
+            _urlFlow.value = currentUrl()
             val intent = Intent(context, WebCompanionService::class.java).putExtra(EXTRA_TOKEN, token)
             try {
                 androidx.core.content.ContextCompat.startForegroundService(context, intent)
             } catch (e: Exception) {
                 isRunning = false
                 currentToken = null
+                _urlFlow.value = null
                 AppLog.put("伴读服务 startForegroundService 失败", e)
             }
         }
@@ -191,7 +253,9 @@ class WebCompanionService : Service() {
         /** 停止伴读服务（幂等）。 */
         fun stop(context: Context) {
             isRunning = false
+            _urlFlow.value = null
             runCatching { context.stopService(Intent(context, WebCompanionService::class.java)) }
+                .onFailure { AppLog.put("伴读服务 stopService 失败", it) }
         }
 
         /** 注册通知渠道，在 Application.onCreate 调用一次。 */

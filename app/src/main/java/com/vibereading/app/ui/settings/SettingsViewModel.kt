@@ -17,7 +17,6 @@ import com.vibereading.app.domain.model.ThemeSettings
 import com.vibereading.app.domain.model.toLlmSettings
 import com.vibereading.app.web.WebCompanionService
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -106,13 +105,21 @@ class SettingsViewModel(
                 _uiState.update { it.copy(bookshelfSort = s) }
             }
         }
-        // 伴读服务状态：开关持久化在 DataStore，运行状态/地址来自服务的内存态。
-        // 周期刷新：网络切换后 IP 会变（通知栏地址不跟随），设置页始终展示当前可用地址。
+        // 伴读服务状态：开关持久化在 DataStore，地址由服务在网络切换时经 urlFlow 事件式
+        // 刷新（legado 式 NetworkCallback，无轮询）；combine 使订阅开始时立即取到当前值。
         viewModelScope.launch {
-            while (true) {
-                refreshCompanionState(settingsRepo.webCompanionEnabled.first())
-                delay(3000)
-            }
+            combine(
+                settingsRepo.webCompanionEnabled,
+                WebCompanionService.urlFlow
+            ) { enabled, url -> enabled to url }
+                .collect { (enabled, url) ->
+                    _uiState.update {
+                        it.copy(
+                            webCompanionRunning = enabled && WebCompanionService.isRunning,
+                            webCompanionUrl = if (enabled) (url ?: WebCompanionService.currentUrl()) else null
+                        )
+                    }
+                }
         }
     }
 
@@ -120,7 +127,7 @@ class SettingsViewModel(
         _uiState.update {
             it.copy(
                 webCompanionRunning = enabled && WebCompanionService.isRunning,
-                webCompanionUrl = if (enabled) WebCompanionService.currentUrl() else null
+                webCompanionUrl = if (enabled) (WebCompanionService.urlFlow.value ?: WebCompanionService.currentUrl()) else null
             )
         }
     }

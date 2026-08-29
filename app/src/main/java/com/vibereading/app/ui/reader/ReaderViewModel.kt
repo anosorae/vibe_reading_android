@@ -10,6 +10,7 @@ import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.LlmProfileRepository
+import com.vibereading.app.data.repository.ReadingSettingsSaver
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.DictEntry
@@ -183,11 +184,14 @@ class ReaderViewModel(
                 }
         }
 
-        // Load settings
+        // Load settings：持久化值一次性载入，此后 UI 状态是唯一事实源。
+        // 不能持续 collect settingsRepo.readingSettings：saveReadingSettings 每次写库
+        // 都会经 store.data 回流，拖动滑杆时延迟到达的旧值回声会覆盖较新的 UI 状态，
+        // 造成滑杆回跳/跳变（全 app 只有本 ViewModel 写阅读设置，无外部变更需要回流）。
         viewModelScope.launch {
-            settingsRepo.readingSettings.collect { rs ->
-                _uiState.update { it.copy(readingSettings = rs) }
-            }
+            val rs = settingsRepo.readingSettings.first()
+            _uiState.update { it.copy(readingSettings = rs) }
+            readingSettingsLoaded.value = true
         }
         viewModelScope.launch {
             settingsRepo.nightMode.collect { night ->
@@ -360,12 +364,20 @@ class ReaderViewModel(
         _uiState.update { it.copy(toolbarVisible = false, catalogVisible = false, settingsVisible = false, llmSettingsVisible = false) }
     }
 
-    // ── Reading style updates (persist immediately via DataStore) ──
+    // ── Reading style updates（UI 状态即时生效；持久化经合并写，见 ReadingSettingsSaver） ──
+
+    /** 持久化初始值是否已载入：载入前到达的设置改动会等载入完成，避免以默认值为基础覆盖持久值 */
+    private val readingSettingsLoaded = MutableStateFlow(false)
+
+    private val settingsSaver = ReadingSettingsSaver(viewModelScope, settingsRepo::saveReadingSettings)
 
     fun updateReadingSettings(transform: (ReadingSettings) -> ReadingSettings) {
-        val new = transform(_uiState.value.readingSettings)
-        _uiState.update { it.copy(readingSettings = new) }
-        viewModelScope.launch { settingsRepo.saveReadingSettings(new) }
+        viewModelScope.launch {
+            readingSettingsLoaded.first { it }
+            val new = transform(_uiState.value.readingSettings)
+            _uiState.update { it.copy(readingSettings = new) }
+            settingsSaver.submit(new)
+        }
     }
 
     fun toggleNightMode() {

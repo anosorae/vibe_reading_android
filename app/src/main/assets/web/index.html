@@ -13,7 +13,7 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font-family: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, Georgia, serif;
+    font-family: var(--font, system-ui, sans-serif); /* 由字体选择器写入 */
   }
   a { color: var(--accent); text-decoration: none; }
   button {
@@ -38,6 +38,10 @@
     border: 1px solid rgba(0,0,0,.18); box-sizing: border-box;
   }
   #bg-picker .dot.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #font-picker {
+    font: inherit; font-size: 13px; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 6px; cursor: pointer;
+  }
 
   main { max-width: 44em; margin: 0 auto; padding: 18px 18px 80px; }
 
@@ -116,6 +120,7 @@
   <button id="btn-back" style="display:none">← 书架</button>
   <h1 id="page-title">译读 · Web 伴读</h1>
   <span id="bg-picker" title="阅读背景"></span>
+  <select id="font-picker" title="正文字体"></select>
   <button id="btn-mode" style="display:none">英文</button>
   <button id="btn-catalog" style="display:none">目录</button>
 </header>
@@ -142,6 +147,33 @@ if (!TOKEN) document.body.innerHTML = '<div class="empty">缺少访问 Token，�
 
 const $ = (id) => document.getElementById(id);
 const main = $('main');
+
+// ── 正文字体选择：默认系统默认字体（浏览器默认观感），可选衬线/黑体/楷体 ──
+const FONT_OPTIONS = [
+  { name: '系统默认', stack: '' },  // 空 = 不覆盖，完全交给浏览器默认
+  { name: '宋体', stack: '"Noto Serif CJK SC", "Source Han Serif SC", SimSun, "Songti SC", serif' },
+  { name: '黑体', stack: '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif' },
+  { name: '楷体', stack: 'KaiTi, STKaiti, "Kaiti SC", cursive' }
+];
+let fontIndex = parseInt(localStorage.getItem('companion_font') || '0', 10) || 0;
+if (fontIndex < 0 || fontIndex >= FONT_OPTIONS.length) fontIndex = 0;
+function applyFont() {
+  const opt = FONT_OPTIONS[fontIndex];
+  if (opt.stack) document.documentElement.style.setProperty('--font', opt.stack);
+  else document.documentElement.style.removeProperty('--font');
+  localStorage.setItem('companion_font', String(fontIndex));
+  $('font-picker').value = String(fontIndex);
+}
+(function initFontPicker() {
+  const sel = $('font-picker');
+  FONT_OPTIONS.forEach((o, i) => {
+    const op = document.createElement('option');
+    op.value = String(i); op.textContent = o.name;
+    sel.appendChild(op);
+  });
+  sel.onchange = () => { fontIndex = +sel.value; applyFont(); };
+  applyFont();
+})();
 
 // ── 背景预设（对齐 App ReaderBgPresets 五档与 ReaderPalette 正文色）──
 const BG_PRESETS = [

@@ -148,30 +148,146 @@ if (!TOKEN) document.body.innerHTML = '<div class="empty">缺少访问 Token，�
 const $ = (id) => document.getElementById(id);
 const main = $('main');
 
-// ── 正文字体选择：默认系统默认字体（浏览器默认观感），可选衬线/黑体/楷体 ──
+// ── 正文字体选择：默认系统默认字体；可选常用栈，或探测/枚举本机已安装字体 ──
 const FONT_OPTIONS = [
   { name: '系统默认', stack: '' },  // 空 = 不覆盖，完全交给浏览器默认
   { name: '宋体', stack: '"Noto Serif CJK SC", "Source Han Serif SC", SimSun, "Songti SC", serif' },
   { name: '黑体', stack: '"Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif' },
   { name: '楷体', stack: 'KaiTi, STKaiti, "Kaiti SC", cursive' }
 ];
-let fontIndex = parseInt(localStorage.getItem('companion_font') || '0', 10) || 0;
-if (fontIndex < 0 || fontIndex >= FONT_OPTIONS.length) fontIndex = 0;
+const SCAN_VALUE = '__scan_fonts__';
+
+// 探测候选清单（显示名 → font-family 候选串）。canvas 测宽判定是否已安装，
+// 局域网 IP（非安全上下文，无 queryLocalFonts）也能用。
+const PROBE_FONTS = [
+  { n: '微软雅黑', css: '"Microsoft YaHei"' },
+  { n: '宋体', css: 'SimSun' },
+  { n: '新宋体', css: 'NSimSun' },
+  { n: '黑体', css: 'SimHei' },
+  { n: '楷体', css: 'KaiTi' },
+  { n: '仿宋', css: 'FangSong' },
+  { n: '等线', css: 'DengXian' },
+  { n: '隶书', css: 'LiSu' },
+  { n: '幼圆', css: 'YouYuan' },
+  { n: '华文楷体', css: 'STKaiti' },
+  { n: '华文宋体', css: 'STSong' },
+  { n: '华文仿宋', css: 'STFangsong' },
+  { n: '华文行楷', css: 'STXingkai' },
+  { n: '思源黑体', css: '"Source Han Sans SC","Noto Sans CJK SC"' },
+  { n: '思源宋体', css: '"Source Han Serif SC","Noto Serif CJK SC"' },
+  { n: '霞鹜文楷', css: '"LXGW WenKai","LXGW WenKai GB"' },
+  { n: '更纱黑体', css: '"Sarasa Mono SC","Sarasa Gothic SC"' },
+  { n: 'Arial', css: 'Arial' },
+  { n: 'Georgia', css: 'Georgia' },
+  { n: 'Times New Roman', css: '"Times New Roman"' },
+  { n: 'Segoe UI', css: '"Segoe UI"' },
+  { n: 'Calibri', css: 'Calibri' },
+  { n: 'Cambria', css: 'Cambria' },
+  { n: 'Consolas', css: 'Consolas' },
+  { n: 'Verdana', css: 'Verdana' },
+  { n: 'Tahoma', css: 'Tahoma' },
+  { n: 'Courier New', css: '"Courier New"' }
+];
+
+/** canvas 测宽探测：候选字体与兜底字体测出的文本宽度不同 → 该字体已安装。 */
+function probeLocalFonts() {
+  const text = '译读阅读测试，字体探针abcABC123.;: fi';
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const bases = ['monospace', 'serif', 'sans-serif'];
+  const baseW = bases.map(b => { ctx.font = '32px ' + b; return ctx.measureText(text).width; });
+  const hits = [];
+  PROBE_FONTS.forEach(f => {
+    for (let i = 0; i < bases.length; i++) {
+      ctx.font = '32px ' + f.css + ',' + bases[i];
+      if (Math.abs(ctx.measureText(text).width - baseW[i]) > 0.5) { hits.push(f); break; }
+    }
+  });
+  return hits;
+}
+
+/** 选中态：{k:'b', v:常用档下标} 或 {k:'c', n:显示名, css:font-family 候选串} */
+let fontSel = (() => {
+  try {
+    const raw = localStorage.getItem('companion_font');
+    if (raw && raw.startsWith('{')) return JSON.parse(raw);
+    if (raw !== null && raw !== '') return { k: 'b', v: parseInt(raw, 10) || 0 }; // 旧版格式
+  } catch (e) { /* 损坏则回退默认 */ }
+  return { k: 'b', v: 0 };
+})();
+function localFontCache() {
+  try { return JSON.parse(localStorage.getItem('companion_font_families') || '[]'); }
+  catch (e) { return []; }
+}
 function applyFont() {
-  const opt = FONT_OPTIONS[fontIndex];
-  if (opt.stack) document.documentElement.style.setProperty('--font', opt.stack);
-  else document.documentElement.style.removeProperty('--font');
-  localStorage.setItem('companion_font', String(fontIndex));
-  $('font-picker').value = String(fontIndex);
+  if (fontSel.k === 'c' && fontSel.css) {
+    document.documentElement.style.setProperty('--font', fontSel.css + ', system-ui, sans-serif');
+  } else {
+    const stack = (FONT_OPTIONS[fontSel.v] || FONT_OPTIONS[0]).stack;
+    if (stack) document.documentElement.style.setProperty('--font', stack);
+    else document.documentElement.style.removeProperty('--font');
+  }
+  localStorage.setItem('companion_font', JSON.stringify(fontSel));
+}
+function rebuildFontPicker() {
+  const sel = $('font-picker');
+  sel.innerHTML = '';
+  FONT_OPTIONS.forEach((o, i) => {
+    const op = document.createElement('option');
+    op.value = JSON.stringify({ k: 'b', v: i });
+    op.textContent = o.name;
+    sel.appendChild(op);
+  });
+  const fams = localFontCache();
+  if (fams.length) {
+    const g = document.createElement('optgroup');
+    g.label = '本机字体';
+    fams.forEach(f => {
+      const op = document.createElement('option');
+      op.value = JSON.stringify({ k: 'c', n: f.n, css: f.css });
+      op.textContent = f.n;
+      g.appendChild(op);
+    });
+    sel.appendChild(g);
+  }
+  const scan = document.createElement('option');
+  scan.value = SCAN_VALUE;
+  scan.textContent = fams.length ? '⟳ 重新扫描本机字体…' : '扫描本机字体…';
+  sel.appendChild(scan);
+  sel.value = JSON.stringify(fontSel);
+  // 记忆的字体不在列表里（如换了电脑）：追加为临时项避免下拉显示错位
+  if (sel.value !== JSON.stringify(fontSel)) {
+    const op = document.createElement('option');
+    op.value = JSON.stringify(fontSel);
+    op.textContent = (fontSel.k === 'c' ? fontSel.n : (FONT_OPTIONS[fontSel.v] || {}).name) || '系统默认';
+    sel.insertBefore(op, sel.firstChild);
+    sel.value = JSON.stringify(fontSel);
+  }
+}
+function mergeFontCache(hits) {
+  const cache = localFontCache();
+  const seen = new Set(cache.map(f => f.n));
+  hits.forEach(h => { if (!seen.has(h.n)) { cache.push(h); seen.add(h.n); } });
+  localStorage.setItem('companion_font_families', JSON.stringify(cache));
+}
+function scanLocalFonts() {
+  const hits = probeLocalFonts();
+  mergeFontCache(hits);
+  rebuildFontPicker();
+  toast('探测到 ' + hits.length + ' 个已安装的常用字体，下拉即可选择');
 }
 (function initFontPicker() {
   const sel = $('font-picker');
-  FONT_OPTIONS.forEach((o, i) => {
-    const op = document.createElement('option');
-    op.value = String(i); op.textContent = o.name;
-    sel.appendChild(op);
-  });
-  sel.onchange = () => { fontIndex = +sel.value; applyFont(); };
+  sel.onchange = () => {
+    if (sel.value === SCAN_VALUE) {
+      scanLocalFonts();
+      sel.value = JSON.stringify(fontSel);
+      return;
+    }
+    try { fontSel = JSON.parse(sel.value); } catch (e) { fontSel = { k: 'b', v: 0 }; }
+    applyFont();
+  };
+  rebuildFontPicker();
   applyFont();
 })();
 

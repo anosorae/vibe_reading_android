@@ -7,6 +7,7 @@ import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.CrashHandler
 import com.vibereading.app.log.LogUtils
 import com.vibereading.app.log.TranslationForegroundService
+import com.vibereading.app.web.WebCompanionService
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ class VibeReadingApp : Application() {
         LogUtils.logDeviceInfo()
         BookImageStore.init(this)
         TranslationForegroundService.createNotificationChannel(this)
+        WebCompanionService.createNotificationChannel(this)
         super.onCreate()
     }
 }

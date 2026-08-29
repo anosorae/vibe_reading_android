@@ -29,7 +29,9 @@ import com.vibereading.app.ui.reader.ReaderScreen
 import com.vibereading.app.ui.reader.ReaderViewModel
 import com.vibereading.app.ui.settings.SettingsScreen
 import com.vibereading.app.ui.settings.SettingsViewModel
+import com.vibereading.app.web.WebCompanionService
 import com.vibereading.app.VibeReadingApp
+import kotlinx.coroutines.flow.first
 
 object Routes {
     const val BOOKSHELF = "bookshelf"
@@ -77,6 +79,13 @@ fun AppNavigation() {
         llmProfileRepo.ensureDefaultProfile()
     }
 
+    // Web 伴读服务（ADR-005）：上次开启过则随 App 启动自动拉起前台服务
+    LaunchedEffect(Unit) {
+        if (settingsRepo.webCompanionEnabled.first()) {
+            WebCompanionService.start(application)
+        }
+    }
+
     NavHost(navController = navController, startDestination = Routes.BOOKSHELF) {
 
         composable(Routes.BOOKSHELF) {
@@ -111,7 +120,6 @@ fun AppNavigation() {
                 factory = ReaderViewModel.Factory(
                     bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase,
                     llmApiService = translationService,
-                    appScope = application.appScope,
                     appContext = application
                 )
             )
@@ -123,7 +131,7 @@ fun AppNavigation() {
 
         composable(Routes.SETTINGS) {
             val vm: SettingsViewModel = viewModel(
-                factory = SettingsViewModel.Factory(settingsRepo, llmProfileRepo)
+                factory = SettingsViewModel.Factory(settingsRepo, llmProfileRepo, application)
             )
             SettingsScreen(
                 vm = vm,

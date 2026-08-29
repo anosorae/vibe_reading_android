@@ -58,6 +58,10 @@
 | **单词解释 (Word Explanation)** | 选词工具栏「解释」按钮调用 LLM（非流式）返回 `WordExplanation`（音标/词性/释义/例句等 JSON）；与离线「查词」并列，依赖已配置的 API Key | 查词 |
 | **LLM 配置档案 (LLM Profile)** | `llm_profiles` 表中的翻译服务配置（名称/API Key/API Base/模型/单章字符上限/最大输出Token/思考模式/采样温度/Top P 等），多档案共存，`isActive` 标记当前生效档案；`LlmSettings` 是其翻译/连接测试使用的运行时子集 | 单一全局配置 |
 | **应用日志 (App Log)** | 运行时事件日志：内存环形缓冲（`AppLog`，上限 100 条）+ 异步文件日志（`LogUtils`，`<externalCacheDir>/logs/`）；错误路径统一调用 `AppLog.put` 落日志，用户经「设置 → 调试 → 日志」查看 | 崩溃日志 |
+| **Web 伴读服务 (Web Companion)** | 手机 App 内嵌的局域网网页阅读服务：同一 WiFi 下的电脑浏览器可阅读手机库中的书籍（书架、双语正文、插图、封面），进度与手机共享；手机是唯一书库与配置源，伴读端不承担书籍导入、删除和翻译配置管理 | 多端账户同步 |
+| **伴读 Token (Companion Token)** | 访问 Web 伴读服务的随机凭据，服务地址自带 Token；无 Token 的请求一律拒绝。服务每次开启重新生成 | 无鉴权（已否决，ADR-005） |
+| **段落展开原文 (Paragraph Expand Source)** | Web 伴读端的双语交互：点击正文段落在其下方展开该段中文侧文本（中文书=中文原文，英文书=中文译文），再次点击收起；替代 App 内的中文气泡弹窗，不实现气泡 | 中文气泡 |
+| **伴读进度共享 (Companion Progress Sync)** | Web 伴读端与 App 共享同一阅读位置（章节 + 原文偏移）：伴读端打开书籍时先定位到手机当前进度，阅读中按视口顶部段落的 `startOffset` 防抖回写；两端共享同一数据库，后写覆盖，无实时推送与合并 | 章节级粗粒度进度 |
 | **崩溃日志 (Crash Log)** | 全局未捕获异常由 `CrashHandler` 落盘到 `<externalCacheDir>/crash/crash-<time>.log`（含设备信息头 + 完整堆栈），并设置 `CrashMark` 让下次启动弹窗提示查看 | 应用日志 |
 
 ## 共享实现概念
@@ -73,7 +77,8 @@
 | 页面几何 | `ReaderPageGeometry.of(...)` |
 | 章节状态颜色 | `chapterStatusColor(status)` |
 | 排版共享常量 | `ReaderMetrics` |
-| 翻译状态机 | `TranslationCoordinator`（注入 `TranslationService`） |
+| 翻译状态机 | `TranslationCoordinator`（注入 `TranslationService`；进程级单例，`ReaderViewModel` 与 Web 伴读服务共用同一实例） |
+| 内嵌 HTTP 服务 | `web/` 包（`CompanionServer` 路由 + `WebCompanionService` 前台服务托管）+ `assets/web/`（无构建单页前端） |
 | 翻译网络服务 | `TranslationService`（`LlmApiService` 实现） |
 | 选词状态与分词 | `TextSelectionState` + `SelectableParagraphText` + `findWordBoundary` |
 | 选择手柄 | `SelectionHandles`（双端拖拽手柄，覆盖层渲染）+ `TextSelectionState`（双端选区） |
@@ -95,7 +100,10 @@
 - **分页窗口**：当前章 ±1 章全量排版常驻；打开书籍/切章首帧仅同步排版中心章，邻居章后台排版后扩展窗口并保持当前视觉页，目录/章节滑块远跳重建窗口 O(1)，但恢复依据始终是 `chapterId + sourceOffset`。滚动内容全书解析惰性化：分页模式不构建，首次进入滚动模式时构建并缓存。
 - **段落跨页续排**：段落放不下页面剩余空间时按行边界切分填满当前页（ADR-004），剩余文本续排到下一页且顶格无首行缩进；所有片段仍绑定同一个原文范围，双语对每个带译文的英文片段段尾都显示中文气泡，点任一气泡弹出整段中文侧文本。
 - **视觉叠加不参与排版**：中文气泡、Popup、状态提示等不能进入文本测量或改变分页；末段不渲染段距，排版器和真实页面/卷页位图必须保持同一高度口径。
-- **设置入口**：字体、字号、行距、段距、翻页类型、背景和高级排版参数的唯一入口是阅读器设置面板。高级选项包括页边距、字间距、首行缩进、两端对齐、页眉/页脚间距。全局设置页（`SettingsScreen`）只放主题、翻译配置、翻译参数、调试（日志）和关于，不重复阅读排版项。
+- **设置入口**：字体、字号、行距、段距、翻页类型、背景和高级排版参数的唯一入口是阅读器设置面板。高级选项包括页边距、字间距、首行缩进、两端对齐、页眉/页脚间距。全局设置页（`SettingsScreen`）只放主题、翻译配置、翻译参数、Web 伴读服务、调试（日志）和关于，不重复阅读排版项。
+- **Web 伴读定位**：伴读端只读书籍与共享进度，不提供导入、删书和 LLM 配置管理；翻译联动仅「开始/重试」单章，取消与流式译文显示只在 App 内。伴读端是滚动阅读，不移植分页引擎与 `CjkJustifier`（两端对齐用 CSS justify 表达）；双语交互用段落展开原文，不用气泡。所有伴读 HTTP 接口必须带 Token 校验。
+- **伴读进度口径**：伴读端定位与回写都以段落级原文偏移表达——服务端用统一内容模型把章节切成带 `startOffset/endOffset` 的段落下发，Web 端定位到「包含 offset 的段落」，回写「视口顶部段落」的 `startOffset`；与 App 滚动模式的可见项取 offset 口径同构。
+- **翻译前台服务与伴读共存**：伴读服务活跃时，翻译不再单独启动 `TranslationForegroundService`（保活由伴读服务的 WakeLock/WifiLock 覆盖）；伴读未开启时翻译仍走原有前台服务路径。
 - **边到边一致性**：排版几何、PageRenderer、滚动 content padding、卷页覆盖层和仿真手势必须使用同一系统栏扣除公式；内容区宽高按整像素对齐。
 - **目录入口**：阅读器目录唯一入口在底部栏中央，顶栏不放目录按钮。
 - **主题独立性**：全局 `ThemeSettings` 的 dark/light 与配色只控制应用主题；阅读器页面背景、正文和气泡颜色由阅读设置及 `ReaderPalette` 控制。

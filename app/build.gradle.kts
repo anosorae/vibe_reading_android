@@ -165,6 +165,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // 内嵌 HTTP 服务器（Web 伴读服务，ADR-005；legado 同款）
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     // ── 单测（排版引擎：Robolectric NATIVE 提供真实换行测量） ──
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.14.1")

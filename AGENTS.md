@@ -53,14 +53,16 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/pagination/ReaderMetrics.kt` — 排版、标题、双语 padding、气泡尺寸共享常量
   - `log/` — 三层日志：`AppLog`（内存环形缓冲，最新在前上限 100）、`LogUtils`+`AsyncFileHandler`（`java.util.logging` 异步写 `<externalCacheDir>/logs/`）、`CrashHandler`（全局未捕获异常落盘 `<externalCacheDir>/crash/`，内含 `CrashMark` 标志位）、`CrashLogFiles`（崩溃文件列表/读取/删除）、`LogContext`（进程级 Context + 单线程后台执行器）
   - `log/TranslationForegroundService.kt` — 翻译前台服务：翻译期间前台通知 + partial wake lock + WiFi lock，后台保持 SSE 长连接不断（服务本身不运行翻译逻辑）
+  - `web/` — Web 伴读服务（ADR-005，局域网网页阅读手机书库）：`CompanionServer.kt`（NanoHTTPD 内嵌服务器：路由分发、Token 校验、静态页与封面/插图二进制响应，suspend 业务经 runBlocking 桥接）、`CompanionApi.kt`（伴读业务处理：书架/章节/正文只读 + 进度回写 + languageMode 切换 + 翻译「开始/重试」触发，不提供导入删书与配置管理）、`CompanionJson.kt`（伴读 JSON DTO 与 `normalizeCompanionOffset` 规范化）、`WebCompanionService.kt`（伴读前台服务：通知栏展示含 Token 地址 + WakeLock/WifiLock + 端口 9700，Token 由 `start()` 生成经 Intent 传入）
+  - `app/src/main/assets/web/index.html` — 伴读单页前端（无构建原生 JS，随 APK 打包）：书架/阅读/目录抽屉，点击段落展开另一侧文本，进度定位与防抖回写，翻译状态 4s 轮询
   - `MainActivity.kt` — 唯一 Activity，`enableEdgeToEdge` + `VibeReadingTheme { AppNavigation() }`
   - `ui/log/LogViewerScreen.kt` — 日志查看器：运行日志/崩溃日志双 Tab，清除与复制
-  - `VibeReadingApp.kt` — Application，持有 Room 单例；`onCreate` 中先装 `CrashHandler` 再 `AppLog.init`/`LogUtils.init`/`logDeviceInfo`
-- `app/src/test/java/` — LLM/SSE、迁移、DAO、设置仓库、解析器、阅读位置、分页窗口、仿真/手势、位图渲染、选词分词、词典查询与翻译状态机单测
+  - `VibeReadingApp.kt` — Application，持有 Room 单例；`onCreate` 中先装 `CrashHandler` 再 `AppLog.init`/`LogUtils.init`/`logDeviceInfo`，并注册翻译/伴读两个通知渠道
+- `app/src/test/java/` — LLM/SSE、迁移、DAO、设置仓库、解析器、阅读位置、分页窗口、仿真/手势、位图渲染、选词分词、词典查询、翻译状态机与伴读 JSON 层单测
 - `docs/` — ADR 文档
 - `reference_code/legado-E/` — Legado 开源阅读器参考源码，**只读，禁止修改**。
 - `tools/build_dict_db.py` — 词典库构建脚本（CSV → 四列 SQLite → gzip 资产）
-- `app/proguard-rules.pro` — R8 保留规则（release `minifyEnabled`）；keep Gson 模型 `data.remote.**` 与 `WordExplanation`、Room 实体 `data.local.entity.**`，dontwarn OkHttp/okio。新增 Gson 反序列化的数据类必须在此加 keep 规则。
+- `app/proguard-rules.pro` — R8 保留规则（release `minifyEnabled`）；keep Gson 模型 `data.remote.**` 与 `WordExplanation`、Room 实体 `data.local.entity.**`、伴读 DTO `web.**`，dontwarn OkHttp/okio。新增 Gson 反序列化的数据类必须在此加 keep 规则。
 
 ## 架构与分层规则
 
@@ -71,7 +73,8 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - 初始恢复必须是一次性、原子、无副作用的：先读取 Book 位置快照，再等待章节列表；不要通过会写库的普通导航函数恢复默认位置。后续章节 Flow 只刷新当前章节。
 - 位置变化统一经过 ViewModel 的进度入口；分页从 `window.offsetOfPage()` 取 offset，滚动从可见 `ScrollItem` 取 offset。写入必须串行，退出前调用 `flushProgress()`。
 - 翻译走 `TranslationService` 接口（`LlmApiService` 实现，方法：`translateStream`/`testConnection`）的 `translateStream(settings, chapterTitle, chapterContent, sourceLanguage)`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文；`sourceLanguage`（书原文语言，ADR-003）决定 prompt 方向。LLM 配置存于 `llm_profiles` 表（多档案，`LlmProfileRepository` 管理，`isActive` 标记当前生效档案）；`LlmSettings` 是翻译/连接测试使用的运行时子集。
-- 翻译状态机集中在 `TranslationCoordinator`（注入 `TranslationService`）：开始翻译时写入 `chapters.translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧任务无法污染新任务。
+- 翻译状态机集中在 `TranslationCoordinator`（注入 `TranslationService`；经 `TranslationCoordinatorProvider` 以进程级单例提供，`ReaderViewModel` 与 Web 伴读服务共用同一实例，单任务状态机全局生效）：开始翻译时写入 `chapters.translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧任务无法污染新任务。`translate()` 的 bookId 是任务参数而非构造参数。
+- Web 伴读服务遵循 ADR-005：所有 HTTP 接口必须带 Token（`?token=`/`X-Companion-Token`/Cookie 三通道任一）；伴读端只读书籍与共享进度 + 翻译「开始/重试」，不提供导入、删书、LLM 配置管理与 Web 端取消/流式译文；进度以「视口顶部段落 startOffset」回写，服务端 `normalizeCompanionOffset` 按章节内容长度规范化（半开区间）；段落 JSON 由 `ReadingContent.fromChapter()` 派生，offset 计算不出伴读前端；伴读服务活跃时翻译跳过自身的 `TranslationForegroundService`（保活由伴读 WifiLock/WakeLock 覆盖），未开启时走原路径；开关持久化于 DataStore `web_companion_enabled`，App 启动时自动拉起，Token 每次进程重新生成属预期。
 
 ## 阅读内容与五种翻页模式
 

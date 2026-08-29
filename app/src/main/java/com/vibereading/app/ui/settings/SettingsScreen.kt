@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -61,6 +63,8 @@ fun SettingsScreen(
 
     // 折叠区：翻译设置
     var llmExpanded by remember { mutableStateOf(true) }
+
+    val clipboard = LocalClipboardManager.current
 
     // 稳定系统栏 insets：沉浸式切换时不归零，防止布局跳动
     val stableInsets = LocalStableSystemBarInsets.current
@@ -352,6 +356,60 @@ fun SettingsScreen(
                         accentColor = accentColor,
                         onValueChange = vm::updateTopP
                     )
+                }
+            }
+
+            // ── Web 伴读服务 ──
+            SectionHeader("Web 伴读服务")
+            SectionCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("局域网网页阅读", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "同一 WiFi 下的电脑浏览器可阅读本书库",
+                            fontSize = 12.sp,
+                            color = VibeColors.WarmGray
+                        )
+                    }
+                    Switch(
+                        checked = state.webCompanionRunning,
+                        onCheckedChange = { vm.toggleWebCompanion(it) },
+                        colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                    )
+                }
+                if (state.webCompanionRunning && state.webCompanionUrl != null) {
+                    Spacer(Modifier.height(8.dp))
+                    val url = state.webCompanionUrl
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                if (url != null) clipboard.setText(AnnotatedString(url))
+                            }
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                "在电脑浏览器打开（点击复制）",
+                                fontSize = 12.sp,
+                                color = VibeColors.WarmGray
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                url ?: "",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
                 }
             }
 

@@ -97,7 +97,7 @@ class TranslationCoordinatorTest {
     }
 
     private fun coordinator(service: TranslationService) =
-        TranslationCoordinator(bookId, chapterRepo, service, scope, context)
+        TranslationCoordinator(chapterRepo, service, scope, context)
 
     /** 轮询等待章节状态落库；返回最终实体（含 translationRunId）。 */
     private suspend fun awaitStatus(expected: Int, id: Long = chapterId): ChapterEntity {
@@ -117,7 +117,7 @@ class TranslationCoordinatorTest {
         val service = FakeTranslationService(listOf(TranslationEvent.Chunk("EN "), TranslationEvent.Done("EN TEXT")))
         val coordinator = coordinator(service)
 
-        coordinator.translate(chapter, settings)
+        coordinator.translate(bookId, chapter, settings)
         val done = awaitStatus(Chapter.STATUS_DONE)
 
         assertEquals("EN TEXT", done.translatedContent)
@@ -132,7 +132,7 @@ class TranslationCoordinatorTest {
         val service = FakeTranslationService(listOf(TranslationEvent.Done("中文译文")))
         val coordinator = coordinator(service)
 
-        coordinator.translate(chapter, settings, "en")
+        coordinator.translate(bookId, chapter, settings, "en")
 
         val done = awaitStatus(Chapter.STATUS_DONE)
         assertEquals("中文译文", done.translatedContent)
@@ -144,7 +144,7 @@ class TranslationCoordinatorTest {
         val service = FakeTranslationService(listOf(TranslationEvent.Error("boom")))
         val coordinator = coordinator(service)
 
-        coordinator.translate(chapter, settings)
+        coordinator.translate(bookId, chapter, settings)
         val failed = awaitStatus(Chapter.STATUS_FAILED)
 
         assertEquals("boom", failed.errorMessage)
@@ -155,7 +155,7 @@ class TranslationCoordinatorTest {
         val service = FakeTranslationService(emptyList())
         val coordinator = coordinator(service)
 
-        coordinator.translate(chapter, settings)
+        coordinator.translate(bookId, chapter, settings)
         val failed = awaitStatus(Chapter.STATUS_FAILED)
 
         assertEquals("翻译流未正常结束", failed.errorMessage)
@@ -167,7 +167,7 @@ class TranslationCoordinatorTest {
         val coordinator = coordinator(service)
         val blankSettings = LlmSettings(apiKey = "")
 
-        coordinator.translate(chapter, blankSettings)
+        coordinator.translate(bookId, chapter, blankSettings)
         kotlinx.coroutines.yield()
 
         val pending = db.chapterDao().getChapterById(bookId, chapterId)!!
@@ -182,7 +182,7 @@ class TranslationCoordinatorTest {
         val coordinator = coordinator(service)
         val smallLimit = LlmSettings(apiKey = "test-key", chapterMaxChars = 1)
 
-        coordinator.translate(chapter, smallLimit)
+        coordinator.translate(bookId, chapter, smallLimit)
         val tooLong = awaitStatus(Chapter.STATUS_TOO_LONG)
 
         assertNotNull(tooLong.errorMessage)
@@ -206,7 +206,7 @@ class TranslationCoordinatorTest {
             override suspend fun testConnection(settings: LlmSettings): Result<String> = Result.success("ok")
         }
         val coordinator = coordinator(slowService)
-        coordinator.translate(chapter, settings)
+        coordinator.translate(bookId, chapter, settings)
         awaitStatus(Chapter.STATUS_IN_PROGRESS)
 
         // 用户重译：取消旧任务，恢复 PENDING 并清 runId
@@ -218,7 +218,7 @@ class TranslationCoordinatorTest {
         // 新任务（正常完成服务）成功写入
         val freshService = FakeTranslationService(listOf(TranslationEvent.Done("FINAL")))
         val newCoordinator = coordinator(freshService)
-        newCoordinator.translate(chapter, settings)
+        newCoordinator.translate(bookId, chapter, settings)
         val done = awaitStatus(Chapter.STATUS_DONE)
         assertEquals("FINAL", done.translatedContent)
     }
@@ -237,8 +237,8 @@ class TranslationCoordinatorTest {
         )
         val service = FakeTranslationService(listOf(TranslationEvent.Done("不应被使用")))
         coordinator(service).let { c ->
-            c.translate(chapterRepo.getChapterById(bookId, ids[0])!!, settings)
-            c.translate(chapterRepo.getChapterById(bookId, ids[1])!!, settings)
+            c.translate(bookId, chapterRepo.getChapterById(bookId, ids[0])!!, settings)
+            c.translate(bookId, chapterRepo.getChapterById(bookId, ids[1])!!, settings)
         }
 
         val imgDone = awaitStatus(Chapter.STATUS_DONE, ids[0])

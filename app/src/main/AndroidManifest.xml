@@ -32,6 +32,11 @@
             android:name=".log.TranslationForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+
+        <service
+            android:name=".web.WebCompanionService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
     </application>
 
 </manifest>

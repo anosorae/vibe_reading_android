@@ -80,7 +80,6 @@ class ReaderViewModel(
     private val translationService: TranslationService,
     private val dictDatabase: DictDatabase? = null,
     private val llmApiService: LlmApiService? = null,
-    appScope: CoroutineScope,
     appContext: Context
 ) : ViewModel() {
 
@@ -91,14 +90,9 @@ class ReaderViewModel(
      *  避免 navigateTo 改 activeChapterId 但协调器 _state 未变时桥接不重评估。 */
     private val activeChapterIdFlow = MutableStateFlow<Long?>(null)
 
-    // 翻译在 appScope 运行：按 Home 挂起或退出阅读器后仍可继续，直到完成/失败/被新任务替换
-    private val translationCoordinator = TranslationCoordinator(
-        bookId = bookId,
-        chapterRepo = chapterRepo,
-        translationService = translationService,
-        scope = appScope,
-        appContext = appContext
-    )
+    // 翻译协调器是进程级单例（ADR-005）：与 Web 伴读服务共用，
+    // 单任务状态机全局生效；任务在 appScope 运行，按 Home 挂起或退出阅读器后仍可继续。
+    private val translationCoordinator = TranslationCoordinatorProvider.get(appContext)
     private var llmEditDirty = false
     private val progressMutex = Mutex()
     private var pendingPosition: ReadingPosition? = null
@@ -601,7 +595,7 @@ class ReaderViewModel(
         if (settings.apiKey.isBlank()) return
         when (chapter.status) {
             Chapter.STATUS_PENDING, Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG ->
-                translationCoordinator.translate(chapter, settings, _uiState.value.sourceLanguage)
+                translationCoordinator.translate(bookId, chapter, settings, _uiState.value.sourceLanguage)
         }
     }
 
@@ -634,7 +628,7 @@ class ReaderViewModel(
         val chapter = _uiState.value.chapters.find { it.id == chapterId } ?: return
         viewModelScope.launch {
             translationCoordinator.cancelAndReset()
-            translationCoordinator.translate(chapter, _uiState.value.llmSettings, _uiState.value.sourceLanguage)
+            translationCoordinator.translate(bookId, chapter, _uiState.value.llmSettings, _uiState.value.sourceLanguage)
         }
     }
 
@@ -716,13 +710,12 @@ class ReaderViewModel(
         private val translationService: TranslationService,
         private val dictDatabase: DictDatabase? = null,
         private val llmApiService: LlmApiService? = null,
-        private val appScope: CoroutineScope,
         private val appContext: Context
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ReaderViewModel(
-                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService, appScope, appContext
+                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService, appContext
             ) as T
         }
     }

@@ -8,6 +8,9 @@
 # WordExplanation — 选词「解释」功能用 Gson 反序列化 LLM 返回的 JSON
 -keep class com.vibereading.app.domain.model.WordExplanation { *; }
 
+# Web 伴读服务 DTO — 伴读 HTTP 接口用 Gson 序列化，字段名即 JSON key（ADR-005）
+-keep class com.vibereading.app.web.** { *; }
+
 # Room
 -keep class com.vibereading.app.data.local.entity.** { *; }
 

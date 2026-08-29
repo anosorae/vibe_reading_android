@@ -3,6 +3,7 @@ package com.vibereading.app.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.content.Context
 import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
@@ -14,7 +15,9 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.domain.model.ThemeMode
 import com.vibereading.app.domain.model.ThemeSettings
 import com.vibereading.app.domain.model.toLlmSettings
+import com.vibereading.app.web.WebCompanionService
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -33,12 +36,15 @@ data class SettingsUiState(
     val testResult: String? = null,
     val testSuccess: Boolean? = null,
     val showApiKey: Boolean = false,
-    val saved: Boolean = false
+    val saved: Boolean = false,
+    val webCompanionRunning: Boolean = false,
+    val webCompanionUrl: String? = null
 )
 
 class SettingsViewModel(
     private val settingsRepo: SettingsRepository,
-    private val llmProfileRepo: LlmProfileRepository
+    private val llmProfileRepo: LlmProfileRepository,
+    private val appContext: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -99,6 +105,36 @@ class SettingsViewModel(
             settingsRepo.bookshelfSort.collect { s ->
                 _uiState.update { it.copy(bookshelfSort = s) }
             }
+        }
+        // 伴读服务状态：开关持久化在 DataStore，运行状态/地址来自服务的内存态。
+        // 周期刷新：网络切换后 IP 会变（通知栏地址不跟随），设置页始终展示当前可用地址。
+        viewModelScope.launch {
+            while (true) {
+                refreshCompanionState(settingsRepo.webCompanionEnabled.first())
+                delay(3000)
+            }
+        }
+    }
+
+    private fun refreshCompanionState(enabled: Boolean) {
+        _uiState.update {
+            it.copy(
+                webCompanionRunning = enabled && WebCompanionService.isRunning,
+                webCompanionUrl = if (enabled) WebCompanionService.currentUrl() else null
+            )
+        }
+    }
+
+    /** 切换 Web 伴读服务：启停前台服务并持久化期望状态。 */
+    fun toggleWebCompanion(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.saveWebCompanionEnabled(enabled)
+            if (enabled) {
+                WebCompanionService.start(appContext)
+            } else {
+                WebCompanionService.stop(appContext)
+            }
+            refreshCompanionState(enabled)
         }
     }
 
@@ -336,11 +372,12 @@ class SettingsViewModel(
 
     class Factory(
         private val settingsRepo: SettingsRepository,
-        private val llmProfileRepo: LlmProfileRepository
+        private val llmProfileRepo: LlmProfileRepository,
+        private val appContext: Context
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return SettingsViewModel(settingsRepo, llmProfileRepo) as T
+            return SettingsViewModel(settingsRepo, llmProfileRepo, appContext) as T
         }
     }
 }

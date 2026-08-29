@@ -251,4 +251,19 @@ chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 60000,
     suspend fun saveBookshelfSortOrder(order: String) {
         store.edit { prefs -> prefs[ShelfKeys.SORT_ORDER] = order }
     }
+
+    // ── Web 伴读服务（ADR-005） ──
+
+    private object CompanionKeys {
+        val ENABLED = booleanPreferencesKey("web_companion_enabled")
+    }
+
+    /** 伴读服务期望开启状态：App 启动时据此自动拉起前台服务（Token 每次进程重新生成）。 */
+    val webCompanionEnabled: Flow<Boolean> = store.data
+        .catch { emit(emptyPreferences()) }
+        .map { prefs -> prefs[CompanionKeys.ENABLED] ?: false }
+
+    suspend fun saveWebCompanionEnabled(enabled: Boolean) {
+        store.edit { prefs -> prefs[CompanionKeys.ENABLED] = enabled }
+    }
 }

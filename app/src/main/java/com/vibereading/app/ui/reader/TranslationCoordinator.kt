@@ -1,5 +1,7 @@
 package com.vibereading.app.ui.reader
 
+import com.vibereading.app.VibeReadingApp
+import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.remote.TranslationEvent
 import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.ChapterRepository
@@ -10,6 +12,7 @@ import com.vibereading.app.domain.parser.ReadingContentParser
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.TranslationForegroundService
+import com.vibereading.app.web.WebCompanionService
 import android.content.Context
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -49,9 +52,11 @@ data class TranslationUiState(
  * 完成/失败/取消必须带同一 runId 才生效（见 ChapterDao 的 *TranslationRun）。
  * 即使内存代际判断被绕过，旧任务也无法把译文/错误写进新任务的章节状态。
  * 切换阅读章节不会取消正在运行的任务（后台任务合法完成），开启新任务才替换旧任务。
+ *
+ * 进程级单例（[TranslationCoordinatorProvider]）：ReaderViewModel 与 Web 伴读服务
+ * 共用同一实例，App 内发起与 Web 发起天然互斥（ADR-005）。
  */
 class TranslationCoordinator(
-    private val bookId: Long,
     private val chapterRepo: ChapterRepository,
     private val translationService: TranslationService,
     private val scope: CoroutineScope,
@@ -62,16 +67,28 @@ class TranslationCoordinator(
 
     private var translateJob: Job? = null
     private var runId = 0L
+    private var runningBookId: Long? = null
     private var runningChapterId: Long? = null
+    // 本任务是否启动了翻译前台服务（伴读服务活跃时不启动，也不代为停止）
+    private var fgServiceStarted = false
 
     /** 当前正在翻译的章节 ID（可能在后台运行，UI 不在前台展示）。 */
     val currentRunningChapterId: Long? get() = runningChapterId
 
+    /** 是否有翻译任务在运行（App 内与 Web 共用同一状态，ADR-005）。 */
+    fun isBusy(): Boolean = translateJob?.isActive == true
+
     /** 启动翻译；同一章已有活动任务则忽略。[sourceLanguage] 为书籍原文语言（ADR-003），决定翻译方向。 */
-    fun translate(chapter: Chapter, settings: LlmSettings, sourceLanguage: String = SourceLanguageDetector.ZH) {
+    fun translate(
+        bookId: Long,
+        chapter: Chapter,
+        settings: LlmSettings,
+        sourceLanguage: String = SourceLanguageDetector.ZH
+    ) {
         if (runningChapterId == chapter.id && translateJob?.isActive == true) return
         val run = ++runId
         val chapterId = chapter.id
+        runningBookId = bookId
         runningChapterId = chapterId
         _state.value = TranslationUiState(chapterId = chapterId)
         translateJob = scope.launch {
@@ -112,8 +129,14 @@ class TranslationCoordinator(
                     return@launch
                 }
                 markedInProgress = true
-                // 启动前台服务：保持进程前台状态，避免按 Home 挂起时系统销毁 socket
-                TranslationForegroundService.start(appContext)
+                // 启动前台服务：保持进程前台状态，避免按 Home 挂起时系统销毁 socket。
+                // Web 伴读服务活跃时其 WifiLock/WakeLock 已覆盖保活（ADR-005），跳过。
+                if (WebCompanionService.isRunning) {
+                    fgServiceStarted = false
+                } else {
+                    TranslationForegroundService.start(appContext)
+                    fgServiceStarted = true
+                }
                 _state.update {
                     it.copy(
                         isStreaming = true,
@@ -218,11 +241,13 @@ class TranslationCoordinator(
                 }
             } finally {
                 if (run == runId) {
+                    runningBookId = null
                     runningChapterId = null
                     if (!terminalEvent) _state.update { it.copy(isStreaming = false) }
                     // 本任务仍是当前任务且已终止（完成/失败/取消）：停止前台服务。
                     // 若已被新任务替换（run != runId），服务由新任务接管，此处不停止。
-                    if (markedInProgress) TranslationForegroundService.stop(appContext)
+                    if (markedInProgress && fgServiceStarted) TranslationForegroundService.stop(appContext)
+                    fgServiceStarted = false
                 }
             }
         }
@@ -230,18 +255,46 @@ class TranslationCoordinator(
 
     /** 取消当前任务并恢复旧章节 PENDING（重译前调用）；等待旧任务完全结束。 */
     suspend fun cancelAndReset() {
+        val oldBookId = runningBookId
         val oldChapterId = runningChapterId
         val oldJob = translateJob
         val oldRun = runId
         runId++
+        runningBookId = null
         runningChapterId = null
         translateJob = null
         _state.value = TranslationUiState()
         oldJob?.cancelAndJoin()
-        if (oldChapterId != null && oldRun > 0) {
-            chapterRepo.cancelTranslation(bookId, oldChapterId, oldRun)
+        if (oldBookId != null && oldChapterId != null && oldRun > 0) {
+            chapterRepo.cancelTranslation(oldBookId, oldChapterId, oldRun)
         }
         // 显式取消：停止前台服务。若紧接着重译，translate() 会重新启动。
-        TranslationForegroundService.stop(appContext)
+        // 伴读活跃期间未持有翻译前台服务（fgServiceStarted=false），不误停伴读服务。
+        if (fgServiceStarted) TranslationForegroundService.stop(appContext)
+        fgServiceStarted = false
     }
+}
+
+/**
+ * 翻译协调器的进程级单一实例（ADR-005）：ReaderViewModel 与 Web 伴读服务共用，
+ * 单任务状态机全局生效。惰性构造，依赖 [VibeReadingApp] 的数据库与 appScope。
+ */
+object TranslationCoordinatorProvider {
+    @Volatile
+    private var instance: TranslationCoordinator? = null
+
+    fun get(context: Context): TranslationCoordinator {
+        context.applicationContext.let { app ->
+            return instance ?: synchronized(this) {
+                instance ?: create(app as VibeReadingApp).also { instance = it }
+            }
+        }
+    }
+
+    private fun create(app: VibeReadingApp): TranslationCoordinator = TranslationCoordinator(
+        chapterRepo = ChapterRepository(app.database.chapterDao()),
+        translationService = LlmApiService(),
+        scope = app.appScope,
+        appContext = app
+    )
 }

@@ -28,7 +28,9 @@
     position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px;
     padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
     backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+    transition: transform .25s ease;
   }
+  header.hide { transform: translateY(-100%); }
   header h1 { font-size: 16px; margin: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ── 背景预设切换（对齐 App 阅读设置的五档色板） ── */
@@ -571,7 +573,15 @@ function topVisibleOffset() {
   return null;
 }
 
+// ── 顶栏自动隐藏：下滑隐藏，上滑或回到页顶浮现 ──
+let lastScrollY = 0;
 window.addEventListener('scroll', () => {
+  const y = window.scrollY;
+  const hdr = document.querySelector('header');
+  if (y < 60 || y < lastScrollY - 4) hdr.classList.remove('hide');
+  else if (y > lastScrollY + 4) hdr.classList.add('hide');
+  lastScrollY = y;
+
   if (state.view !== 'reader' || !state.content) return;
   clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(() => {

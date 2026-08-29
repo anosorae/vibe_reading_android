@@ -216,10 +216,13 @@ private fun pageSourceRange(units: List<PageUnit>): Pair<Int?, Int?> {
     return start to end
 }
 
-/** 切段续排状态：段落按行切分填满当前页后的剩余文本，随 [para] 续排到下一页（顶格）。 */
+/** 切段续排状态：段落按行切分填满当前页后的剩余文本，随 [para] 续排到下一页（顶格）。
+ *  [sourceBase] 是 [text] 首字符对应的原文 offset，续排片段据此记录真实子区间
+ *  （页区间互斥是 offset→页 唯一映射的前提，拆分片段不得沿用整段范围）。 */
 private data class PendingChunk(
     val para: FlowItem.Para,
-    val text: String
+    val text: String,
+    val sourceBase: Int
 )
 
 /**
@@ -249,7 +252,9 @@ class ChapterPaginator(
 
     fun pageUnits(page: Int): List<PageUnit> = pages.getOrNull(page)?.units ?: emptyList()
 
-    /** 返回包含原文偏移的页；边界偏移归入覆盖它的第一项。 */
+    /** 返回包含原文偏移的页；边界偏移归入覆盖它的第一项（即起点等于该 offset 的页，
+     *  前一页区间为 [start, end) 不含 end）。前提：同段跨页拆分的各页 source 区间
+     *  互斥（拆分片段记录真实子区间），否则重叠区间的映射不唯一。 */
     fun pageForOffset(sourceOffset: Int): Int? {
         val offset = sourceOffset.coerceAtLeast(0)
         return pages.indexOfFirst { page ->
@@ -319,6 +324,12 @@ class ChapterPaginator(
                         val cont = isChunk
                         val text = if (isChunk) chunk!!.text
                             else item.cnText.ifBlank { item.enText.orEmpty() }
+                        // 拆分片段的原文子区间基准：新段落从段首起，续段从切分点起
+                        // （页区间互斥是 offset→页 唯一映射的前提，见 pageForOffset）
+                        val base = if (isChunk) chunk!!.sourceBase else item.sourceStartOffset
+                        // 排版文本长度与原文区间长度可能不一致（译文文本按原文 offset 近似定位），
+                        // 子区间统一收口在段落原文范围内，保证互斥且不越界
+                        fun sourceEnd(len: Int) = (base + len).coerceIn(item.sourceStartOffset, item.sourceEndOffset)
                         // 续段顶格：同段跨页的延续文本不带首行缩进（渲染端同口径）
                         val paraStyle = if (cont) style.body.copy(textIndent = null) else style.body
                         val layout = measureLayout(text, paraStyle)
@@ -332,19 +343,19 @@ class ChapterPaginator(
                                 continue
                             }
                             val bound = if (units.isNotEmpty()) remaining else contentHeightPx
-                            val (c1, c2) = splitLayout(text, layout, bound)
+                            val (c1, c2, c2Index) = splitLayout(text, layout, bound)
                             val l1 = if (c1 != text) measureLayout(c1, paraStyle, justifyLastLine = c2.isNotBlank()) else layout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, c1, null,
                                 splitFirst = true, continuation = cont,
                                 paragraphContinues = c2.isNotBlank(),
                                 lineCount = l1.lineCount, mainLayout = l1,
-                                sourceStartOffset = item.sourceStartOffset,
-                                sourceEndOffset = item.sourceEndOffset
+                                sourceStartOffset = base,
+                                sourceEndOffset = sourceEnd(c1.length)
                             )
                             used += l1.size.height.toFloat()
                             if (c2.isNotBlank()) {
-                                pending = PendingChunk(item, c2)
+                                pending = PendingChunk(item, c2, sourceEnd(c2Index))
                                 pageDone() // 续段放下一页
                             } else {
                                 pos++
@@ -354,8 +365,8 @@ class ChapterPaginator(
                                 item.chapterId, item.paraIndex, text, null,
                                 continuation = cont,
                                 lineCount = layout.lineCount, mainLayout = layout,
-                                sourceStartOffset = item.sourceStartOffset,
-                                sourceEndOffset = item.sourceEndOffset
+                                sourceStartOffset = base,
+                                sourceEndOffset = if (cont) sourceEnd(text.length) else item.sourceEndOffset
                             )
                             used += h + style.paragraphSpacingPx
                             pos++
@@ -366,6 +377,12 @@ class ChapterPaginator(
                         val cont = isChunk
                         val en = if (isChunk) chunk!!.text
                             else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
+                        // 拆分片段的原文子区间基准：新段落从段首起，续段从切分点起
+                        // （页区间互斥是 offset→页 唯一映射的前提，见 pageForOffset）
+                        val base = if (isChunk) chunk!!.sourceBase else item.sourceStartOffset
+                        // 排版文本长度与原文区间长度可能不一致（译文文本按原文 offset 近似定位），
+                        // 子区间统一收口在段落原文范围内，保证互斥且不越界
+                        fun sourceEnd(len: Int) = (base + len).coerceIn(item.sourceStartOffset, item.sourceEndOffset)
                         // 切分片段与整段同口径：双语对的每个片段（含续段）渲染时都加
                         // 4dp top/bottom padding 和中文气泡（ADR-004），测量必须同样计入，
                         // 否则每片段凭空多出 8dp，页面内容逐段下移、仿真卷页起手上下断层
@@ -387,7 +404,7 @@ class ChapterPaginator(
                             }
                             val bound = ((if (units.isNotEmpty()) remaining else contentHeightPx) - padPx)
                                 .coerceAtLeast(enLayout.getLineBottom(0))
-                            val (c1, c2) = splitLayout(en, enLayout, bound)
+                            val (c1, c2, c2Index) = splitLayout(en, enLayout, bound)
                             val l1 = if (c1 != en) measureLayout(c1, paraStyle, justifyLastLine = c2.isNotBlank()) else enLayout
                             units += PageUnit.Para(
                                 item.chapterId, item.paraIndex, item.cnText, c1,
@@ -395,12 +412,12 @@ class ChapterPaginator(
                                 paragraphContinues = c2.isNotBlank(),
                                 lineCount = l1.lineCount,
                                 mainLayout = l1,
-                                sourceStartOffset = item.sourceStartOffset,
-                                sourceEndOffset = item.sourceEndOffset
+                                sourceStartOffset = base,
+                                sourceEndOffset = sourceEnd(c1.length)
                             )
                             used += l1.size.height.toFloat() + padPx
                             if (c2.isNotBlank()) {
-                                pending = PendingChunk(item, c2)
+                                pending = PendingChunk(item, c2, sourceEnd(c2Index))
                                 pageDone()
                             } else {
                                 pos++
@@ -411,8 +428,8 @@ class ChapterPaginator(
                                 continuation = cont,
                                 lineCount = enLayout.lineCount,
                                 mainLayout = enLayout,
-                                sourceStartOffset = item.sourceStartOffset,
-                                sourceEndOffset = item.sourceEndOffset
+                                sourceStartOffset = base,
+                                sourceEndOffset = if (cont) sourceEnd(en.length) else item.sourceEndOffset
                             )
                             used += h + padPx + style.paragraphSpacingPx
                             pos++
@@ -439,8 +456,7 @@ class ChapterPaginator(
      * 页完成：按 bottomJustify 把剩余高度均匀分到各行（末行沉底）。
      * 含章节标题的页不底部对齐（标题块本身留有留白，拉伸正文会突兀）。
      */
-    private fun buildPage(units: List<PageUnit>, used: Float, indexInChapter: Int): TextPage {
-        // 末段段距不占页高（渲染时页尾无段距），否则短页会假性溢出/无 slack；
+    private fun buildPage(units: List<PageUnit>, used: Float, indexInChapter: Int): TextPage {        // 末段段距不占页高（渲染时页尾无段距），否则短页会假性溢出/无 slack；
         // 插图单元同样带尾距。切分产生的首片段（splitFirst）排版与渲染都不带
         // 尾距（渲染 bottom padding = 0），不适用该豁免，否则 realUsed 虚低、slack 虚高
         val lastHasSpacing = when (units.lastOrNull()) {
@@ -462,23 +478,26 @@ class ChapterPaginator(
         return page.copy(units = adjusted)
     }
 
-    /** zh 长段落/en 超高超长段按行切分：返回 (本页子段, 续段)。 */
-    private fun splitLayout(text: String, layout: TextLayoutResult, maxHeightPx: Float): Pair<String, String> {
-        if (maxHeightPx <= 0f || layout.lineCount <= 1) return text to ""
+    /** zh 长段落/en 超高超长段按行切分：返回 (本页子段, 续段, 续段首字符在 text 中的索引)。
+     *  第三项供续段记录真实原文子区间（sourceBase = 段内基准 + 此索引），未切分时为 0。 */
+    private fun splitLayout(text: String, layout: TextLayoutResult, maxHeightPx: Float): Triple<String, String, Int> {
+        if (maxHeightPx <= 0f || layout.lineCount <= 1) return Triple(text, "", 0)
         var lastFit = -1
         for (line in 0 until layout.lineCount) {
             if (layout.getLineBottom(line) <= maxHeightPx) lastFit = line else break
         }
         if (lastFit < 0) lastFit = 0
-        if (lastFit >= layout.lineCount - 1) return text to ""
+        if (lastFit >= layout.lineCount - 1) return Triple(text, "", 0)
         val splitIndex = layout.getLineEnd(lastFit, visibleEnd = true)
         val c1 = text.substring(0, splitIndex)
         // 续段从下一行首字符开始：getLineStart 跳过行尾空白（英文词间空格、
         // 中文句间空格等），避免续段首字符为空白造成伪缩进。
         // 仍保留 trimStart('\n','\r') 兜底，处理跨行空白中可能残留的换行。
         val nextLineStart = layout.getLineStart(lastFit + 1).coerceIn(splitIndex, text.length)
-        val c2 = text.substring(nextLineStart).trimStart('\n', '\r')
-        return if (c1.isBlank()) text to "" else c1 to c2
+        val c2Raw = text.substring(nextLineStart)
+        val c2 = c2Raw.trimStart('\n', '\r')
+        val c2Index = nextLineStart + (c2Raw.length - c2.length)
+        return if (c1.isBlank()) Triple(text, "", 0) else Triple(c1, c2, c2Index)
     }
 
     // ── 测量（真实页宽约束，minWidth=maxWidth 对齐 Compose Text 的 fillMaxWidth） ──

@@ -366,6 +366,17 @@ fun ReaderScreen(
         }
     }
 
+    // 退出路径兜底：翻页进度由上方 LaunchedEffect(pagerState.currentPage) 异步写入，
+    // 翻页后瞬间退出（返回键/后台）时该 effect 可能尚未运行，直接 flush 会把
+    // 上一页的位置落库。flush 前先从当前视觉页同步一次进度（幂等，与翻页 LE
+    // 同一数据源与同一组守卫，窗口滑动期间不采信旧索引）。
+    fun syncPagerProgressBeforeFlush() {
+        if (!isPagerMode || !initialSeekDone || windowSliding) return
+        val cp = window.chapterOfPage(pagerState.currentPage) ?: return
+        val offset = window.offsetOfPage(pagerState.currentPage)?.first ?: return
+        vm.updateProgress(cp, offset)
+    }
+
     /** 卷页快照对（对齐 Legado setBitmap）：curBitmap=当前页, targetBitmap=目标页。 */
     fun curlBitmaps(cur: Int, target: Int): Pair<Bitmap, Bitmap>? {
         val curBmp = renderPageBitmap(
@@ -674,6 +685,7 @@ fun ReaderScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
+                syncPagerProgressBeforeFlush()
                 flushScope.launch { vm.flushProgress() }
             }
         }
@@ -707,6 +719,7 @@ fun ReaderScreen(
             controller.show(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         }
+        syncPagerProgressBeforeFlush()
         flushScope.launch {
             vm.flushProgress()
             onBack()
@@ -1108,6 +1121,7 @@ fun ReaderScreen(
                         controller.show(WindowInsetsCompat.Type.systemBars())
                         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
                     }
+                    syncPagerProgressBeforeFlush()
                     flushScope.launch {
                         vm.flushProgress()
                         onBack()

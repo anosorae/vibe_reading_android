@@ -315,6 +315,80 @@ class ChapterPaginatorTest {
         }
     }
 
+    // ── 拆分片段原文子区间：页区间互斥 + offset→页往返（进度保存/恢复的正确性前提） ──
+
+    @Test
+    fun zh_splitFragments_pageRangesDisjointAndRoundtrip() {
+        // 回归：跨页拆分段落曾沿用整段 source 范围，续页与起始页区间完全相同 →
+        // 保存的页首 offset 落在上一页，恢复时回退一页。修复后各页区间互斥且相接，
+        // 每页页首 offset 必须映射回本页。
+        val longPara = (0 until 200).joinToString("") { "跨页区间测试第${it}句，内容足够长以触发多次换行与跨页拆分。" }
+        val p = ChapterPaginator(
+            1L, listOf(FlowItem.Para(1L, 0, longPara, null)), style(),
+            "zh", contentWidthPx = 200f, contentHeightPx = 300f, measurer = measurer
+        )
+        assertTrue("应跨 3+ 页", p.pages.size >= 3)
+        var prevEnd: Int? = null
+        for ((i, page) in p.pages.withIndex()) {
+            val start = page.sourceStartOffset
+            val end = page.sourceEndOffset
+            assertTrue("第 $i 页应有原文范围", start != null && end != null)
+            if (prevEnd != null) {
+                assertEquals("相邻页区间应恰好相接（CJK 无行尾空白）", prevEnd, start)
+            }
+            prevEnd = end
+            assertEquals("页首 offset=$start 应映射回第 $i 页", i, p.pageForOffset(start!!)!!)
+        }
+        assertEquals("段落范围应从段首起", 0, p.pages.first().sourceStartOffset)
+        assertEquals("段落范围应覆盖到段尾", longPara.length, p.pages.last().sourceEndOffset)
+        // 续段片段的 sourceStartOffset 应指向段内（非段首）——保存的是续页真实首字符
+        val contStarts = p.pages.drop(1).flatMap { it.units }
+            .filterIsInstance<PageUnit.Para>().filter { it.continuation }
+            .map { it.sourceStartOffset }
+        assertTrue("应存在续段片段", contStarts.isNotEmpty())
+        contStarts.forEach { assertTrue("续段起点应大于段首（$it）", it > 0) }
+    }
+
+    @Test
+    fun en_splitFragments_pageRangesDisjointAndRoundtrip() {
+        // en 模式双语对跨页：片段 source 子区间互斥（英文行尾空白被裁掉时允许留出
+        // 空白间隙，但不得重叠），页首 offset→页 往返不回退
+        val enText = ("Bilingual offset mapping test paragraph with enough English words " +
+            "to wrap across many lines in a narrow page. ").repeat(12).trim()
+        val cnText = "中文译文段落。"
+        val start = 100
+        val p = ChapterPaginator(
+            1L,
+            listOf(
+                FlowItem.Para(
+                    1L, 0, cnText, enText,
+                    sourceStartOffset = start, sourceEndOffset = start + enText.length
+                )
+            ),
+            style(),
+            "en", contentWidthPx = 300f, contentHeightPx = 300f, measurer = measurer
+        )
+        assertTrue("应跨 3+ 页", p.pages.size >= 3)
+        var prevEnd: Int? = null
+        for ((i, page) in p.pages.withIndex()) {
+            val s = page.sourceStartOffset
+            val e = page.sourceEndOffset
+            assertTrue("第 $i 页应有原文范围", s != null && e != null)
+            if (prevEnd != null) {
+                assertTrue("页区间不得重叠（prevEnd=$prevEnd, start=$s）", s!! >= prevEnd!!)
+            }
+            prevEnd = e
+            assertEquals("页首 offset=$s 应映射回第 $i 页", i, p.pageForOffset(s!!)!!)
+        }
+        assertEquals("首页区间从段首起", start, p.pages.first().sourceStartOffset)
+        assertEquals("末页区间到段尾", start + enText.length, p.pages.last().sourceEndOffset)
+        val contStarts = p.pages.drop(1).flatMap { it.units }
+            .filterIsInstance<PageUnit.Para>().filter { it.continuation }
+            .map { it.sourceStartOffset }
+        assertTrue("应存在续段片段", contStarts.isNotEmpty())
+        contStarts.forEach { assertTrue("续段起点应指向段内（$it）", it > start) }
+    }
+
     // ── bottomJustify ──
 
     @Test

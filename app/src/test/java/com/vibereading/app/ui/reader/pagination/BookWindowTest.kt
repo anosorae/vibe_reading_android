@@ -182,6 +182,50 @@ class BookWindowTest {
     }
 
     @Test
+    fun splitParagraph_offsetOfPage_roundtripsThroughIndexOf() {
+        // 回归：跨页拆分段落的续页页首 offset 曾被记为整段段首（该 offset 位于上一页），
+        // 重开书籍恢复时回退一页。修复后每页 source 区间互斥，
+        // 「保存页首 offset → indexOf 恢复」对每一页都必须往返回本页。
+        val longPara = (0 until 120).joinToString("") { "跨页进度回归测试第${it}句，内容足够长触发跨页拆分。" }
+        val chapter = Chapter(
+            id = 7L,
+            bookId = 1,
+            title = "长段章节",
+            chapterIndex = 0,
+            content = longPara
+        )
+        val w = BookWindow(
+            chapters = listOf(chapter),
+            style = PageStyle(
+                body = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp),
+                cn = TextStyle(fontFamily = FontFamily.Default, fontSize = 14.sp, lineHeight = 21.sp),
+                title = TextStyle(fontFamily = FontFamily.Default, fontSize = 20.sp, lineHeight = 28.sp),
+                paragraphSpacingPx = 10f
+            ),
+            mode = "zh",
+            contentWidthPx = 300f,
+            contentHeightPx = 400f,
+            measurer = measurer,
+            backgroundMeasurer = { measurer }
+        )
+        w.recenterSync(7L)
+        val pageCount = w.pageCountInChapter(7L)
+        assertTrue("应跨多页", pageCount >= 3)
+        // 回归场景必须被覆盖：至少一页以跨页续段开头
+        val continuationPages = (0 until pageCount).count { i ->
+            w.pageUnits(i).any { (it as? PageUnit.Para)?.continuation == true }
+        }
+        assertTrue("应存在续段开头页（跨页拆分场景）", continuationPages > 0)
+        for (i in 0 until pageCount) {
+            val range = w.offsetOfPage(i) ?: continue
+            assertEquals(
+                "第 $i 页页首 offset=${range.first} 应恢复到本页",
+                i, w.indexOf(7L, range.first.toLong())
+            )
+        }
+    }
+
+    @Test
     fun enWindow_bilingualParas_allPresentAcrossWindow() {
         val cnChapters = chapters.mapIndexed { i, ch ->
             ch.copy(

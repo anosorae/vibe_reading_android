@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -15,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshotFlow
@@ -41,6 +41,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.log.AppLog
+import com.vibereading.app.log.OpenBookProbe
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.DictPopup
@@ -119,10 +120,14 @@ fun ReaderScreen(
     val density = LocalDensity.current
     // 中英分体：返回 (中文字体, 英文字体)；parse 失败/未选回退系统字体
     val (cnFont, enFont) = remember(readingSettings.customFontUri, readingSettings.enCustomFontUri, readingSettings.fontId, readingSettings.enFontId) {
-        ReaderFonts.readerFontFamilies(context, readingSettings)
+        ReaderFonts.readerFontFamilies(context, readingSettings).also {
+            OpenBookProbe.step("字体解析完成")
+        }
     }
     val pageStyle = remember(readingSettings, density, state.mode, cnFont, enFont) {
-        PageStyle.of(readingSettings, density, state.mode, cnFont, enFont)
+        PageStyle.of(readingSettings, density, state.mode, cnFont, enFont).also {
+            OpenBookProbe.step("排版样式构造完成")
+        }
     }
     // 页几何：内容区 = 屏尺寸 − 页边距（与 BookPager 渲染内边距严格一致，排版所见即所排）
     // 屏幕像素取 displayMetrics 实际值（不通过 screenWidthDp*density 转换，
@@ -176,8 +181,11 @@ fun ReaderScreen(
     // 窗口 key 只含低频变化（模式/指纹/翻页类型）：边距、字号等排版样式变化走下方
     // restyle 热更新（后台重排版、主线程原子换入），避免拖动滑杆时每个 tick 在
     // composition 内同步重排全章造成严重卡顿。
-    // 立即 recenterSync：避免 key 变化（如沉浸式切换导致 contentHeightPx 变化）时新窗口
-    // windowPages 为空 → pageCount==0 → 闪现 EmptyReaderHint（"没有任何阅读内容"）
+    //
+    // 中心章排版不在 composition 内同步执行（EPUB 长章整章排版会阻塞主线程数百毫秒，
+    // 表现为打开书籍时卡顿）：由下方 LaunchedEffect 走 window.recenterAsync 后台排版，
+    // 期间 pageCount==0，由打开过渡遮罩呈现；邻居章由 paginateNeighbors 后台排版后
+    // 幂等扩展窗口并保持当前视觉页。
     //
     // 分页指纹只含影响排版的字段（id/title/section/index/content/translatedContent），
     // 不含 status/errorMessage——翻译状态变化（IN_PROGRESS→DONE）不应重建窗口，
@@ -194,6 +202,7 @@ fun ReaderScreen(
     val window = remember(
         measurer, state.mode, state.sourceLanguage, paginationFingerprint, isPagerMode
     ) {
+        OpenBookProbe.step("BookWindow 创建（中心章走后台排版）")
         BookWindow(
             chapters = state.chapters,
             style = pageStyle,
@@ -204,10 +213,7 @@ fun ReaderScreen(
             measurer = measurer,
             backgroundMeasurer = { bgMeasurer },
             displayDensity = density.density
-        ).also { w ->
-            // 打开书籍首帧只同步排版中心章（±1 章由下方后台扩展），避免整窗口阻塞 UI
-            state.activeChapterId?.let { w.recenterSync(it, includeNeighbors = false) }
-        }
+        )
     }
     // 仿真卷页尺寸 = 全屏（对齐 Legado：位图/覆盖层/手势均使用全屏坐标系）
 
@@ -294,8 +300,10 @@ fun ReaderScreen(
         // 这发生在程序化跳章完成、pagerJumpTarget 被清除后，LaunchedEffect 因 activeChapterId
         // 变化再次触发时——此时 window 已在 LaunchedEffect(window, state.activeChapterId) 中扩展
         // 了邻居，不应再缩小回单章。
+        // 中心章缺失时后台排版（打开书籍首帧/程序化跳章/切模式提速），已在排版表时
+        // 近零开销；完成后在主线程重建索引空间，保持原 recenterSync 的幂等语义。
         if (isProgrammatic || !initialSeekDone || window.centerChapterId != target) {
-            window.recenterSync(target, includeNeighbors = false)
+            window.recenterAsync(target)
         }
         // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
         val idx = window.indexOf(target, sourceOffset.toLong())
@@ -586,6 +594,20 @@ fun ReaderScreen(
     var pendingJumpChapter by remember { mutableStateOf<Long?>(null) }
     // 程序化滚动进行中标记：期间滚动跟踪不响应，避免回卷（初始定位/跳章后 300ms 内）
     var suppressTracking by remember { mutableStateOf(false) }
+
+    // ── 打开书籍过渡遮罩 ──
+    // 章节/位置未恢复、分页中心章后台排版未完成、或滚动内容构建中时显示；
+    // 内容就绪后淡出（掩盖加载过程感）。书籍确无章节（章节流已到达且为空）时不遮罩，
+    // 落回 EmptyReaderHint。
+    val bookHasNoChapters = state.bookTitle.isNotEmpty() && state.chapters.isEmpty()
+    val opening = !bookHasNoChapters && (
+        !state.restoreReady ||
+            (isPagerMode && window.pageCount == 0) ||
+            (!isPagerMode && state.chapters.isNotEmpty() && scrollChunks.isEmpty())
+        )
+    LaunchedEffect(opening) {
+        if (!opening) OpenBookProbe.finish()
+    }
 
     // 初始定位 + 切换到滚动模式时定位到当前章
     LaunchedEffect(scrollChunks, !isPagerMode, state.activeChapterId, state.position?.offset) {
@@ -1020,67 +1042,83 @@ fun ReaderScreen(
         // ── Main content ──
         when {
             isPagerMode -> {
-                if (window.pageCount == 0) {
-                    EmptyReaderHint(isDark)
-                } else {
-                    ReaderPager(
-                        pagerState = pagerState,
-                        window = window,
-                        flipMode = flipMode,
-                        palette = palette,
-                        mode = state.mode,
-                        pageStyle = pageStyle,
-                        paddingH = readingSettings.paddingH,
-                        paddingV = readingSettings.paddingV,
-                        statusBarPx = statusBarPx,
-                        navBarPx = navBarPx,
-                        simFlip = simFlip,
-                        // 卷页动画进行中或菜单栏显示时禁用长按选词
-                        selectionState = if (simFlip.isRunning || anyOverlayVisible) null else selectionState,
-                        // 菜单栏/浮层显示时禁用原文气泡点击（点击落回外层手势关闭菜单）
-                        bubbleEnabled = !anyOverlayVisible,
-                        onIllustrationClick = { previewIllustrationPath = it },
-                        // 中文两端对齐：正文内容区宽度（与排版几何同源）
-                        contentWidthPx = geometry.contentWidthPx.toInt()
-                    )
+                when {
+                    window.pageCount > 0 ->
+                        ReaderPager(
+                            pagerState = pagerState,
+                            window = window,
+                            flipMode = flipMode,
+                            palette = palette,
+                            mode = state.mode,
+                            pageStyle = pageStyle,
+                            paddingH = readingSettings.paddingH,
+                            paddingV = readingSettings.paddingV,
+                            statusBarPx = statusBarPx,
+                            navBarPx = navBarPx,
+                            simFlip = simFlip,
+                            // 卷页动画进行中或菜单栏显示时禁用长按选词
+                            selectionState = if (simFlip.isRunning || anyOverlayVisible) null else selectionState,
+                            // 菜单栏/浮层显示时禁用原文气泡点击（点击落回外层手势关闭菜单）
+                            bubbleEnabled = !anyOverlayVisible,
+                            onIllustrationClick = { previewIllustrationPath = it },
+                            // 中文两端对齐：正文内容区宽度（与排版几何同源）
+                            contentWidthPx = geometry.contentWidthPx.toInt()
+                        )
+                    state.bookTitle.isNotEmpty() -> EmptyReaderHint(isDark)
+                    // else：打开中（章节加载/中心章后台排版），由全局过渡遮罩呈现
                 }
             }
             else -> {
-                if (state.chapters.isEmpty()) {
-                    EmptyReaderHint(isDark)
-                } else if (scrollChunks.isEmpty()) {
-                    // 滚动内容解析中（全书构建），先显示轻量加载，完成后自动填充
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = accentColor)
-                    }
-                } else {
-                    ScrollReader(
-                        chapters = state.chapters,
-                        chunks = scrollChunks,
-                        scrollState = scrollState,
-                        state = state,
-                        pageStyle = pageStyle,
-                        palette = palette,
-                        paddingH = readingSettings.paddingH,
-                        paddingV = readingSettings.paddingV,
-                        statusBarPx = statusBarPx,
-                        navBarPx = navBarPx,
-                        onJumpChapter = { id ->
-                            pendingJumpChapter = id
-                            vm.navigateTo(id, 0)
-                        },
-                        selectionState = if (anyOverlayVisible) null else selectionState,
-                        // 菜单栏/浮层显示时禁用原文气泡点击（点击落回外层手势关闭菜单）
-                        bubbleEnabled = !anyOverlayVisible,
-                        onIllustrationClick = { previewIllustrationPath = it },
-                        // 中文两端对齐：正文内容区宽度（与排版几何同源）
-                        contentWidthPx = geometry.contentWidthPx.toInt()
-                    )
+                when {
+                    state.chapters.isEmpty() -> EmptyReaderHint(isDark)
+                    scrollChunks.isEmpty() ->
+                        // 滚动内容解析中（全书构建），过渡遮罩呈现，完成后自动填充
+                        ReaderOpeningShade(
+                            bookTitle = state.bookTitle.ifEmpty { "正在打开" },
+                            bgColor = bgColor,
+                            titleColor = palette.titleText,
+                            accentColor = accentColor
+                        )
+                    else ->
+                        ScrollReader(
+                            chapters = state.chapters,
+                            chunks = scrollChunks,
+                            scrollState = scrollState,
+                            state = state,
+                            pageStyle = pageStyle,
+                            palette = palette,
+                            paddingH = readingSettings.paddingH,
+                            paddingV = readingSettings.paddingV,
+                            statusBarPx = statusBarPx,
+                            navBarPx = navBarPx,
+                            onJumpChapter = { id ->
+                                pendingJumpChapter = id
+                                vm.navigateTo(id, 0)
+                            },
+                            selectionState = if (anyOverlayVisible) null else selectionState,
+                            // 菜单栏/浮层显示时禁用原文气泡点击（点击落回外层手势关闭菜单）
+                            bubbleEnabled = !anyOverlayVisible,
+                            onIllustrationClick = { previewIllustrationPath = it },
+                            // 中文两端对齐：正文内容区宽度（与排版几何同源）
+                            contentWidthPx = geometry.contentWidthPx.toInt()
+                        )
                 }
             }
+        }
+
+        // ── 打开书籍过渡遮罩：内容就绪后淡出，掩盖章节加载与中心章后台排版的过程感 ──
+        AnimatedVisibility(
+            visible = opening,
+            enter = EnterTransition.None,
+            exit = fadeOut(animationSpec = tween(durationMillis = 280)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            ReaderOpeningShade(
+                bookTitle = state.bookTitle.ifEmpty { "正在打开" },
+                bgColor = bgColor,
+                titleColor = palette.titleText,
+                accentColor = accentColor
+            )
         }
 
         // ── 页眉/页脚（视觉覆盖层，仅分页模式；顶栏/底栏隐藏，底部面板不遮挡）──

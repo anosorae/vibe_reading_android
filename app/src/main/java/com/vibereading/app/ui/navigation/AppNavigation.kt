@@ -1,5 +1,9 @@
 package com.vibereading.app.ui.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -17,6 +21,7 @@ import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.log.CrashMark
+import com.vibereading.app.log.OpenBookProbe
 import com.vibereading.app.ui.bookshelf.BookshelfScreen
 import com.vibereading.app.ui.bookshelf.BookshelfViewModel
 import com.vibereading.app.ui.log.LogViewerScreen
@@ -80,14 +85,26 @@ fun AppNavigation() {
             )
             BookshelfScreen(
                 vm = vm,
-                onOpenBook = { bookId -> navController.navigate(Routes.reader(bookId)) },
+                onOpenBook = { bookId ->
+                    // 打开书籍链路耗时探针起点（详见 OpenBookProbe）
+                    OpenBookProbe.begin()
+                    navController.navigate(Routes.reader(bookId))
+                },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) }
             )
         }
 
         composable(
             route = Routes.READER,
-            arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+            arguments = listOf(navArgument("bookId") { type = NavType.LongType }),
+            // 阅读器入场过渡：淡入 + 轻微放大（打开过程中的加载由 ReaderScreen 内的
+            // 过渡遮罩呈现，遮罩与阅读器背景同色，衔接无缝）
+            enterTransition = {
+                fadeIn(tween(durationMillis = 220)) + scaleIn(
+                    initialScale = 0.96f,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                )
+            }
         ) { entry ->
             val bookId = entry.arguments?.getLong("bookId") ?: return@composable
             val vm: ReaderViewModel = viewModel(

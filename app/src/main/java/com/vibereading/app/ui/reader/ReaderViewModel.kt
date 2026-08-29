@@ -23,6 +23,7 @@ import com.vibereading.app.domain.model.toLlmProfile
 import com.vibereading.app.domain.model.toLlmSettings
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.log.AppLog
+import com.vibereading.app.log.OpenBookProbe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -110,13 +111,19 @@ class ReaderViewModel(
     val editModel: StateFlow<String> = _editModel.asStateFlow()
 
     init {
+        OpenBookProbe.step("ReaderViewModel 创建")
         viewModelScope.launch {
             val book = bookRepo.getBookByIdOnce(bookId) ?: return@launch
+            OpenBookProbe.step("书籍信息读取完成「${book.title}」")
             val savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
             _uiState.update { it.copy(mode = book.languageMode, sourceLanguage = book.sourceLanguage) } // 显示模式按书绑定，默认=原文语言；原文语言决定翻译方向
             chapterRepo.getChaptersByBook(bookId).collect { chapters ->
                 _uiState.update { it.copy(bookTitle = book.title, chapters = chapters) }
                 if (!restoreCompleted && chapters.isNotEmpty()) {
+                    OpenBookProbe.step(
+                        "章节列表加载完成（${chapters.size} 章 / " +
+                            "${chapters.sumOf { it.content.length }} 字符）"
+                    )
                     val chapter = chapters.firstOrNull { it.id == savedPosition.chapterId } ?: chapters.first()
                     val position = if (chapter.id == savedPosition.chapterId) {
                         savedPosition.normalized(chapter.content.length).copy(chapterId = chapter.id)
@@ -137,6 +144,9 @@ class ReaderViewModel(
                             errorMessage = null
                         )
                     }
+                    OpenBookProbe.step(
+                        "恢复阅读位置完成（章「${chapter.title}」 offset=${position.offset}）"
+                    )
                     activeChapterIdFlow.value = chapter.id
                     if (needsTranslation()) maybeTranslateChapter(chapter.id)
                     prefetchNextChapterIfNeeded()

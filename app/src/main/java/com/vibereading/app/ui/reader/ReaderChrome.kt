@@ -94,6 +94,43 @@ fun EmptyReaderHint(isDark: Boolean) {
     }
 }
 
+/** 打开书籍过渡遮罩：书名 + 轻量进度指示；背景与阅读器背景一致，淡出时无缝衔接正文。 */
+@Composable
+fun ReaderOpeningShade(
+    bookTitle: String,
+    bgColor: Color,
+    titleColor: Color,
+    accentColor: Color
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        ) {
+            Text(
+                bookTitle,
+                color = titleColor,
+                fontSize = 17.sp,
+                lineHeight = 24.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(20.dp))
+            CircularProgressIndicator(
+                color = accentColor,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+    }
+}
+
 /** 顶栏：返回 + 书名 + 中英切换 + 当前章翻译状态圆点（目录入口在底部栏，顶栏不放）。 */
 @Composable
 fun ReaderTopToolbar(

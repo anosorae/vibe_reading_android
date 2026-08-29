@@ -5,8 +5,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextMeasurer
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.log.OpenBookProbe
 import com.vibereading.app.ui.reader.content.ReadingContent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
@@ -36,6 +38,8 @@ class BookWindow(
     // 已排版章节：chapterId -> paginator（窗口章 + 预载外缘章）
     private val paginators = HashMap<Long, ChapterPaginator>()
     private val lock = Any()
+    // 正在后台排版的章节 id（lock 保护）：并发请求同一章时单飞行去重，避免重复排版
+    private val buildingIds = HashSet<Long>()
 
     /** 窗口中心章 id（最近一次 recenter 的目标）。 */
     var centerChapterId: Long? by mutableStateOf(null)
@@ -78,6 +82,18 @@ class BookWindow(
         }
     }
 
+    /**
+     * 异步 recenter（打开书籍首帧提速）：中心章缺失时在后台排版（EPUB 长章全章排版
+     * 在主线程会阻塞数百毫秒），完成后在调用线程重建索引空间。中心章已在排版表时
+     * 近零开销（只重建索引空间）。期间调用方展示打开过渡遮罩（pageCount==0）。
+     */
+    suspend fun recenterAsync(chapterId: Long) {
+        val idx = chapters.indexOfFirst { it.id == chapterId }
+        if (idx < 0) return
+        ensurePaginatorAsync(chapters[idx].id)
+        recenterSync(chapterId, includeNeighbors = false)
+    }
+
     /** 窗口中心章 ±1 是否都已排版（后台扩展前的幂等检查）。 */
     fun hasNeighbors(chapterId: Long): Boolean {
         val idx = chapters.indexOfFirst { it.id == chapterId }
@@ -92,30 +108,54 @@ class BookWindow(
         return true
     }
 
-    /** 后台排版中心章 ±1（不重建索引空间；完成后主线程 [recenterSync] 幂等扩展）。 */
-    suspend fun paginateNeighbors(chapterId: Long) = withContext(Dispatchers.Default) {
+    /** 后台排版中心章 ±1（单飞行去重；完成后主线程 [recenterSync] 幂等扩展索引空间）。 */
+    suspend fun paginateNeighbors(chapterId: Long) {
         val idx = chapters.indexOfFirst { it.id == chapterId }
-        if (idx < 0) return@withContext
+        if (idx < 0) return
         val from = (idx - 1).coerceAtLeast(0)
         val to = (idx + 1).coerceAtMost(chapters.size - 1)
-        synchronized(lock) {
-            for (i in from..to) {
-                val cid = chapters[i].id
-                if (cid !in paginators) paginators[cid] = buildPaginator(cid, backgroundMeasurer())
-            }
+        for (i in from..to) {
+            ensurePaginatorAsync(chapters[i].id)
         }
     }
 
     /** 后台预载 center±2 章节（排版不阻塞 UI；未完成时 recenter 会同步兜底）。 */
-    suspend fun preloadNeighbors(chapterId: Long) = withContext(Dispatchers.Default) {
+    suspend fun preloadNeighbors(chapterId: Long) {
         val idx = chapters.indexOfFirst { it.id == chapterId }
-        if (idx < 0) return@withContext
+        if (idx < 0) return
         val outer = listOf(idx - 2, idx + 2)
             .filter { it in chapters.indices }
             .map { chapters[it].id }
-        synchronized(lock) {
-            for (cid in outer) {
-                if (cid !in paginators) paginators[cid] = buildPaginator(cid, backgroundMeasurer())
+        for (cid in outer) {
+            ensurePaginatorAsync(cid)
+        }
+    }
+
+    /**
+     * 单飞行后台排版一章：已在排版表则直接返回；他人正在排版则轮询等待
+     * （排版方被取消时 finally 释放认领，等待者接管重排）；5s 兜底超时后放弃
+     * 等待，由调用方的同步 recenterSync 兜底排版。使用后台测量实例
+     * （[backgroundMeasurer]），绝不占用主线程 TextMeasurer。
+     */
+    private suspend fun ensurePaginatorAsync(chapterId: Long) = withContext(Dispatchers.Default) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (synchronized(lock) { chapterId !in paginators }) {
+            val claimed = synchronized(lock) { buildingIds.add(chapterId) }
+            if (claimed) {
+                try {
+                    val paginator = buildPaginator(chapterId, backgroundMeasurer())
+                    synchronized(lock) { paginators[chapterId] = paginator }
+                    OpenBookProbe.step(
+                        "后台排版完成 chapterId=$chapterId（${paginator.pages.size} 页，" +
+                            "${chapters.firstOrNull { it.id == chapterId }?.content?.length ?: 0} 字符）"
+                    )
+                } finally {
+                    synchronized(lock) { buildingIds.remove(chapterId) }
+                }
+            } else if (System.currentTimeMillis() > deadline) {
+                break // 排版任务异常滞留：放弃等待，调用方 recenterSync 会同步兜底
+            } else {
+                delay(40)
             }
         }
     }

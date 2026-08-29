@@ -226,8 +226,10 @@ private data class PendingChunk(
 )
 
 /**
- * 单章排版器：把「章节标题 + 段落」按内容区尺寸（真实页宽）全量排成 [TextPage]。
- * 构造即全量排版（章节受 STATUS_TOO_LONG 上限约束，排版有界）。
+ * 单章排版器：把「章节标题 + 段落」按内容区尺寸（真实页宽）排成 [TextPage] 列表。
+ * 支持增量排版（[lazyLayout]=true + [layoutUntil]）：先只排到恢复 offset 所在页即出
+ * 首帧（EPUB 长章打开提速），剩余内容由后续调用从断点续排；断点续排的产出与
+ * 一次性整章排版完全一致（有单测对拍保证）。
  */
 class ChapterPaginator(
     val chapterId: Long,
@@ -237,57 +239,64 @@ class ChapterPaginator(
     private val contentWidthPx: Float,
     private val contentHeightPx: Float,
     private val measurer: TextMeasurer,
-    private val density: Float = 1f          // display density，用于 dp→px 转换
+    private val density: Float = 1f,         // display density，用于 dp→px 转换
+    lazyLayout: Boolean = false              // true = 不在构造期排版，由 layoutUntil 增量推进
 ) {
 
+    /** 已排版页快照（后台排版推进时原子换入，读侧免锁）。 */
+    @Volatile
     var pages: List<TextPage> = emptyList()
         private set
+
+    /** 整章是否已排完（前缀排版后由续排补齐置 true）。 */
+    @Volatile
+    var layoutComplete = false
+        private set
+
+    // ── 增量排版断点状态（同章串行访问：BookWindow 的 buildingIds 单飞行保证） ──
+    private val typedPages = ArrayList<TextPage>()
+    private var pos = 0
+    private var pending: PendingChunk? = null
+    private var units = ArrayList<PageUnit>()
+    private var used = 0f
 
     /** en 模式双语对额外占位：PageBilingualParagraph 的 4.dp top + 4.dp bottom padding（px） */
     private val bilingualPadPx = ReaderMetrics.bilingualPadPx(density)
 
     init {
-        pages = layoutAll()
+        if (!lazyLayout) layoutUntil(Int.MAX_VALUE)
     }
 
     fun pageUnits(page: Int): List<PageUnit> = pages.getOrNull(page)?.units ?: emptyList()
 
-    /** 返回包含原文偏移的页；边界偏移归入覆盖它的第一项（即起点等于该 offset 的页，
-     *  前一页区间为 [start, end) 不含 end）。前提：同段跨页拆分的各页 source 区间
-     *  互斥（拆分片段记录真实子区间），否则重叠区间的映射不唯一。 */
-    fun pageForOffset(sourceOffset: Int): Int? {
-        val offset = sourceOffset.coerceAtLeast(0)
-        return pages.indexOfFirst { page ->
-            page.sourceStartOffset?.let { start ->
-                val end = page.sourceEndOffset ?: start
-                offset in start until end || (offset == start && start == end)
-            } == true
-        }.takeIf { it >= 0 }
-            ?: pages.indexOfLast { it.sourceStartOffset != null }
-                .takeIf { it >= 0 && offset >= (pages[it].sourceStartOffset ?: 0) }
+    /**
+     * 已排版范围是否覆盖原文 offset [offset]（[Int.MAX_VALUE] 仅整章排完时满足）。
+     * 必须严格大于：offset 恰为页边界时（第 k 页起始 = 第 k-1 页结束），offset 属于
+     * 第 k 页（pageForOffset 起点闭区间），第 k-1 页排完不等于覆盖，必须把第 k 页排出。
+     */
+    fun coversOffset(offset: Int): Boolean {
+        if (layoutComplete) return true
+        if (offset >= Int.MAX_VALUE) return false
+        val lastEnd = pages.lastOrNull { it.sourceEndOffset != null }?.sourceEndOffset ?: Int.MIN_VALUE
+        return lastEnd > offset
     }
 
-    // ── 排版核心 ──
-
-    private fun layoutAll(): List<TextPage> {
-        val result = ArrayList<TextPage>()
-        var units = ArrayList<PageUnit>()
-        var used = 0f
-        var pending: PendingChunk? = null
-        var pos = 0
-
-        fun pageDone() {
-            if (units.isEmpty()) return
-            result.add(buildPage(units, used, result.size))
-            units = ArrayList()
-            used = 0f
-        }
-
+    /**
+     * 增量排版：从断点继续，至少排到覆盖原文 offset [targetOffset] 所在页即停
+     * （首帧按需排版：恢复位置在第 k 页时只需排前 k 页，剩余由后续调用续排补齐）；
+     * [Int.MAX_VALUE] 表示排完整章。多次调用幂等续排。
+     */
+    fun layoutUntil(targetOffset: Int) {
+        if (layoutComplete) return
         while (true) {
             val chunk = pending
             pending = null
             val isChunk = chunk != null
-            val item = if (isChunk) chunk!!.para else items.getOrNull(pos) ?: break
+            val item = if (isChunk) chunk!!.para else items.getOrNull(pos)
+            if (item == null) {
+                finishLayout()
+                return
+            }
 
             when (item) {
                 is FlowItem.Title -> {
@@ -437,20 +446,56 @@ class ChapterPaginator(
                     }
                 }
             }
-        }
 
+            // 每落一页检查是否已覆盖目标 offset（严格大于：offset 所在页必须已排出，
+            // 页边界 offset 属于下一页）——覆盖即挂起，剩余内容保留断点由续排补齐
+            val lastEnd = typedPages.lastOrNull { it.sourceEndOffset != null }?.sourceEndOffset ?: Int.MIN_VALUE
+            if (lastEnd > targetOffset) {
+                pages = typedPages.toList()
+                return
+            }
+        }
+    }
+
+    /** 章节排完：末页落盘 + 末页不做底部对齐（末页文字按自然密度排，多余留白留在页底；
+     *  底部对齐只对「满页」沉底有意义，末页文字少时均匀拉伸会拉出超大行距）。 */
+    private fun finishLayout() {
         pageDone()
-        // 末页不做底部对齐：文字按自然密度排，多余留白留在页底
-        // （底部对齐只对「满页」沉底有意义；末页文字少时均匀拉伸会拉出超大行距）
-        if (style.bottomJustify && result.isNotEmpty() && result.last().units.any { it is PageUnit.Para }) {
-            val last = result.last()
+        if (style.bottomJustify && typedPages.isNotEmpty() && typedPages.last().units.any { it is PageUnit.Para }) {
+            val last = typedPages.last()
             val fixed = last.units.map { u ->
                 if (u is PageUnit.Para && u.lineHeightExtraPx > 0f) u.copy(lineHeightExtraPx = 0f) else u
             }
-            result[result.size - 1] = last.copy(units = fixed)
+            typedPages[typedPages.size - 1] = last.copy(units = fixed)
+            pages = typedPages.toList()
         }
-        return result
+        layoutComplete = true
     }
+
+    private fun pageDone() {
+        if (units.isEmpty()) return
+        typedPages += buildPage(units, used, typedPages.size)
+        units = ArrayList()
+        used = 0f
+        pages = typedPages.toList()
+    }
+
+    /** 返回包含原文偏移的页；边界偏移归入覆盖它的第一项（即起点等于该 offset 的页，
+     *  前一页区间为 [start, end) 不含 end）。前提：同段跨页拆分的各页 source 区间
+     *  互斥（拆分片段记录真实子区间），否则重叠区间的映射不唯一。 */
+    fun pageForOffset(sourceOffset: Int): Int? {
+        val offset = sourceOffset.coerceAtLeast(0)
+        return pages.indexOfFirst { page ->
+            page.sourceStartOffset?.let { start ->
+                val end = page.sourceEndOffset ?: start
+                offset in start until end || (offset == start && start == end)
+            } == true
+        }.takeIf { it >= 0 }
+            ?: pages.indexOfLast { it.sourceStartOffset != null }
+                .takeIf { it >= 0 && offset >= (pages[it].sourceStartOffset ?: 0) }
+    }
+
+    // ── 排版核心 ──
 
     /**
      * 页完成：按 bottomJustify 把剩余高度均匀分到各行（末行沉底）。

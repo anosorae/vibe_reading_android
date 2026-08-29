@@ -184,8 +184,9 @@ fun ReaderScreen(
     //
     // 中心章排版不在 composition 内同步执行（EPUB 长章整章排版会阻塞主线程数百毫秒，
     // 表现为打开书籍时卡顿）：由下方 LaunchedEffect 走 window.recenterAsync 后台排版，
-    // 期间 pageCount==0，由打开过渡遮罩呈现；邻居章由 paginateNeighbors 后台排版后
-    // 幂等扩展窗口并保持当前视觉页。
+    // 且首帧只排到恢复 offset 所在页（剩余后台续排），期间 pageCount 不含未排部分，
+    // 由打开过渡遮罩呈现；邻居章由 paginateNeighbors 后台排版后幂等扩展窗口并保持
+    // 当前视觉页。
     //
     // 分页指纹只含影响排版的字段（id/title/section/index/content/translatedContent），
     // 不含 status/errorMessage——翻译状态变化（IN_PROGRESS→DONE）不应重建窗口，
@@ -302,8 +303,9 @@ fun ReaderScreen(
         // 了邻居，不应再缩小回单章。
         // 中心章缺失时后台排版（打开书籍首帧/程序化跳章/切模式提速），已在排版表时
         // 近零开销；完成后在主线程重建索引空间，保持原 recenterSync 的幂等语义。
+        // 传入目标 offset：首帧只排到覆盖该位置所在页（EPUB 长章提速），剩余后台续排。
         if (isProgrammatic || !initialSeekDone || window.centerChapterId != target) {
-            window.recenterAsync(target)
+            window.recenterAsync(target, sourceOffset)
         }
         // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
         val idx = window.indexOf(target, sourceOffset.toLong())
@@ -319,7 +321,21 @@ fun ReaderScreen(
         // 还是旧章（navigateTo 是异步的），重启用旧 target + 旧 currentPage 算出错误 idx，
         // 覆盖刚完成的 scrollToPage(0)，导致「下一章跳到最后一页」/「上一章没反应」。
         // 改由下方 LaunchedEffect 在 activeChapterId 确认到达 target 且视觉页就位后清除。
-        scope.launch { window.preloadNeighbors(target) }
+        scope.launch {
+            // 首帧已就绪：后台把中心章剩余部分续排完整，再预载 ±2 外缘章
+            window.ensurePaginatorComplete(target)
+            // 刷新索引空间前记下当前视觉页的（章, 章内页号），刷新后重映射落位：
+            // 续排补齐与前一章插入都会让页索引整体平移，不重映射会闪现错误页
+            // （如从 16/54 瞬跳 12/54 再跳回）。
+            val curChapter = window.chapterOfPage(pagerState.currentPage)
+            val curPageInChapter = window.pageInChapterOfPage(pagerState.currentPage)
+            window.refreshWindow()
+            val remapped = curChapter?.let { window.indexOf(it, curPageInChapter) }
+            if (remapped != null && pagerState.currentPage != remapped) {
+                pagerState.scrollToPage(remapped)
+            }
+            window.preloadNeighbors(target)
+        }
     }
 
     // 程序化跳章收尾：activeChapterId 已到达 target 且 currentPage 落在目标章正确偏移页后，
@@ -598,8 +614,9 @@ fun ReaderScreen(
     // ── 打开书籍过渡遮罩 ──
     // 章节/位置未恢复、分页中心章后台排版未完成、或滚动内容构建中时显示；
     // 内容就绪后淡出（掩盖加载过程感）。书籍确无章节（章节流已到达且为空）时不遮罩，
-    // 落回 EmptyReaderHint。
-    val bookHasNoChapters = state.bookTitle.isNotEmpty() && state.chapters.isEmpty()
+    // 落回 EmptyReaderHint。注意「章节流已到达」必须用 chaptersLoaded：并行加载下
+    // 书籍信息可能先于章节列表到达，用书名非空推断会瞬时误判成无章节的书。
+    val bookHasNoChapters = state.chaptersLoaded && state.chapters.isEmpty()
     val opening = !bookHasNoChapters && (
         !state.restoreReady ||
             (isPagerMode && window.pageCount == 0) ||
@@ -1064,7 +1081,7 @@ fun ReaderScreen(
                             // 中文两端对齐：正文内容区宽度（与排版几何同源）
                             contentWidthPx = geometry.contentWidthPx.toInt()
                         )
-                    state.bookTitle.isNotEmpty() -> EmptyReaderHint(isDark)
+                    state.chaptersLoaded -> EmptyReaderHint(isDark)
                     // else：打开中（章节加载/中心章后台排版），由全局过渡遮罩呈现
                 }
             }

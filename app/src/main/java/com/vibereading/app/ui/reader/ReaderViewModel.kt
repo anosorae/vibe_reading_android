@@ -40,6 +40,8 @@ data class ReaderUiState(
     val activeChapterId: Long? = null,
     val position: ReadingPosition? = null,
     val restoreReady: Boolean = false,
+    // 章节列表流是否已首次到达（并行加载下书籍信息可能先到，不能用书名非空推断）
+    val chaptersLoaded: Boolean = false,
     val streamingText: String = "",
     val thinkingText: String = "",
     val streamingCharCount: Int = 0,
@@ -112,45 +114,26 @@ class ReaderViewModel(
 
     init {
         OpenBookProbe.step("ReaderViewModel 创建")
+        // 书籍信息与章节列表并行加载（原串行：先书后列表，白等一轮 DB）。
+        // 两者都就绪即原子恢复位置；列表 collect 持续驻留，后续译文更新仍刷新 activeChapter。
+        // 两个协程同在主线程 viewModelScope 上运行，savedPosition/latestChapters 无数据竞争。
+        var savedPosition: ReadingPosition? = null
+        var latestChapters: List<Chapter> = emptyList()
         viewModelScope.launch {
             val book = bookRepo.getBookByIdOnce(bookId) ?: return@launch
             OpenBookProbe.step("书籍信息读取完成「${book.title}」")
-            val savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
-            _uiState.update { it.copy(mode = book.languageMode, sourceLanguage = book.sourceLanguage) } // 显示模式按书绑定，默认=原文语言；原文语言决定翻译方向
+            savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
+            _uiState.update {
+                it.copy(bookTitle = book.title, mode = book.languageMode, sourceLanguage = book.sourceLanguage)
+            }
+            tryRestore(latestChapters, savedPosition)
+        }
+        viewModelScope.launch {
             chapterRepo.getChaptersByBook(bookId).collect { chapters ->
-                _uiState.update { it.copy(bookTitle = book.title, chapters = chapters) }
-                if (!restoreCompleted && chapters.isNotEmpty()) {
-                    OpenBookProbe.step(
-                        "章节列表加载完成（${chapters.size} 章 / " +
-                            "${chapters.sumOf { it.content.length }} 字符）"
-                    )
-                    val chapter = chapters.firstOrNull { it.id == savedPosition.chapterId } ?: chapters.first()
-                    val position = if (chapter.id == savedPosition.chapterId) {
-                        savedPosition.normalized(chapter.content.length).copy(chapterId = chapter.id)
-                    } else {
-                        ReadingPosition(chapter.id, 0)
-                    }
-                    restoreCompleted = true
-                    _uiState.update {
-                        it.copy(
-                            activeChapterId = chapter.id,
-                            activeChapter = chapter,
-                            position = position,
-                            restoreReady = true,
-                            streamingText = "",
-                            thinkingText = "",
-                            isStreaming = false,
-                            translationPhase = TranslationPhase.IDLE,
-                            errorMessage = null
-                        )
-                    }
-                    OpenBookProbe.step(
-                        "恢复阅读位置完成（章「${chapter.title}」 offset=${position.offset}）"
-                    )
-                    activeChapterIdFlow.value = chapter.id
-                    if (needsTranslation()) maybeTranslateChapter(chapter.id)
-                    prefetchNextChapterIfNeeded()
-                } else if (restoreCompleted) {
+                latestChapters = chapters
+                _uiState.update { it.copy(chapters = chapters, chaptersLoaded = true) }
+                tryRestore(chapters, savedPosition)
+                if (restoreCompleted) {
                     val current = _uiState.value.activeChapterId
                     val updated = chapters.find { it.id == current }
                     if (updated != null) _uiState.update { it.copy(activeChapter = updated) }
@@ -233,6 +216,38 @@ class ReaderViewModel(
                 _uiState.update { it.copy(activeProfileId = profile?.id) }
             }
         }
+    }
+
+    /** 一次性原子恢复（书籍信息 + 章节列表双就绪才执行）：先读 Book 位置快照，再恢复章节与偏移。 */
+    private fun tryRestore(chapters: List<Chapter>, savedPosition: ReadingPosition?) {
+        if (restoreCompleted || savedPosition == null || chapters.isEmpty()) return
+        OpenBookProbe.step(
+            "章节列表加载完成（${chapters.size} 章 / ${chapters.sumOf { it.content.length }} 字符）"
+        )
+        val chapter = chapters.firstOrNull { it.id == savedPosition.chapterId } ?: chapters.first()
+        val position = if (chapter.id == savedPosition.chapterId) {
+            savedPosition.normalized(chapter.content.length).copy(chapterId = chapter.id)
+        } else {
+            ReadingPosition(chapter.id, 0)
+        }
+        restoreCompleted = true
+        _uiState.update {
+            it.copy(
+                activeChapterId = chapter.id,
+                activeChapter = chapter,
+                position = position,
+                restoreReady = true,
+                streamingText = "",
+                thinkingText = "",
+                isStreaming = false,
+                translationPhase = TranslationPhase.IDLE,
+                errorMessage = null
+            )
+        }
+        OpenBookProbe.step("恢复阅读位置完成（章「${chapter.title}」 offset=${position.offset}）")
+        activeChapterIdFlow.value = chapter.id
+        if (needsTranslation()) maybeTranslateChapter(chapter.id)
+        prefetchNextChapterIfNeeded()
     }
 
     /** 用户主动跳转；分页位置由当前排版器根据 offset 派生。 */

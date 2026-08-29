@@ -87,9 +87,17 @@ fun PageInfoOverlays(
 
     val chapterIndex = chapters.indexOfFirst { it.id == activeChapterId }
     val inBook = chapterIndex in chapters.indices
-    // 当前页/本章总页（章内相对页，ADR-001 无全局页索引）
+    // 当前页/本章总页（章内相对页，ADR-001 无全局页索引）。
+    // 本章整章排版未完成（打开书籍前缀排版续排中）时总页数未定：只显示当前页，
+    // 排版完成由 refreshWindow 重组带出完整「当前页/总页」，避免总页数渐变跳变。
+    val chapterLayoutComplete = activeChapterId != null && window.isChapterLayoutComplete(activeChapterId)
     val totalPages = activeChapterId?.let { window.pageCountInChapter(it) } ?: 0
     val currentPage = window.pageInChapterOfPage(pagerState.currentPage)
+    val pageTip = when {
+        totalPages <= 0 -> ""
+        chapterLayoutComplete -> "${currentPage + 1}/$totalPages"
+        else -> "${currentPage + 1}"
+    }
     val tipColor = palette.bodyText.copy(alpha = 0.7f)
 
     // 系统栏/挖孔用缓存值（不随沉浸式切换变化），与排版几何一致
@@ -132,7 +140,7 @@ fun PageInfoOverlays(
         // ── 页脚（左下）：当前页 / 本章总页 ──
         // 以正文区底部为锚点向下退让：文字顶边 = contentBottom - gap，文字底边 = contentBottom - gap - textHeight
         Text(
-            text = if (totalPages > 0) "${currentPage + 1}/$totalPages" else "",
+            text = pageTip,
             fontSize = 12.sp,
             color = tipColor,
             modifier = Modifier

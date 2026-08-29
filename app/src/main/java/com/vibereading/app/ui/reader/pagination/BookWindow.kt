@@ -86,13 +86,20 @@ class BookWindow(
      * 异步 recenter（打开书籍首帧提速）：中心章缺失时在后台排版（EPUB 长章全章排版
      * 在主线程会阻塞数百毫秒），完成后在调用线程重建索引空间。中心章已在排版表时
      * 近零开销（只重建索引空间）。期间调用方展示打开过渡遮罩（pageCount==0）。
+     *
+     * 首帧按需排版：[targetOffset] 非零时只排到覆盖该原文 offset 所在页即出首帧，
+     * 剩余内容由 [ensurePaginatorComplete] 后台续排（pageCount 随之增长）。
      */
-    suspend fun recenterAsync(chapterId: Long) {
+    suspend fun recenterAsync(chapterId: Long, targetOffset: Int = 0) {
         val idx = chapters.indexOfFirst { it.id == chapterId }
         if (idx < 0) return
-        ensurePaginatorAsync(chapters[idx].id)
+        ensurePaginatorAsync(chapters[idx].id, targetOffset)
         recenterSync(chapterId, includeNeighbors = false)
     }
+
+    /** 首帧前缀排版后的续排入口：后台把该章补排完整。 */
+    suspend fun ensurePaginatorComplete(chapterId: Long) =
+        ensurePaginatorAsync(chapterId, Int.MAX_VALUE)
 
     /** 窗口中心章 ±1 是否都已排版（后台扩展前的幂等检查）。 */
     fun hasNeighbors(chapterId: Long): Boolean {
@@ -132,22 +139,32 @@ class BookWindow(
     }
 
     /**
-     * 单飞行后台排版一章：已在排版表则直接返回；他人正在排版则轮询等待
-     * （排版方被取消时 finally 释放认领，等待者接管重排）；5s 兜底超时后放弃
-     * 等待，由调用方的同步 recenterSync 兜底排版。使用后台测量实例
-     * （[backgroundMeasurer]），绝不占用主线程 TextMeasurer。
+     * 单飞行后台排版一章到至少覆盖 [minCoverOffset]：无排版器则新建（前缀排版）；
+     * 已有未完整排版器则从断点续排。已排完（或已覆盖目标 offset）直接返回；
+     * 他人正在排版则轮询等待（排版方被取消时 finally 释放认领，等待者接管重排）；
+     * 5s 兜底超时后放弃等待，由调用方的同步 recenterSync 兜底排版。
+     * 使用后台测量实例（[backgroundMeasurer]），绝不占用主线程 TextMeasurer。
      */
-    private suspend fun ensurePaginatorAsync(chapterId: Long) = withContext(Dispatchers.Default) {
+    private suspend fun ensurePaginatorAsync(
+        chapterId: Long,
+        minCoverOffset: Int = Int.MAX_VALUE
+    ) = withContext(Dispatchers.Default) {
         val deadline = System.currentTimeMillis() + 5_000
-        while (synchronized(lock) { chapterId !in paginators }) {
+        while (true) {
+            val existing = synchronized(lock) { paginators[chapterId] }
+            if (existing != null && (existing.layoutComplete || existing.coversOffset(minCoverOffset))) break
             val claimed = synchronized(lock) { buildingIds.add(chapterId) }
             if (claimed) {
                 try {
-                    val paginator = buildPaginator(chapterId, backgroundMeasurer())
-                    synchronized(lock) { paginators[chapterId] = paginator }
+                    val paginator = synchronized(lock) { paginators[chapterId] }
+                        ?: newPaginator(chapterId, backgroundMeasurer()).also {
+                            // 先挂表再排版：其他续排请求能看到未完成排版器并等待/接管
+                            synchronized(lock) { paginators[chapterId] = it }
+                        }
+                    paginator.layoutUntil(minCoverOffset)
                     OpenBookProbe.step(
-                        "后台排版完成 chapterId=$chapterId（${paginator.pages.size} 页，" +
-                            "${chapters.firstOrNull { it.id == chapterId }?.content?.length ?: 0} 字符）"
+                        "后台排版 chapterId=$chapterId → ${paginator.pages.size} 页" +
+                            "（完成=${paginator.layoutComplete}）"
                     )
                 } finally {
                     synchronized(lock) { buildingIds.remove(chapterId) }
@@ -158,6 +175,20 @@ class BookWindow(
                 delay(40)
             }
         }
+    }
+
+    /**
+     * 续排完成后刷新窗口索引空间（主线程调用）：只纳入已排版章节（缺失章不补排、
+     * 不驱逐外缘），中心章前缀页索引不变、续排页向后追加，pageCount 增长且当前
+     * 视觉页不漂移。后台排版不重建索引空间（与 paginateNeighbors 同一约束）。
+     */
+    fun refreshWindow() {
+        val center = centerChapterId ?: return
+        val idx = chapters.indexOfFirst { it.id == center }
+        if (idx < 0) return
+        val from = (idx - 1).coerceAtLeast(0)
+        val to = (idx + 1).coerceAtMost(chapters.size - 1)
+        rebuildWindow(from, to)
     }
 
     // ── 样式/几何热更新（边距、字号等滑杆拖动期高频触发） ──
@@ -248,6 +279,10 @@ class BookWindow(
     fun pageCountInChapter(chapterId: Long): Int =
         synchronized(lock) { paginators[chapterId]?.pages?.size } ?: 0
 
+    /** 本章整章是否已排版完成（打开书籍前缀排版续排中为 false，此时总页数未定）。 */
+    fun isChapterLayoutComplete(chapterId: Long): Boolean =
+        synchronized(lock) { paginators[chapterId]?.layoutComplete } ?: false
+
     fun pageUnits(index: Int): List<PageUnit> {
         val wp = windowPages.getOrNull(index) ?: return emptyList()
         synchronized(lock) {
@@ -257,7 +292,7 @@ class BookWindow(
 
     // ── 内部 ──
 
-    private fun buildPaginator(chapterId: Long, m: TextMeasurer): ChapterPaginator {
+    private fun newPaginator(chapterId: Long, m: TextMeasurer): ChapterPaginator {
         val chapter = chapters.first { it.id == chapterId }
         return ChapterPaginator(
             chapterId = chapterId,
@@ -267,9 +302,14 @@ class BookWindow(
             contentWidthPx = contentWidthPx,
             contentHeightPx = contentHeightPx,
             measurer = m,
-            density = displayDensity
+            density = displayDensity,
+            lazyLayout = true
         )
     }
+
+    /** 同步整章排版（recenterSync 兜底路径）：构建即排完整章。 */
+    private fun buildPaginator(chapterId: Long, m: TextMeasurer): ChapterPaginator =
+        newPaginator(chapterId, m).also { it.layoutUntil(Int.MAX_VALUE) }
 
     private fun rebuildWindow(fromIdx: Int, toIdx: Int) {
         val pages = ArrayList<WindowPage>()

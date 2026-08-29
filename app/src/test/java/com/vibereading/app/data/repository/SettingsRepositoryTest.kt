@@ -82,6 +82,34 @@ class SettingsRepositoryTest {
         val result = repository.migrateLlmKeysToProfile()
         assertNull(result)
     }
+
+    @Test
+    fun `readingSettings defaults fontFamily to system default`() = runBlocking {
+        val settings = repository.readingSettings.first()
+        assertEquals("default", settings.fontFamily)
+    }
+
+    @Test
+    fun `readingSettings normalizes legacy serif to system default`() = runBlocking {
+        store.updateData { prefs ->
+            val mutable = prefs.toMutablePreferences()
+            mutable[stringPreferencesKey("font_family")] = "serif"
+            mutable.toPreferences()
+        }
+        val settings = repository.readingSettings.first()
+        assertEquals("default", settings.fontFamily)
+    }
+
+    @Test
+    fun `readingSettings keeps explicit fontFamily value`() = runBlocking {
+        store.updateData { prefs ->
+            val mutable = prefs.toMutablePreferences()
+            mutable[stringPreferencesKey("font_family")] = "monospace"
+            mutable.toPreferences()
+        }
+        val settings = repository.readingSettings.first()
+        assertEquals("monospace", settings.fontFamily)
+    }
 }
 
 private fun stringPreferencesKey(name: String) = androidx.datastore.preferences.core.stringPreferencesKey(name)

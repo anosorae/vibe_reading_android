@@ -102,7 +102,8 @@ chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 60000,
         .map { prefs ->
             ReadingSettings(
                 fontSize = prefs[ReadingKeys.FONT_SIZE] ?: 17,
-                fontFamily = prefs[ReadingKeys.FONT_FAMILY] ?: "serif",
+                // 旧版默认 serif 为遗留值，UI 已无该选项，读取时规范为系统字体
+                fontFamily = prefs[ReadingKeys.FONT_FAMILY]?.takeUnless { it == "serif" } ?: "default",
                 bgColorIndex = prefs[ReadingKeys.BG_COLOR_INDEX] ?: 0,
                 lineSpacing = prefs[ReadingKeys.LINE_SPACING] ?: 8,
                 paragraphSpacing = prefs[ReadingKeys.PARAGRAPH_SPACING] ?: 16,

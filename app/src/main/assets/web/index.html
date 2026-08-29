@@ -6,14 +6,9 @@
 <title>译读 · Web 伴读</title>
 <style>
   :root {
-    --bg: #f6f2e9; --card: #fffdf8; --text: #2d2a25; --muted: #8a8377;
+    /* 颜色变量由 JS 按「背景预设」写入（对齐 App ReaderBgPresets 五档），此处为兜底值 */
+    --bg: #faf7f2; --card: #fffdf8; --text: #2c2825; --muted: #6b635b;
     --border: #e5ddcc; --accent: #9a6b3f; --expand-bg: #efe9db; --dot-done: #6a9955;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #191714; --card: #22201c; --text: #d8d2c6; --muted: #7d766a;
-      --border: #35322b; --accent: #c99a68; --expand-bg: #2b2823; --dot-done: #7fae6a;
-    }
   }
   * { box-sizing: border-box; }
   body {
@@ -35,6 +30,14 @@
     backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
   }
   header h1 { font-size: 16px; margin: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── 背景预设切换（对齐 App 阅读设置的五档色板） ── */
+  #bg-picker { display: flex; gap: 7px; align-items: center; }
+  #bg-picker .dot {
+    width: 16px; height: 16px; border-radius: 50%; cursor: pointer;
+    border: 1px solid rgba(0,0,0,.18); box-sizing: border-box;
+  }
+  #bg-picker .dot.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 
   main { max-width: 44em; margin: 0 auto; padding: 18px 18px 80px; }
 
@@ -112,6 +115,7 @@
 <header>
   <button id="btn-back" style="display:none">← 书架</button>
   <h1 id="page-title">译读 · Web 伴读</h1>
+  <span id="bg-picker" title="阅读背景"></span>
   <button id="btn-mode" style="display:none">英文</button>
   <button id="btn-catalog" style="display:none">目录</button>
 </header>
@@ -138,6 +142,54 @@ if (!TOKEN) document.body.innerHTML = '<div class="empty">缺少访问 Token，�
 
 const $ = (id) => document.getElementById(id);
 const main = $('main');
+
+// ── 背景预设（对齐 App ReaderBgPresets 五档与 ReaderPalette 正文色）──
+const BG_PRESETS = [
+  { name: '暖白', bg: '#faf7f2', text: '#2c2825', muted: '#6b635b' },
+  { name: '米色', bg: '#f5f0e8', text: '#2c2825', muted: '#6b635b' },
+  { name: '青绿', bg: '#f0f4ee', text: '#2c2825', muted: '#6b635b' },
+  { name: '灰米', bg: '#eeece8', text: '#2c2825', muted: '#6b635b' },
+  { name: '深夜', bg: '#2c2825', text: 'rgba(250,247,242,.9)', muted: '#b8afa3' }
+];
+// 由 bg 派生的配套色：卡片微亮、边框/展开块微暗（深夜档反向微亮）
+function bgFamily(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const clamp = (v) => Math.max(0, Math.min(255, v));
+  const dark = (n & 255) < 128;
+  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const fmt = (d) => '#' + rgb.map(v => clamp(v + d).toString(16).padStart(2, '0')).join('');
+  return {
+    card: fmt(dark ? 6 : 4),
+    border: fmt(dark ? 10 : -12),
+    expandBg: fmt(dark ? 14 : -22)
+  };
+}
+let bgIndex = parseInt(localStorage.getItem('companion_bg') || '0', 10) || 0;
+if (bgIndex < 0 || bgIndex >= BG_PRESETS.length) bgIndex = 0;
+function applyBg() {
+  const p = BG_PRESETS[bgIndex], fam = bgFamily(p.bg);
+  const root = document.documentElement.style;
+  root.setProperty('--bg', p.bg);
+  root.setProperty('--card', fam.card);
+  root.setProperty('--border', fam.border);
+  root.setProperty('--expand-bg', fam.expandBg);
+  root.setProperty('--text', p.text);
+  root.setProperty('--muted', p.muted);
+  localStorage.setItem('companion_bg', String(bgIndex));
+  document.querySelectorAll('#bg-picker .dot').forEach((d, i) => d.classList.toggle('sel', i === bgIndex));
+}
+(function initBgPicker() {
+  const picker = $('bg-picker');
+  BG_PRESETS.forEach((p, i) => {
+    const d = document.createElement('span');
+    d.className = 'dot';
+    d.style.background = p.bg;
+    d.title = p.name;
+    d.onclick = () => { bgIndex = i; applyBg(); };
+    picker.appendChild(d);
+  });
+  applyBg();
+})();
 
 function toast(msg) {
   const t = $('toast');

@@ -31,7 +31,6 @@ import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.content.ReadingParagraph
 import com.vibereading.app.ui.reader.pagination.PageStyle
 import com.vibereading.app.ui.reader.pagination.ReaderMetrics
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 /**
@@ -99,7 +98,8 @@ fun BilingualParagraph(
                     pageStyle = pageStyle,
                     palette = palette,
                     edgeExtendDp = bubbleEdgeExtendDp,
-                    enabled = bubbleEnabled
+                    enabled = bubbleEnabled,
+                    selectionState = selectionState
                 )
             }
         }
@@ -121,7 +121,8 @@ private fun BoxScope.ChineseBubble(
     pageStyle: PageStyle,
     palette: ReaderPalette,
     edgeExtendDp: Float,
-    enabled: Boolean
+    enabled: Boolean,
+    selectionState: TextSelectionState?
 ) {
     var showPopup by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -138,37 +139,14 @@ private fun BoxScope.ChineseBubble(
     // offset 不影响布局测量，悬挂部分超出容器 bounds 但仍可命中（无裁剪）。
     // 注意此处不得用 onGloballyPositioned 动态测量：翻页动画期间坐标每帧变化会引发
     // 每帧重组，扰动卷页位图与真实页的一致性（上下断层回归）。
+    //
+    // 触控区必须是容器里最后一个（最上层）子节点：命中测试按最上层优先，若视觉气泡
+    // 盒子盖在触控区上方，点在气泡本体（图标 18×6dp）上的触摸会被它截胡——事件不进
+    // 触控区也不进正文，直接落到外层手势触发翻页（气泡点按变翻页 bug）。触控区
+    // 透明不干扰视觉，压在视觉气泡之上不影响绘制。
     Box(
         modifier = Modifier.matchParentSize()
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .offset(x = edgeExtendDp.dp, y = ReaderMetrics.BUBBLE_TOUCH_DROP_DP.dp)
-                .padding(end = ReaderMetrics.BUBBLE_END_DP.dp)
-                .size(
-                    width = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp + edgeExtendDp.dp,
-                    height = (ReaderMetrics.BUBBLE_TOUCH_HEIGHT_DP + ReaderMetrics.BUBBLE_TOUCH_ABOVE_DP).dp
-                )
-                // 点按手势不吞 down：触控区与正文文字重叠，吞 down 会让
-                // SelectableParagraphText 的 awaitLongPressOrCancellation 因事件已消费而取消，
-                // 长按选词失效（原 detectTapGestures 的行为）。只在长按超时内抬手才视为点按；
-                // 超时视为长按选词，直接退出且不消费，抬起事件由选词逻辑消费，不会误开弹窗。
-                .pointerInput(enabled) {
-                    if (!enabled) return@pointerInput
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                            waitForUpOrCancellation()
-                        }
-                        if (up != null) {
-                            // 消费抬起：外层三段点按翻页靠 isConsumed 跳过，气泡附近点按不误翻页
-                            up.consume()
-                            showPopup = !showPopup
-                        }
-                    }
-                }
-        )
         // 视觉气泡：保持原视觉位置（右下角 end 4dp / bottom 2dp），与卷页位图绘制对齐，不参与手势
         Box(
             modifier = Modifier
@@ -188,6 +166,20 @@ private fun BoxScope.ChineseBubble(
                 modifier = Modifier.fillMaxSize()
             ) {}
         }
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = edgeExtendDp.dp, y = ReaderMetrics.BUBBLE_TOUCH_DROP_DP.dp)
+                .padding(end = ReaderMetrics.BUBBLE_END_DP.dp)
+                .size(
+                    width = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp + edgeExtendDp.dp,
+                    height = (ReaderMetrics.BUBBLE_TOUCH_HEIGHT_DP + ReaderMetrics.BUBBLE_TOUCH_ABOVE_DP).dp
+                )
+                .bubbleTapGesture(
+                    selectionState = selectionState,
+                    enabled = enabled
+                ) { showPopup = !showPopup }
+        )
     }
 
     if (showPopup) {
@@ -239,6 +231,37 @@ private fun BoxScope.ChineseBubble(
                                 Modifier.padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
                         )
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 气泡点按手势（internal 供单测复用同一实现，避免测试复刻一份逻辑漂移）。
+ *
+ * 触控区盖在正文上方，是覆盖范围内唯一收到指针事件的命中路径（Compose 触摸只派发
+ * 最上层命中路径，下层文本收不到事件），因此区域内点按/长按均由本手势负责。
+ * 不吞 down：与外层手势、选词手柄协作的既有约定。
+ * 一直等到抬手（不按长按超时提前退出）才判定：消费 up 并切换弹窗——旧实现按系统
+ * 长按超时（500ms）退出，会让「标注小气泡时按久了」的慢点按 up 落到外层三段点按，
+ * 触发翻页（用户症状）。抬手时若选词已激活（防御：事件经其他路径到达本层）则让位
+ * 给选词流程，不开弹窗也不消费。
+ */
+internal fun Modifier.bubbleTapGesture(
+    selectionState: TextSelectionState?,
+    enabled: Boolean,
+    onTogglePopup: () -> Unit
+): Modifier = if (!enabled) {
+    this
+} else {
+    pointerInput(selectionState) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            val up = waitForUpOrCancellation()
+            if (up != null && !up.isConsumed && selectionState?.isSelecting != true) {
+                // 消费抬起：外层三段点按翻页靠 isConsumed 跳过，气泡附近点按不误翻页
+                up.consume()
+                onTogglePopup()
             }
         }
     }

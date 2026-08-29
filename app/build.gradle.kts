@@ -176,6 +176,11 @@ dependencies {
     testImplementation("androidx.compose.ui:ui-text")
     testImplementation("androidx.compose.ui:ui-unit")
     testImplementation("androidx.compose.ui:ui-graphics")
+    // 气泡点按手势单测：Robolectric + Compose UI 测试（注入指针事件验证消费契约）。
+    // 注意 Robolectric 单测使用 debug 变体合并清单（test_config.properties 的
+    // android_merged_manifest 指向 debug），ComponentActivity 必须经 debugImplementation 提供
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("androidx.room:room-testing:2.6.1")

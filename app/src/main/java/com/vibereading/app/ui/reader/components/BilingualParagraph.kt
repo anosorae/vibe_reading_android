@@ -1,6 +1,8 @@
 package com.vibereading.app.ui.reader.components
 
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -29,6 +31,7 @@ import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.content.ReadingParagraph
 import com.vibereading.app.ui.reader.pagination.PageStyle
 import com.vibereading.app.ui.reader.pagination.ReaderMetrics
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 /**
@@ -107,9 +110,11 @@ fun BilingualParagraph(
 }
 
 /** 中文气泡 + 弹窗（视觉叠加层，不参与排版测量）。需在 Box 作用域内调用以使用 align 定位。
- *  触控区 44dp 高 ×（44+[edgeExtendDp])dp 宽：视觉气泡仅 18×6dp，左侧/上方扩展至 44dp 保证易点按，
- *  右侧按 [edgeExtendDp]（= 用户右边距 + BUBBLE_END_DP，由调用方按静态几何传入）延伸到屏幕右缘，
- *  避免点右侧误触发翻页；扩展区透明不干扰视觉。 */
+ *  触控区（44+[edgeExtendDp])dp 宽 ×（BUBBLE_TOUCH_HEIGHT+BUBBLE_TOUCH_ABOVE)dp 高：气泡下方
+ *  [ReaderMetrics.BUBBLE_TOUCH_DROP_DP]dp 悬挂到段间距/下一段首行右侧/页面底边距区域，气泡上方
+ *  [ReaderMetrics.BUBBLE_TOUCH_ABOVE_DP]dp 盖住最后一行底部；视觉气泡仅 18×6dp，水平扩展至 44dp
+ *  保证易点按，右侧按 [edgeExtendDp]（= 用户右边距 + BUBBLE_END_DP，由调用方按静态几何传入）
+ *  延伸到屏幕右缘，避免点右侧误触发翻页；扩展区透明不干扰视觉。 */
 @Composable
 private fun BoxScope.ChineseBubble(
     chineseText: String,
@@ -127,10 +132,10 @@ private fun BoxScope.ChineseBubble(
     }
 
     // 触控区容器用 matchParentSize：填满父 Box 但不参与尺寸决策，
-    // 否则 44dp 触控区会比短段文本高，撑大 Box 导致位图与 Compose 页高度不一致。
-    // 触控区在 matchParentSize 容器内通过 align(BottomEnd) 定位到右下角，视觉位置不变。
-    // 触控区宽度比原来多出 edgeExtendDp 并用 offset 整体右移：左缘与原 44dp 区域重合、
-    // 多出的宽度全部落在右缘之外直到屏幕边缘；offset 不影响布局测量，视觉气泡反向补偿保持原位。
+    // 否则触控区会比短段文本高，撑大 Box 导致位图与 Compose 页高度不一致。
+    // 触控区与视觉气泡分离定位：触控区 align(BottomEnd) 后用 offset(y=悬挂量) 向下移出段落底部，
+    // 底边悬在气泡顶部下方 BUBBLE_TOUCH_DROP_DP 处，上方向上多出 BUBBLE_TOUCH_ABOVE_DP 盖住最后一行底部；
+    // offset 不影响布局测量，悬挂部分超出容器 bounds 但仍可命中（无裁剪）。
     // 注意此处不得用 onGloballyPositioned 动态测量：翻页动画期间坐标每帧变化会引发
     // 每帧重组，扰动卷页位图与真实页的一致性（上下断层回归）。
     Box(
@@ -139,36 +144,49 @@ private fun BoxScope.ChineseBubble(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .offset(x = edgeExtendDp.dp)
+                .offset(x = edgeExtendDp.dp, y = ReaderMetrics.BUBBLE_TOUCH_DROP_DP.dp)
+                .padding(end = ReaderMetrics.BUBBLE_END_DP.dp)
+                .size(
+                    width = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp + edgeExtendDp.dp,
+                    height = (ReaderMetrics.BUBBLE_TOUCH_HEIGHT_DP + ReaderMetrics.BUBBLE_TOUCH_ABOVE_DP).dp
+                )
+                // 点按手势不吞 down：触控区与正文文字重叠，吞 down 会让
+                // SelectableParagraphText 的 awaitLongPressOrCancellation 因事件已消费而取消，
+                // 长按选词失效（原 detectTapGestures 的行为）。只在长按超时内抬手才视为点按；
+                // 超时视为长按选词，直接退出且不消费，抬起事件由选词逻辑消费，不会误开弹窗。
+                .pointerInput(enabled) {
+                    if (!enabled) return@pointerInput
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                            waitForUpOrCancellation()
+                        }
+                        if (up != null) {
+                            // 消费抬起：外层三段点按翻页靠 isConsumed 跳过，气泡附近点按不误翻页
+                            up.consume()
+                            showPopup = !showPopup
+                        }
+                    }
+                }
+        )
+        // 视觉气泡：保持原视觉位置（右下角 end 4dp / bottom 2dp），与卷页位图绘制对齐，不参与手势
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
                 .padding(
                     end = ReaderMetrics.BUBBLE_END_DP.dp,
                     bottom = ReaderMetrics.BUBBLE_BOTTOM_DP.dp
                 )
                 .size(
-                    width = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp + edgeExtendDp.dp,
-                    height = ReaderMetrics.BUBBLE_TOUCH_TARGET_DP.dp
+                    width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
+                    height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp
                 )
-                // enabled=false 时不注册手势：点击不被消费，落到外层手势关闭菜单栏
-                .pointerInput(enabled) {
-                    if (enabled) detectTapGestures { showPopup = !showPopup }
-                }
         ) {
-            // 视觉气泡：在触控区内右下对齐并反向 offset，保持原视觉位置
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = -edgeExtendDp.dp)
-                    .size(
-                        width = ReaderMetrics.BUBBLE_WIDTH_DP.dp,
-                        height = ReaderMetrics.BUBBLE_HEIGHT_DP.dp
-                    )
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(3.dp),
-                    color = palette.bubble,
-                    modifier = Modifier.fillMaxSize()
-                ) {}
-            }
+            Surface(
+                shape = RoundedCornerShape(3.dp),
+                color = palette.bubble,
+                modifier = Modifier.fillMaxSize()
+            ) {}
         }
     }
 

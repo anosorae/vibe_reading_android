@@ -22,8 +22,17 @@ object ReaderMetrics {
     const val BUBBLE_HEIGHT_DP = 6
     const val BUBBLE_END_DP = 4
     const val BUBBLE_BOTTOM_DP = 2
-    /** 原文气泡隐形触控区（视觉气泡 18×6dp 太小，扩展至 44dp 保证易点按） */
+    /** 原文气泡隐形触控区宽度（视觉气泡 18×6dp 太小，水平扩展至 44dp 保证易点按） */
     const val BUBBLE_TOUCH_TARGET_DP = 44
+
+    /** 原文气泡隐形触控区高度（气泡下方部分）：小于通用 44/48dp 建议值，减少对下一段首行点按翻页的覆盖 */
+    const val BUBBLE_TOUCH_HEIGHT_DP = 32
+
+    /** 触控区在气泡上方的扩展量：盖住最后一行底部 24dp 便于点按；手势不吞 down，不影响该区域长按选词 */
+    const val BUBBLE_TOUCH_ABOVE_DP = 24
+
+    /** 触控区向下悬挂量：顶边对齐气泡顶部（气泡顶 = 段落底上方 BUBBLE_HEIGHT+BUBBLE_BOTTOM），向下延伸出段落底部 */
+    const val BUBBLE_TOUCH_DROP_DP = BUBBLE_TOUCH_HEIGHT_DP - BUBBLE_HEIGHT_DP - BUBBLE_BOTTOM_DP
 
     /** 选择手柄尺寸 / 定位（对齐 ADR-002 D8） */
     const val HANDLE_SIZE_DP = 32       // 透明触控盒（大于视觉区，便于抓取且不压字）

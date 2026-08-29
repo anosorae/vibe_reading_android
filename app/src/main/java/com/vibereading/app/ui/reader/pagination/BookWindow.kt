@@ -7,6 +7,7 @@ import androidx.compose.ui.text.TextMeasurer
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.ui.reader.content.ReadingContent
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /** 分页器索引空间内的一个页面：定位到（章, 章内页）。 */
@@ -22,11 +23,11 @@ data class WindowPage(val chapterId: Long, val pageInChapter: Int)
  */
 class BookWindow(
     val chapters: List<Chapter>,
-    private val style: PageStyle,
+    private var style: PageStyle,
     private val mode: String,
     private val sourceLanguage: String = "zh",   // 书籍原文语言（ADR-003）：决定段落插槽方向
-    private val contentWidthPx: Float,
-    private val contentHeightPx: Float,
+    private var contentWidthPx: Float,
+    private var contentHeightPx: Float,
     private val measurer: TextMeasurer,           // 主线程测量
     private val backgroundMeasurer: () -> TextMeasurer, // 后台预载测量（每章独立实例）
     private val displayDensity: Float = 1f        // 用于 dp→px 转换
@@ -117,6 +118,56 @@ class BookWindow(
                 if (cid !in paginators) paginators[cid] = buildPaginator(cid, backgroundMeasurer())
             }
         }
+    }
+
+    // ── 样式/几何热更新（边距、字号等滑杆拖动期高频触发） ──
+
+    /** 当前窗口排版是否已按 [style] 与内容区尺寸排版。 */
+    fun matchesStyle(style: PageStyle, contentWidthPx: Float, contentHeightPx: Float): Boolean =
+        this.style == style && this.contentWidthPx == contentWidthPx && this.contentHeightPx == contentHeightPx
+
+    /**
+     * 按 [newStyle]/新内容区尺寸重排窗口章（center±1），完成后主线程原子换入。
+     * 全章排版在后台线程用 [backgroundMeasurer] 执行（每章几十毫秒，绝不阻塞 UI）；
+     * 提交只做 map 替换 + 索引空间重建（微秒级）。窗口对象身份不变，调用方
+     * （ReaderScreen）无需重建 pagerState/LaunchedEffects，只需重映射当前视觉页。
+     * 外缘 ±2 预载章随提交一并驱逐，由既有 preload 机制按需重排。
+     * 协程被取消（拖动期新样式到来）时后台构建结果直接丢弃，不产生半新半旧状态。
+     */
+    suspend fun restyle(newStyle: PageStyle, newContentWidthPx: Float, newContentHeightPx: Float) {
+        val center = centerChapterId ?: return
+        val idx = chapters.indexOfFirst { it.id == center }
+        if (idx < 0) return
+        val from = (idx - 1).coerceAtLeast(0)
+        val to = (idx + 1).coerceAtMost(chapters.size - 1)
+        val built = withContext(Dispatchers.Default) {
+            val m = backgroundMeasurer()
+            HashMap<Long, ChapterPaginator>().also { map ->
+                for (i in from..to) {
+                    ensureActive()
+                    val chapter = chapters[i]
+                    map[chapter.id] = ChapterPaginator(
+                        chapterId = chapter.id,
+                        items = buildChapterItems(chapter, sourceLanguage),
+                        style = newStyle,
+                        mode = mode,
+                        contentWidthPx = newContentWidthPx,
+                        contentHeightPx = newContentHeightPx,
+                        measurer = m,
+                        density = displayDensity
+                    )
+                }
+            }
+        }
+        kotlin.coroutines.coroutineContext.ensureActive() // 提交前再确认：取消的 tick 不换入旧结果
+        synchronized(lock) {
+            style = newStyle
+            contentWidthPx = newContentWidthPx
+            contentHeightPx = newContentHeightPx
+            paginators.clear()
+            paginators.putAll(built)
+        }
+        rebuildWindow(from, to)
     }
 
     // ── 索引空间查询 ──

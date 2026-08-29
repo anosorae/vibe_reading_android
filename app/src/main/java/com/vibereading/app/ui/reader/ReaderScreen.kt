@@ -173,8 +173,9 @@ fun ReaderScreen(
     val contentWidthPx = geometry.contentWidthPx
     val contentHeightPx = geometry.contentHeightPx
 
-    // 窗口 key 含 isPagerMode/页边距：滚动↔分页切换、边距调整时重建窗口并重新排版
-    // （否则旧窗口状态残留，导致切换不生效/边距不生效）
+    // 窗口 key 只含低频变化（模式/指纹/翻页类型）：边距、字号等排版样式变化走下方
+    // restyle 热更新（后台重排版、主线程原子换入），避免拖动滑杆时每个 tick 在
+    // composition 内同步重排全章造成严重卡顿。
     // 立即 recenterSync：避免 key 变化（如沉浸式切换导致 contentHeightPx 变化）时新窗口
     // windowPages 为空 → pageCount==0 → 闪现 EmptyReaderHint（"没有任何阅读内容"）
     //
@@ -191,7 +192,7 @@ fun ReaderScreen(
             ?: ""
     }
     val window = remember(
-        measurer, pageStyle, state.mode, state.sourceLanguage, paginationFingerprint, contentWidthPx, contentHeightPx, isPagerMode
+        measurer, state.mode, state.sourceLanguage, paginationFingerprint, isPagerMode
     ) {
         BookWindow(
             chapters = state.chapters,
@@ -237,6 +238,34 @@ fun ReaderScreen(
     var initialSeekDone by remember { mutableStateOf(false) }
     // 窗口滑动期间抑制「翻页同步章」，避免 recenter 滚动与跨章同步互相打架
     var windowSliding by remember { mutableStateOf(false) }
+
+    // 排版样式/内容区尺寸变化（边距、字号、行距等滑杆拖动期高频触发）：
+    // 后台重排窗口章并原子换入，主线程只做索引空间重建与视觉页重映射。
+    // key 重启即取消上一个 restyle（拖动期每个 tick 只保留最新样式），利用
+    // LaunchedEffect 的取消语义实现「最新样式 wins」。提交完成后按 offset
+    // 恢复当前视觉页（页高/页宽变化导致每页容纳内容变化，页码必然漂移）。
+    LaunchedEffect(window, pageStyle, contentWidthPx, contentHeightPx) {
+        if (!isPagerMode) return@LaunchedEffect // 滚动模式排版不依赖窗口分页，边距即时生效
+        if (window.matchesStyle(pageStyle, contentWidthPx, contentHeightPx)) return@LaunchedEffect
+        val curChapter = window.chapterOfPage(pagerState.currentPage) ?: state.activeChapterId
+        val curOffset = window.offsetOfPage(pagerState.currentPage)?.first
+            ?: state.position?.offset ?: 0
+        windowSliding = true
+        try {
+            window.restyle(pageStyle, contentWidthPx, contentHeightPx)
+            val idx = curChapter?.let { cid ->
+                window.indexOf(cid, curOffset.toLong())
+                    ?: window.indexOf(cid, 0)
+            }
+                ?: window.indexOf(window.centerChapterId ?: 0L, 0)
+                ?: 0
+            if (pagerState.currentPage != idx) {
+                pagerState.scrollToPage(idx)
+            }
+        } finally {
+            windowSliding = false
+        }
+    }
 
     // 分页模式：窗口中心跟随「当前章」滑动（索引空间重映射，视觉页不变）+ 程序化跳章/初始定位
     // key 含 pagerJumpTarget：点击当前章目录项时 activeChapterId 不变也能触发。

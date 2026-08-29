@@ -90,6 +90,24 @@ class BookWindowTest {
     }
 
     @Test
+    fun recenter_withoutNeighbors_keepsPaginatedNeighborsInWindow() = runTest {
+        // 回归：「下一页跨章落到下一章第 2 页」。阅读跨章路径 recenterAsync 走
+        // includeNeighbors=false，若重建索引空间时把已排版的前导章页从扁平列表
+        // 头部删掉，pager currentPage 未重映射，同一索引静默漂移到同章后一页。
+        // 修复后：只保证中心章排版，但已排版邻居必须留在窗口内（索引空间只增不减）。
+        val w = window()
+        w.recenterSync(1, includeNeighbors = false)
+        assertEquals(listOf(1L), w.windowChapterIds)
+        w.paginateNeighbors(1) // 后台排好第 1、2 章（后台排版不重建索引空间）
+        val c1 = w.pageCountInChapter(1)
+        assertTrue(c1 > 0)
+        // 跨入第 2 章（跨章翻页触发的 recenterAsync 同路径）
+        w.recenterSync(2, includeNeighbors = false)
+        assertEquals("已排版的前导章不得被收缩出窗口", listOf(1L, 2L), w.windowChapterIds)
+        assertEquals("第2章首页索引 = 前导章页数（无漂移）", c1, w.indexOf(2, 0)!!)
+    }
+
+    @Test
     fun paginateNeighbors_thenRecenter_expandsWindow() = runTest {
         val w = window()
         w.recenterSync(3, includeNeighbors = false)

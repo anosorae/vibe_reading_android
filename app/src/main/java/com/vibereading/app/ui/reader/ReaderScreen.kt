@@ -294,8 +294,12 @@ fun ReaderScreen(
         // 已落在目标章，跳过滚动（position.offset 由 progress LE 写入，已反映正确位置）。
         // 程序化跳章（上下章按钮/目录）必须无条件 scrollToPage，因为 currentPage 可能落在
         // 目标章的末页（边界续翻残留），只有 scrollToPage(首页) 才能归位。
-        val currentPageAlreadyOnTarget = !isProgrammatic && initialSeekDone &&
-            window.chapterOfPage(pagerState.currentPage) == target
+        // 落位判断必须在 recenter 前后各取一次（章 + 章内页号）：recenter 重建索引空间时
+        // 窗口前导章页可能被丢弃（滑窗前移），扁平索引整体左移，仅比较章检测不到
+        // 「章相同但 currentPage 静默漂移到同章后一页」的错位（表现为跨章翻页落到第 2 页），
+        // 漂移时按目标 offset 归位。
+        val preChapter = window.chapterOfPage(pagerState.currentPage)
+        val prePageInChapter = window.pageInChapterOfPage(pagerState.currentPage)
         // 非程序化跳章且窗口中心已正确时，不重新同步（避免缩小已扩展的窗口导致 currentPage 越界
         // 被 clamped 到末页，用户落到章末而非首页）。
         // 这发生在程序化跳章完成、pagerJumpTarget 被清除后，LaunchedEffect 因 activeChapterId
@@ -307,6 +311,10 @@ fun ReaderScreen(
         if (isProgrammatic || !initialSeekDone || window.centerChapterId != target) {
             window.recenterAsync(target, sourceOffset)
         }
+        val currentPageAlreadyOnTarget = !isProgrammatic && initialSeekDone &&
+            preChapter == target &&
+            window.chapterOfPage(pagerState.currentPage) == preChapter &&
+            window.pageInChapterOfPage(pagerState.currentPage) == prePageInChapter
         // 窗口滑动后索引空间变化：只使用新窗口内目标页，防止旧索引失效时跳到窗口第一页。
         val idx = window.indexOf(target, sourceOffset.toLong())
             ?: window.indexOf(target, 0)

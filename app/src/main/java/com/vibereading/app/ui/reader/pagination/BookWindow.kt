@@ -60,15 +60,22 @@ class BookWindow(
      * 同步把窗口中心移到 [chapterId]：补排窗口 [c-1, c, c+1] 缺失章节并重建索引空间。
      * [includeNeighbors]=false 时只保证中心章排版（打开书籍首帧提速），
      * 邻居章由 [paginateNeighbors] 后台排版后再次调用本方法幂等扩展。
+     *
+     * 索引空间重建始终覆盖 [c-1, c+1] 全范围（[rebuildWindow] 跳过未排版章）：
+     * 即使只排版中心章，已排版邻居也必须留在窗口内——否则跨章翻页路径
+     * （recenterAsync）会把前导章页从扁平列表头部删掉，pager currentPage 未重映射，
+     * 同一索引静默漂移到同章后一页（表现为「下一页跨章落到下一章第 2 页」）。
      */
     fun recenterSync(chapterId: Long, includeNeighbors: Boolean = true) {
         val idx = chapters.indexOfFirst { it.id == chapterId }
         if (idx < 0) return
         centerChapterId = chapterId
-        val from = if (includeNeighbors) (idx - 1).coerceAtLeast(0) else idx
-        val to = if (includeNeighbors) (idx + 1).coerceAtMost(chapters.size - 1) else idx
+        val from = (idx - 1).coerceAtLeast(0)
+        val to = (idx + 1).coerceAtMost(chapters.size - 1)
+        val layoutFrom = if (includeNeighbors) from else idx
+        val layoutTo = if (includeNeighbors) to else idx
         synchronized(lock) {
-            for (i in from..to) {
+            for (i in layoutFrom..layoutTo) {
                 val cid = chapters[i].id
                 if (cid !in paginators) paginators[cid] = buildPaginator(cid, measurer)
             }

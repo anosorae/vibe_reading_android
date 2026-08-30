@@ -282,10 +282,15 @@ class WebCompanionService : Service() {
             return buildString { repeat(24) { append(alphabet[random.nextInt(alphabet.length)]) } }
         }
 
-        /** 枚举网卡上的站点本地 IPv4 地址（对齐 legado NetworkUtils 的做法）。 */
+        /**
+         * 枚举网卡上的站点本地 IPv4 地址（对齐 legado NetworkUtils 的做法）。
+         * WiFi（wlan / swlan 前缀）网卡的地址排最前：WiFi+蜂窝同时在线时系统枚举顺序
+         * 不保证 wlan0 在 rmnet 之前，而蜂窝运营商内网地址（10.x 段）同样是
+         * site-local，直接取首个会展示无法局域网访问的蜂窝 IP。
+         */
         fun localIpAddresses(): List<String> = runCatching {
-            val result = mutableListOf<String>()
-            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return@runCatching result
+            val result = mutableListOf<Pair<String, String>>()
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return@runCatching emptyList<String>()
             while (interfaces.hasMoreElements()) {
                 val ni = interfaces.nextElement()
                 val addrs = ni.inetAddresses ?: continue
@@ -294,11 +299,15 @@ class WebCompanionService : Service() {
                     if (!addr.isLoopbackAddress && addr is InetAddress && addr.hostAddress?.contains(':') == false &&
                         addr.isSiteLocalAddress
                     ) {
-                        result.add(addr.hostAddress!!)
+                        result.add(ni.name to addr.hostAddress!!)
                     }
                 }
             }
-            result
+            result.sortedBy { wifiInterfacePriority(it.first) }.map { it.second }
         }.onFailure { e -> AppLog.put("枚举局域网地址失败", e) }.getOrDefault(emptyList())
+
+        /** 接口优先级：WiFi（wlan*，含部分机型热点 swlan*）为 0，其余（蜂窝 rmnet、VPN 等）为 1。 */
+        internal fun wifiInterfacePriority(name: String): Int =
+            if (name.startsWith("wlan") || name.startsWith("swlan")) 0 else 1
     }
 }

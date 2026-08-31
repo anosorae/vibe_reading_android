@@ -137,6 +137,8 @@ class SettingsViewModel(
         viewModelScope.launch {
             settingsRepo.saveWebCompanionEnabled(enabled)
             if (enabled) {
+                // 锁屏后会被 Doze 冻结导致网页无法切换章节，先在设置前台请求电池优化豁免
+                WebCompanionService.requestBatteryOptimizationExemption(appContext)
                 WebCompanionService.start(appContext)
             } else {
                 WebCompanionService.stop(appContext)

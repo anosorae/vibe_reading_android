@@ -9,10 +9,12 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.vibereading.app.VibeReadingApp
 import com.vibereading.app.data.repository.BookRepository
@@ -280,6 +282,26 @@ class WebCompanionService : Service() {
             val alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
             val random = SecureRandom()
             return buildString { repeat(24) { append(alphabet[random.nextInt(alphabet.length)]) } }
+        }
+
+        /**
+         * 请求系统「忽略电池优化」（ADR-005 局域网网页阅读）：手机锁屏并静置后 Android 进入
+         * Doze，Doze 会忽略前后台服务持有的 wake lock 并冻结进程网络，导致内嵌服务器无法
+         * 响应来自电脑的章节请求（表现为「锁屏后切换章节卡住」）。参照 legado `BaseService`
+         * 在开启伴读服务时请求电池优化豁免。已在豁免名单内则静默跳过；请仅在设置页用户
+         * 主动开启伴读时调用（前台场景），避免 App 后台自启时弹系统对话框。
+         */
+        fun requestBatteryOptimizationExemption(context: Context) {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+            if (pm.isIgnoringBatteryOptimizations(context.packageName)) return
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                AppLog.put("请求忽略电池优化失败", e)
+            }
         }
 
         /**

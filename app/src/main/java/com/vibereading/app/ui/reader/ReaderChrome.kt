@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -387,8 +388,11 @@ fun BoxScope.TranslationStatusPanel(
         if (state.isStreaming) {
             // ── 流式翻译进度 ──
             val scrollState = rememberScrollState()
-            LaunchedEffect(state.thinkingText, state.streamingText) {
-                scrollState.scrollTo(scrollState.maxValue)
+            LaunchedEffect(scrollState) {
+                // 等布局产生新高度再跟随，避免逐 token 重启任务并读到上一帧高度。
+                snapshotFlow { scrollState.maxValue }.collect { maxValue ->
+                    scrollState.scrollTo(maxValue)
+                }
             }
             Column(modifier = Modifier.padding(12.dp)) {
                 Row(

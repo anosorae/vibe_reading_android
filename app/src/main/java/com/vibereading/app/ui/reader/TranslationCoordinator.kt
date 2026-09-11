@@ -153,7 +153,7 @@ class TranslationCoordinator(
                     chapterTitle = chapter.title,
                     chapterContent = chapter.content,
                     sourceLanguage = sourceLanguage
-                ).collect { event ->
+                ).batchForDisplay().collect { event ->
                     when (event) {
                         TranslationEvent.Started -> {
                             if (run == runId) _state.update { it.copy(phase = TranslationPhase.WAITING_FIRST_TOKEN) }

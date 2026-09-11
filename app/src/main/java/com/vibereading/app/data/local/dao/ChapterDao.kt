@@ -13,6 +13,9 @@ interface ChapterDao {
     @Query("SELECT * FROM chapters WHERE id = :chapterId AND bookId = :bookId")
     suspend fun getChapterById(bookId: Long, chapterId: Long): ChapterEntity?
 
+    @Query("SELECT * FROM chapters WHERE bookId = :bookId ORDER BY chapterIndex LIMIT 1")
+    suspend fun getFirstChapter(bookId: Long): ChapterEntity?
+
     @Query("SELECT * FROM chapters WHERE id = :chapterId AND bookId = :bookId")
     fun getChapterByIdFlow(bookId: Long, chapterId: Long): Flow<ChapterEntity?>
 

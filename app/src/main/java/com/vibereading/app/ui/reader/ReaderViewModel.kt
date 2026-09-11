@@ -98,6 +98,12 @@ class ReaderViewModel(
     private var pendingPosition: ReadingPosition? = null
     private var restoreCompleted = false
 
+    // Main.immediate 下，缓存设置的 first() 可能在构造期间直接返回。
+    // init 中协程使用的状态必须提前初始化，不能依赖首次读取一定会挂起。
+    private val readingSettingsLoaded = MutableStateFlow(false)
+    private val firstContentReady = MutableStateFlow(false)
+    private val settingsSaver = ReadingSettingsSaver(viewModelScope, settingsRepo::saveReadingSettings)
+
     // ── LLM 编辑字段（必须在 init 之前声明，因为 llmSettings.collect 会写这些字段） ──
     private val _editApiKey = MutableStateFlow("")
     private val _editApiBase = MutableStateFlow("")
@@ -108,30 +114,33 @@ class ReaderViewModel(
 
     init {
         OpenBookProbe.step("ReaderViewModel 创建")
-        // 书籍信息与章节列表并行加载（原串行：先书后列表，白等一轮 DB）。
-        // 两者都就绪即原子恢复位置；列表 collect 持续驻留，后续译文更新仍刷新 activeChapter。
-        // 两个协程同在主线程 viewModelScope 上运行，savedPosition/latestChapters 无数据竞争。
-        var savedPosition: ReadingPosition? = null
-        var latestChapters: List<Chapter> = emptyList()
+        // 书籍/目标单章与设置并行准备，首屏不再等待整书正文读取。
         viewModelScope.launch {
-            val book = bookRepo.getBookByIdOnce(bookId) ?: return@launch
-            OpenBookProbe.step("书籍信息读取完成「${book.title}」")
-            savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
-            _uiState.update {
-                it.copy(bookTitle = book.title, mode = book.languageMode, sourceLanguage = book.sourceLanguage)
+            val book = bookRepo.getBookByIdOnce(bookId) ?: run {
+                _uiState.update { it.copy(chaptersLoaded = true) }
+                return@launch
             }
-            tryRestore(latestChapters, savedPosition)
+            OpenBookProbe.step("书籍信息读取完成「${book.title}」")
+            val savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
+            val chapter = chapterRepo.getOpeningChapter(bookId, book.lastReadChapterId)
+            OpenBookProbe.step("首屏单章读取完成")
+            readingSettingsLoaded.first { it }
+            _uiState.update {
+                it.copy(bookTitle = book.title, mode = book.languageMode, sourceLanguage = book.sourceLanguage,
+                    chapters = listOfNotNull(chapter), chaptersLoaded = chapter == null)
+            }
+            tryRestore(listOfNotNull(chapter), savedPosition)
         }
         viewModelScope.launch {
+            firstContentReady.first { it }
             chapterRepo.getChaptersByBook(bookId).collect { chapters ->
-                latestChapters = chapters
                 _uiState.update { it.copy(chapters = chapters, chaptersLoaded = true) }
-                tryRestore(chapters, savedPosition)
                 if (restoreCompleted) {
                     val current = _uiState.value.activeChapterId
                     val updated = chapters.find { it.id == current }
                     if (updated != null) _uiState.update { it.copy(activeChapter = updated) }
                 }
+                prefetchNextChapterIfNeeded()
             }
         }
 
@@ -162,6 +171,7 @@ class ReaderViewModel(
         // 任一翻译任务结束后（完成/失败/取消），尝试预译下一章：
         // 若当前章翻译在忙被跳过，等它结束后在这里补上预译。
         viewModelScope.launch {
+            firstContentReady.first { it }
             translationCoordinator.state
                 .drop(1) // 跳过初始 IDLE 态
                 .collect { ts ->
@@ -179,6 +189,7 @@ class ReaderViewModel(
             val rs = settingsRepo.readingSettings.first()
             _uiState.update { it.copy(readingSettings = rs) }
             readingSettingsLoaded.value = true
+            OpenBookProbe.step("阅读设置载入完成")
         }
         viewModelScope.launch {
             settingsRepo.nightMode.collect { night ->
@@ -187,6 +198,7 @@ class ReaderViewModel(
         }
         // LLM 设置从 llmProfileRepo 读取（替代原 settingsRepo.llmSettings）
         viewModelScope.launch {
+            firstContentReady.first { it }
             llmProfileRepo.activeLlmSettings.collect { ls ->
                 _uiState.update { it.copy(llmSettings = ls) }
                 if (!llmEditDirty) {
@@ -201,14 +213,24 @@ class ReaderViewModel(
             }
         }
         viewModelScope.launch {
+            firstContentReady.first { it }
             llmProfileRepo.profiles.collect { list ->
                 _uiState.update { it.copy(profiles = list) }
             }
         }
         viewModelScope.launch {
+            firstContentReady.first { it }
             llmProfileRepo.activeProfile.collect { profile ->
                 _uiState.update { it.copy(activeProfileId = profile?.id) }
             }
+        }
+    }
+
+    /** 首屏可显示后才放行全书读取和非首屏工作；不参与开书动画的启动条件。 */
+    fun onFirstContentReady() {
+        if (!firstContentReady.value) {
+            OpenBookProbe.step("首屏就绪，放行章节列表与翻译配置加载")
+            firstContentReady.value = true
         }
     }
 
@@ -240,8 +262,7 @@ class ReaderViewModel(
         }
         OpenBookProbe.step("恢复阅读位置完成（章「${chapter.title}」 offset=${position.offset}）")
         activeChapterIdFlow.value = chapter.id
-        if (needsTranslation()) maybeTranslateChapter(chapter.id)
-        prefetchNextChapterIfNeeded()
+        // 自动翻译由首屏就绪后的配置流启动，不阻塞本次原文位置恢复。
     }
 
     /** 用户主动跳转；分页位置由当前排版器根据 offset 派生。 */
@@ -385,11 +406,7 @@ class ReaderViewModel(
 
     // ── Reading style updates（UI 状态即时生效；持久化经合并写，见 ReadingSettingsSaver） ──
 
-    /** 持久化初始值是否已载入：载入前到达的设置改动会等载入完成，避免以默认值为基础覆盖持久值 */
-    private val readingSettingsLoaded = MutableStateFlow(false)
-
-    private val settingsSaver = ReadingSettingsSaver(viewModelScope, settingsRepo::saveReadingSettings)
-
+    /** 载入前的设置改动等待初始值就绪，避免以默认值覆盖持久值。 */
     fun updateReadingSettings(transform: (ReadingSettings) -> ReadingSettings) {
         viewModelScope.launch {
             readingSettingsLoaded.first { it }
@@ -602,7 +619,7 @@ class ReaderViewModel(
     /** 当前阅读是否需要译文：英文显示模式，或英文原版书（两种模式都预译，ADR-003）。 */
     private fun needsTranslation(): Boolean {
         val s = _uiState.value
-        return s.mode == "en" || s.sourceLanguage == SourceLanguageDetector.EN
+        return firstContentReady.value && (s.mode == "en" || s.sourceLanguage == SourceLanguageDetector.EN)
     }
 
     /**

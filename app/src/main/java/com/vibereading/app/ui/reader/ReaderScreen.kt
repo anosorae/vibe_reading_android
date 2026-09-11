@@ -56,6 +56,8 @@ import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.ui.reader.pagination.*
 import com.vibereading.app.ui.theme.ReaderBgPresets
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -217,6 +219,7 @@ fun ReaderScreen(
         )
     }
     // 仿真卷页尺寸 = 全屏（对齐 Legado：位图/覆盖层/手势均使用全屏坐标系）
+    SideEffect { window.updateChapterSource(state.chapters) }
 
     val pagerState = rememberPagerState(initialPage = 0) { window.pageCount }
     val scope = rememberCoroutineScope()
@@ -331,6 +334,7 @@ fun ReaderScreen(
         // 改由下方 LaunchedEffect 在 activeChapterId 确认到达 target 且视觉页就位后清除。
         scope.launch {
             // 首帧已就绪：后台把中心章剩余部分续排完整，再预载 ±2 外缘章
+            withFrameNanos { }
             window.ensurePaginatorComplete(target)
             // 刷新索引空间前记下当前视觉页的（章, 章内页号），刷新后重映射落位：
             // 续排补齐与前一章插入都会让页索引整体平移，不重映射会闪现错误页
@@ -361,8 +365,8 @@ fun ReaderScreen(
 
     // 打开/切章后：后台排版中心章 ±1，完成后主线程扩展窗口并保持当前视觉页
     // （recenterSync 幂等：邻居已在 paginators 时只重建索引空间，不重复排版）
-    LaunchedEffect(window, state.activeChapterId) {
-        if (!isPagerMode) return@LaunchedEffect
+    LaunchedEffect(window, state.activeChapterId, initialSeekDone, state.chaptersLoaded) {
+        if (!isPagerMode || !initialSeekDone || !state.chaptersLoaded) return@LaunchedEffect
         val target = state.activeChapterId ?: return@LaunchedEffect
         if (!window.hasNeighbors(target)) {
             window.paginateNeighbors(target) // 后台排版，不阻塞 UI
@@ -599,25 +603,27 @@ fun ReaderScreen(
     }
 
     // 滚动模式跨章滚动状态：分页模式不解析全书（打开书籍提速），
-    // 首次进入滚动模式时构建并跨模式缓存；章节内容变化时重置
-    var scrollChunks by remember(state.chapters, pageStyle.titleMode) {
+    // 首次只解析目标章；全书补齐时保留旧内容，后台解析完成后原子替换。
+    var scrollChunks by remember(pageStyle.titleMode) {
         mutableStateOf(emptyList<ScrollItem>())
     }
-    // key 用 state.chapters 而非 scrollChunks.isEmpty()：章节未加载时构建产出空列表，
-    // isEmpty() 不发生 true→false 翻转，effect 不会被标记为需要重新执行；
-    // 随后 state.chapters 加载触发 remember 重置 scrollChunks 为空，但 effect key 不变、不重启 → 死锁。
-    // 改为 key 章节列表本身：章节加载完成时 key 变化，effect 必然重启。
-    LaunchedEffect(!isPagerMode, state.chapters) {
+    // 程序化滚动/内容扩展时暂停跟踪，避免新列表暂时沿用旧索引而写错进度。
+    var suppressTracking by remember { mutableStateOf(false) }
+    LaunchedEffect(!isPagerMode, state.chapters, pageStyle.titleMode) {
         // 章节未加载时不构建：空构建产出空列表，会让渲染条件误判为「正在构建」而非「无内容」
         if (!isPagerMode && state.chapters.isNotEmpty()) {
-            scrollChunks = buildScrollChunks(state.chapters, pageStyle.titleMode)
+            val updated = withContext(Dispatchers.Default) {
+                buildScrollChunks(state.chapters, pageStyle.titleMode)
+            }
+            if (updated != scrollChunks) {
+                suppressTracking = true
+                scrollChunks = updated
+            }
         }
     }
     val scrollState = rememberLazyListState()
     // 程序化跳章标记（目录/上下章按钮设置，滚动跟踪不响应）
     var pendingJumpChapter by remember { mutableStateOf<Long?>(null) }
-    // 程序化滚动进行中标记：期间滚动跟踪不响应，避免回卷（初始定位/跳章后 300ms 内）
-    var suppressTracking by remember { mutableStateOf(false) }
 
     // ── 打开书籍过渡遮罩 ──
     // 章节/位置未恢复、分页中心章后台排版未完成、或滚动内容构建中时显示；
@@ -631,7 +637,11 @@ fun ReaderScreen(
             (!isPagerMode && state.chapters.isNotEmpty() && scrollChunks.isEmpty())
         )
     LaunchedEffect(opening) {
-        if (!opening) OpenBookProbe.finish()
+        if (!opening) {
+            withFrameNanos { }
+            vm.onFirstContentReady()
+            OpenBookProbe.finish()
+        }
     }
 
     // 初始定位 + 切换到滚动模式时定位到当前章

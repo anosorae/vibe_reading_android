@@ -14,6 +14,10 @@ class ChapterRepository(private val chapterDao: ChapterDao) {
     suspend fun getChapterById(bookId: Long, chapterId: Long): Chapter? =
         chapterDao.getChapterById(bookId, chapterId)?.toDomain()
 
+    /** 开书优先读取保存位置对应的单章；旧章节不存在时回退首章。 */
+    suspend fun getOpeningChapter(bookId: Long, chapterId: Long?): Chapter? =
+        chapterId?.let { getChapterById(bookId, it) } ?: chapterDao.getFirstChapter(bookId)?.toDomain()
+
     fun getChapterByIdFlow(bookId: Long, chapterId: Long): Flow<Chapter?> =
         chapterDao.getChapterByIdFlow(bookId, chapterId).map { it?.toDomain() }
 

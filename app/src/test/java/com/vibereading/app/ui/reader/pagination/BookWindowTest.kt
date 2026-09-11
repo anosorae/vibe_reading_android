@@ -10,6 +10,7 @@ import com.vibereading.app.domain.model.Chapter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -64,6 +65,22 @@ class BookWindowTest {
         measurer = measurer,
         backgroundMeasurer = { measurer }
     )
+
+    @Test
+    fun expandingOpeningChapter_keepsExistingPageLayout() {
+        val w = window()
+        w.updateChapterSource(listOf(chapters[2]))
+        w.recenterSync(3, includeNeighbors = false)
+        val firstUnit = w.pageUnits(0).first()
+        val offset = w.offsetOfPage(0)
+        w.updateChapterSource(chapters)
+        assertSame(firstUnit, w.pageUnits(0).first())
+        assertEquals(offset, w.offsetOfPage(0))
+        w.recenterSync(3)
+        val index = w.indexOf(3, 0)!!
+        assertSame(firstUnit, w.pageUnits(index).first())
+        assertEquals(listOf(2L, 3L, 4L), w.windowChapterIds)
+    }
 
     @Test
     fun recenter_buildsWindowOfThreeChapters() {

@@ -24,7 +24,7 @@ data class WindowPage(val chapterId: Long, val pageInChapter: Int)
  * - 放弃「真全局页索引」：窗口内前缀和是诚实实现（远跳 O(1)，不铺全书）。
  */
 class BookWindow(
-    val chapters: List<Chapter>,
+    chapters: List<Chapter>,
     private var style: PageStyle,
     private val mode: String,
     private val sourceLanguage: String = "zh",   // 书籍原文语言（ADR-003）：决定段落插槽方向
@@ -34,6 +34,14 @@ class BookWindow(
     private val backgroundMeasurer: () -> TextMeasurer, // 后台预载测量（每章独立实例）
     private val displayDensity: Float = 1f        // 用于 dp→px 转换
 ) {
+    @Volatile
+    var chapters: List<Chapter> = chapters
+        private set
+
+    /** 首屏单章扩充为全书列表时保留已排首屏，避免重建窗口再次显示加载遮罩。 */
+    fun updateChapterSource(chapters: List<Chapter>) {
+        this.chapters = chapters
+    }
 
     // 已排版章节：chapterId -> paginator（窗口章 + 预载外缘章）
     private val paginators = HashMap<Long, ChapterPaginator>()

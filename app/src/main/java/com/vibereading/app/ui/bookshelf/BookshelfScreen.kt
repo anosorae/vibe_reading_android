@@ -25,8 +25,11 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.HideImage
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
@@ -47,11 +50,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.BookShelfItem
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.WereadColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -84,8 +90,19 @@ fun BookshelfScreen(
         uri?.let { vm.uploadBook(context, it) }
     }
 
+    // 封面图片选择器：image/* 走 SAF（零权限）；pendingCoverBookId 记住长按的是哪本书，
+    // 因为选择器返回时菜单已关闭、menuBook 已置空
+    var pendingCoverBookId by remember { mutableStateOf<Long?>(null) }
+    val coverLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        val bookId = pendingCoverBookId
+        pendingCoverBookId = null
+        if (uri != null && bookId != null) vm.setCover(context, bookId, uri)
+    }
+
     // Upload message auto-dismiss
-    val message = state.uploadMessage
+    val message = state.shelfMessage
     LaunchedEffect(message) {
         if (message != null) {
             kotlinx.coroutines.delay(4000)
@@ -290,7 +307,7 @@ fun BookshelfScreen(
                 }
             }
 
-            // Upload message snackbar
+            // 书架操作提示横幅（导入结果 / 封面设置结果），4s 后自动消失
             AnimatedVisibility(
                 visible = message != null,
                 enter = fadeIn() + slideInVertically { -it },
@@ -319,6 +336,17 @@ fun BookshelfScreen(
 
     // Long-press action menu
     menuBook?.let { item ->
+        // 内嵌封面备份是否存在：决定菜单显示「恢复原封面」还是「移除封面」（与 VM 用同一判据）。
+        // 磁盘 stat 放 IO，菜单打开时只查一次
+        val canRestoreCover by produceState(
+            initialValue = false,
+            key1 = item.book.id,
+            key2 = item.book.coverPath
+        ) {
+            value = withContext(Dispatchers.IO) {
+                BookImageStore.canRestoreEmbeddedCover(item.book.id, item.book.coverPath)
+            }
+        }
         ModalBottomSheet(onDismissRequest = { menuBook = null }) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -357,6 +385,35 @@ fun BookshelfScreen(
                         menuBook = null
                     }
                 )
+                ListItem(
+                    headlineContent = { Text(if (item.book.coverPath == null) "设置封面" else "更换封面") },
+                    supportingContent = { Text("从相册或文件中选择图片") },
+                    leadingContent = { Icon(Icons.Filled.Image, contentDescription = null) },
+                    modifier = Modifier.clickable {
+                        pendingCoverBookId = item.book.id
+                        menuBook = null
+                        coverLauncher.launch(arrayOf("image/*"))
+                    }
+                )
+                if (item.book.coverPath != null) {
+                    ListItem(
+                        headlineContent = { Text(if (canRestoreCover) "恢复原封面" else "移除封面") },
+                        supportingContent = {
+                            Text(if (canRestoreCover) "回到 EPUB 内置封面" else "回到默认渐变封面")
+                        },
+                        leadingContent = {
+                            Icon(
+                                if (canRestoreCover) Icons.Filled.Restore else Icons.Filled.HideImage,
+                                contentDescription = null
+                            )
+                        },
+                        modifier = Modifier.clickable {
+                            val id = menuBook?.book?.id
+                            menuBook = null
+                            if (id != null) vm.removeCover(id)
+                        }
+                    )
+                }
                 ListItem(
                     headlineContent = { Text("删除", color = VibeColors.RedMuted) },
                     leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null, tint = VibeColors.RedMuted) },

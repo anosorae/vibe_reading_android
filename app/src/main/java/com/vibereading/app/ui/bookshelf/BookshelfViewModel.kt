@@ -19,6 +19,7 @@ import com.vibereading.app.domain.parser.EpubParser
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.domain.parser.TxtParser
 import com.vibereading.app.log.AppLog
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -41,7 +42,8 @@ data class BookshelfUiState(
     val items: List<BookShelfItem> = emptyList(),
     val filteredItems: List<BookShelfItem> = emptyList(),
     val isLoading: Boolean = false,
-    val uploadMessage: String? = null,
+    /** 书架操作提示（导入结果 / 封面设置结果）；文案含「失败」时横幅显示红色。 */
+    val shelfMessage: String? = null,
     val accent: AppAccent = AppAccent.VIBE,
     val layout: String = "list",     // "list" | "grid"
     val sort: String = ShelfSort.RECENT,
@@ -127,11 +129,11 @@ class BookshelfViewModel(
                     if (fileName.endsWith(".epub", ignoreCase = true)) importEpub(bytes, fileName)
                     else importTxt(bytes, fileName)
                 }
-                _uiState.update { it.copy(isLoading = false, uploadMessage = message) }
+                _uiState.update { it.copy(isLoading = false, shelfMessage = message) }
             } catch (e: Exception) {
                 AppLog.put("书籍上传失败", e)
                 _uiState.update {
-                    it.copy(isLoading = false, uploadMessage = "上传失败: ${e.message}")
+                    it.copy(isLoading = false, shelfMessage = "上传失败: ${e.message}")
                 }
             }
         }
@@ -195,7 +197,7 @@ class BookshelfViewModel(
             val ext = href.substringAfterLast('.', "")
             if (ext.length in 1..5) ".$ext" else ".jpg"
         }
-        parsed.coverBytes?.let { BookImageStore.saveCover(bookId, it) }?.let { coverPath ->
+        parsed.coverBytes?.let { BookImageStore.saveEmbeddedCover(bookId, it) }?.let { coverPath ->
             bookRepo.getBookByIdOnce(bookId)?.let { book -> bookRepo.update(book.copy(coverPath = coverPath)) }
         }
         val dicts = EpubParser.toChapterDicts(bookId, parsed, { href -> nameByHref[href] }, sourceLanguage)
@@ -220,6 +222,69 @@ class BookshelfViewModel(
     }
 
     /**
+     * 设置/更换封面：内容 URI 先流式拷到缓存临时文件（避免整张原图进堆），
+     * 由 [BookImageStore.saveUserCover] 降采样 + EXIF 旋正后落盘。
+     * 旧用户封面在写库成功后删除；内嵌封面备份保留，供「恢复原封面」。
+     */
+    fun setCover(context: Context, bookId: Long, uri: Uri) {
+        viewModelScope.launch {
+            val message = withContext(Dispatchers.IO) {
+                val temp = File(context.cacheDir, "cover_upload_${System.currentTimeMillis()}.tmp")
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        temp.outputStream().use { input.copyTo(it) }
+                    } ?: throw Exception("无法读取所选图片")
+                    val newPath = BookImageStore.saveUserCover(bookId, temp)
+                        ?: throw Exception("无法识别该图片")
+                    val book = bookRepo.getBookByIdOnce(bookId) ?: throw Exception("书籍不存在")
+                    val oldPath = book.coverPath
+                    bookRepo.update(book.copy(coverPath = newPath))
+                    if (oldPath != null && oldPath != newPath && !BookImageStore.isEmbeddedCover(oldPath)) {
+                        BookImageStore.deleteCover(oldPath)
+                    }
+                    "封面已更新"
+                } catch (e: Exception) {
+                    AppLog.put("封面设置失败 bookId=$bookId", e)
+                    "封面保存失败：${e.message ?: "无法识别该图片"}"
+                } finally {
+                    temp.delete()
+                }
+            }
+            _uiState.update { it.copy(shelfMessage = message) }
+        }
+    }
+
+    /**
+     * 移除当前封面：有内嵌备份则回退到出版社原封面，否则回退渐变占位。
+     * 只删用户上传的封面文件，内嵌备份永不删除。
+     */
+    fun removeCover(bookId: Long) {
+        viewModelScope.launch {
+            val message = withContext(Dispatchers.IO) {
+                try {
+                    val book = bookRepo.getBookByIdOnce(bookId) ?: throw Exception("书籍不存在")
+                    val current = book.coverPath
+                    val embedded = BookImageStore.embeddedCoverPath(bookId)
+                    if (BookImageStore.canRestoreEmbeddedCover(bookId, current)) {
+                        bookRepo.update(book.copy(coverPath = embedded))
+                        current?.let { BookImageStore.deleteCover(it) }
+                        "已恢复原封面"
+                    } else {
+                        bookRepo.update(book.copy(coverPath = null))
+                        current?.takeIf { !BookImageStore.isEmbeddedCover(it) }
+                            ?.let { BookImageStore.deleteCover(it) }
+                        "封面已移除"
+                    }
+                } catch (e: Exception) {
+                    AppLog.put("移除封面失败 bookId=$bookId", e)
+                    "封面移除失败"
+                }
+            }
+            _uiState.update { it.copy(shelfMessage = message) }
+        }
+    }
+
+    /**
      * 修正书籍原文语言（ADR-003）：清空全部章节译文并重置显示模式为新原文语言。
      * 旧译文按原方向生成，方向反了是垃圾数据，必须清除，用户随后按新方向重新翻译。
      */
@@ -236,7 +301,7 @@ class BookshelfViewModel(
     }
 
     fun clearMessage() {
-        _uiState.update { it.copy(uploadMessage = null) }
+        _uiState.update { it.copy(shelfMessage = null) }
     }
 
     class Factory(

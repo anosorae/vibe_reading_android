@@ -152,6 +152,9 @@ dependencies {
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // 用户上传封面的 EXIF 方向读取（minSdk 26 用不了 API 28 才有的 ImageDecoder）
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+
     // OkHttp + SSE
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")

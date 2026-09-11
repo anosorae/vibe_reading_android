@@ -19,7 +19,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 ## 目录结构
 
 - `app/src/main/java/com/vibereading/app/`
-  - `data/` — Room 本地库：`local/entity`（`BookEntity`/`ChapterEntity`/`LlmProfileEntity`）、`local/dao`（`BookDao`/`ChapterDao`/`LlmProfileDao`，含 `AppDatabase` 迁移链）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（`BookRepository`/`ChapterRepository`/`SettingsRepository`/`LlmProfileRepository`）、`dict/`（`DictDatabase` 内嵌词典只读访问）、`image/`（`BookImageStore`：EPUB 插图/封面落盘 `files/books/{id}/images` 与 `files/covers`、内存 LRU 位图缓存、删书清理）
+  - `data/` — Room 本地库：`local/entity`（`BookEntity`/`ChapterEntity`/`LlmProfileEntity`）、`local/dao`（`BookDao`/`ChapterDao`/`LlmProfileDao`，含 `AppDatabase` 迁移链）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（`BookRepository`/`ChapterRepository`/`SettingsRepository`/`LlmProfileRepository`）、`dict/`（`DictDatabase` 内嵌词典只读访问）、`image/`（`BookImageStore`：EPUB 插图/封面落盘 `files/books/{id}/images` 与 `files/covers`、用户上传封面降采样 + EXIF 旋正、内存 LRU 位图缓存、删书清理）
   - `domain/model/` — 纯 Kotlin 领域模型：`Book`、`BookShelfItem`、`Chapter`、`ReadingPosition`、`ReadingSettings`（含 `LlmSettings`，两者同文件）、`LlmProfile`、`ThemeSettings`、`DictEntry`、`WordExplanation`
   - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`、`EpubParser`（EPUB 导入期一次性转纯文本章节，ADR-002）、`IllustrationLink`（插图链接语法唯一数据源）、`SourceLanguageDetector`（导入期原文语言判定，ADR-003）；负责保留原文段落的 UTF-16 起止 offset
   - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`（全局设置，含调试/日志入口）、`log`（日志查看器）、`navigation`、`theme`
@@ -116,7 +116,8 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 ` 分段纯文本章节」入库，与 TXT 同契约，不保留 `.epub` 原文件；切章 TOC（ncx/nav.xhtml）优先、spine 兜底，同文件多锚点按 fragmentId 切块，TOC 父节点映射 `section`（卷），首个 TOC 条目前的 spine 页归「卷首」、之后归「书末」；检测到 `META-INF/encryption.xml` 直接报 DRM 错误；图片资源 manifest 声明 + zip 扫描兜底（转制书常漏声明）。
 - 插图以独立段落嵌入原文，唯一文本表示是插图链接 `![插图](vrimg://{bookId}/{fileName} {w}x{h})`（尺寸导入期解码后写入链接，排版不二次探测）；分页模式整图适配单页不跨页拆条带，滚动模式自然高度；插图块不可拆、不参与选词与原文气泡，双语两侧共用同一张图。
 - 翻译 prompt 跳过插图段内容（`buildUserPrompt` 保留编号但剔除链接，编号出现空洞），译文缺失标记由 `parseBilingualParagraphs` 现有兜底接住，解析器零改动；纯插图/空文本章节在 `TranslationCoordinator` 直接 start→complete 落 DONE，不调 API。
-- 删除书籍时 `BookImageStore.deleteBookFiles` 同步清理 `files/books/{bookId}` 与 `files/covers/{bookId}.*`；书架封面 `coverPath` 为空回退程序化渐变占位。
+- 删除书籍时 `BookImageStore.deleteBookFiles` 同步清理 `files/books/{bookId}` 与 `files/covers/` 下 `{bookId}.`/`{bookId}_` 前缀文件（老式 `{id}.jpg`、内嵌 `{id}_embedded.jpg`、用户 `{id}_{哈希}.jpg`）；书架封面 `coverPath` 为空回退程序化渐变占位。
+- 封面来源与命名：EPUB 内嵌封面落 `{id}_embedded.jpg` 且导入后不改写，充当「恢复原封面」的备份；用户上传封面（书架长按菜单，SAF `image/*`，零权限）经最长边 1600 降采样 + EXIF 旋正后落 `{id}_{内容哈希}.jpg`。**文件名带哈希是刻意的**：书架 `BookCover` 的 `produceState` 以 path 为 key，同名覆盖不会重新解码；也因此 `deleteBookFiles` 必须按全名前缀（而非 `nameWithoutExtension` 相等）匹配。「恢复原封面 / 移除封面」的唯一判据是 `BookImageStore.canRestoreEmbeddedCover`（当前是用户封面且备份存在），UI 与 ViewModel 共用。
 - 词典查询走 `DictDatabase.lookup`（IO 线程，`ReaderViewModel.lookupDictWord` 入口）；词条小写存储 + 查询小写归一，`WHERE word = ?` 命中 BINARY 主键。资产 `assets/dict/ecdict.dict` 是 gzip 预压缩 SQLite（AGP 会解压 `.gz`，故用 `.dict` + `noCompress`），首次查词解压到 `databases/ecdict.db`（按 gz 头携带的期望尺寸判断是否需要更新）。
 
 ## 复用与内聚

@@ -41,7 +41,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.log.AppLog
-import com.vibereading.app.log.OpenBookProbe
 import com.vibereading.app.ui.reader.components.CatalogBottomSheet
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.DictPopup
@@ -122,14 +121,10 @@ fun ReaderScreen(
     val density = LocalDensity.current
     // 中英分体：返回 (中文字体, 英文字体)；parse 失败/未选回退系统字体
     val (cnFont, enFont) = remember(readingSettings.customFontUri, readingSettings.enCustomFontUri, readingSettings.fontId, readingSettings.enFontId) {
-        ReaderFonts.readerFontFamilies(context, readingSettings).also {
-            OpenBookProbe.step("字体解析完成")
-        }
+        ReaderFonts.readerFontFamilies(context, readingSettings)
     }
     val pageStyle = remember(readingSettings, density, state.mode, cnFont, enFont) {
-        PageStyle.of(readingSettings, density, state.mode, cnFont, enFont).also {
-            OpenBookProbe.step("排版样式构造完成")
-        }
+        PageStyle.of(readingSettings, density, state.mode, cnFont, enFont)
     }
     // 页几何：内容区 = 屏尺寸 − 页边距（与 BookPager 渲染内边距严格一致，排版所见即所排）
     // 屏幕像素取 displayMetrics 实际值（不通过 screenWidthDp*density 转换，
@@ -205,7 +200,6 @@ fun ReaderScreen(
     val window = remember(
         measurer, state.mode, state.sourceLanguage, paginationFingerprint, isPagerMode
     ) {
-        OpenBookProbe.step("BookWindow 创建（中心章走后台排版）")
         BookWindow(
             chapters = state.chapters,
             style = pageStyle,
@@ -640,7 +634,6 @@ fun ReaderScreen(
         if (!opening) {
             withFrameNanos { }
             vm.onFirstContentReady()
-            OpenBookProbe.finish()
         }
     }
 

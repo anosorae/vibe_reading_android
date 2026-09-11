@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextMeasurer
 import com.vibereading.app.domain.model.Chapter
-import com.vibereading.app.log.OpenBookProbe
 import com.vibereading.app.ui.reader.content.ReadingContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -177,10 +176,6 @@ class BookWindow(
                             synchronized(lock) { paginators[chapterId] = it }
                         }
                     paginator.layoutUntil(minCoverOffset)
-                    OpenBookProbe.step(
-                        "后台排版 chapterId=$chapterId → ${paginator.pages.size} 页" +
-                            "（完成=${paginator.layoutComplete}）"
-                    )
                 } finally {
                     synchronized(lock) { buildingIds.remove(chapterId) }
                 }

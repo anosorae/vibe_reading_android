@@ -24,7 +24,6 @@ import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.log.CrashMark
-import com.vibereading.app.log.OpenBookProbe
 import com.vibereading.app.ui.bookshelf.BookshelfScreen
 import com.vibereading.app.ui.bookshelf.BookshelfViewModel
 import com.vibereading.app.ui.log.LogViewerScreen
@@ -113,8 +112,7 @@ fun AppNavigation() {
                 BookshelfScreen(
                     vm = vm,
                     onOpenBook = { bookId ->
-                        // 打开书籍链路耗时探针起点（详见 OpenBookProbe）
-                        OpenBookProbe.begin()
+
                         navController.navigate(Routes.reader(bookId)) { launchSingleTop = true }
                     },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) },

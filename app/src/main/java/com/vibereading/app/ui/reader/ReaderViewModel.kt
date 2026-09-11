@@ -23,7 +23,6 @@ import com.vibereading.app.domain.model.toLlmProfile
 import com.vibereading.app.domain.model.toLlmSettings
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.log.AppLog
-import com.vibereading.app.log.OpenBookProbe
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -113,17 +112,14 @@ class ReaderViewModel(
     val editModel: StateFlow<String> = _editModel.asStateFlow()
 
     init {
-        OpenBookProbe.step("ReaderViewModel 创建")
         // 书籍/目标单章与设置并行准备，首屏不再等待整书正文读取。
         viewModelScope.launch {
             val book = bookRepo.getBookByIdOnce(bookId) ?: run {
                 _uiState.update { it.copy(chaptersLoaded = true) }
                 return@launch
             }
-            OpenBookProbe.step("书籍信息读取完成「${book.title}」")
             val savedPosition = ReadingPosition(book.lastReadChapterId, book.lastReadOffset)
             val chapter = chapterRepo.getOpeningChapter(bookId, book.lastReadChapterId)
-            OpenBookProbe.step("首屏单章读取完成")
             readingSettingsLoaded.first { it }
             _uiState.update {
                 it.copy(bookTitle = book.title, mode = book.languageMode, sourceLanguage = book.sourceLanguage,
@@ -189,7 +185,6 @@ class ReaderViewModel(
             val rs = settingsRepo.readingSettings.first()
             _uiState.update { it.copy(readingSettings = rs) }
             readingSettingsLoaded.value = true
-            OpenBookProbe.step("阅读设置载入完成")
         }
         viewModelScope.launch {
             settingsRepo.nightMode.collect { night ->
@@ -229,7 +224,6 @@ class ReaderViewModel(
     /** 首屏可显示后才放行全书读取和非首屏工作；不参与开书动画的启动条件。 */
     fun onFirstContentReady() {
         if (!firstContentReady.value) {
-            OpenBookProbe.step("首屏就绪，放行章节列表与翻译配置加载")
             firstContentReady.value = true
         }
     }
@@ -237,9 +231,6 @@ class ReaderViewModel(
     /** 一次性原子恢复（书籍信息 + 章节列表双就绪才执行）：先读 Book 位置快照，再恢复章节与偏移。 */
     private fun tryRestore(chapters: List<Chapter>, savedPosition: ReadingPosition?) {
         if (restoreCompleted || savedPosition == null || chapters.isEmpty()) return
-        OpenBookProbe.step(
-            "章节列表加载完成（${chapters.size} 章 / ${chapters.sumOf { it.content.length }} 字符）"
-        )
         val chapter = chapters.firstOrNull { it.id == savedPosition.chapterId } ?: chapters.first()
         val position = if (chapter.id == savedPosition.chapterId) {
             savedPosition.normalized(chapter.content.length).copy(chapterId = chapter.id)
@@ -260,7 +251,6 @@ class ReaderViewModel(
                 errorMessage = null
             )
         }
-        OpenBookProbe.step("恢复阅读位置完成（章「${chapter.title}」 offset=${position.offset}）")
         activeChapterIdFlow.value = chapter.id
         // 自动翻译由首屏就绪后的配置流启动，不阻塞本次原文位置恢复。
     }

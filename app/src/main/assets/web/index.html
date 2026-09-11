@@ -23,6 +23,8 @@
     --dot-done: #6a9955; --dot-failed: #c25b4e; --dot-toolong: #d09a3e;
     --font-chrome: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
     --font-display: Georgia, "Songti SC", "Source Han Serif SC", "Noto Serif CJK SC", SimSun, serif;
+    /* 数据面：只给数字用（进度百分比、已译/总数），等宽让同类数字上下对齐 */
+    --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     --font-read: var(--font-chrome);
     --fs: 17px; --lh: 1.9; --measure-chars: 36;
     --header-h: 56px;
@@ -155,21 +157,119 @@
   .chapter-nav { display: flex; justify-content: space-between; margin-top: 36px; gap: 12px; }
   .chapter-nav button { flex: 1; }
 
-  /* ── 书架 ── */
-  .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-  .book-card {
-    display: flex; gap: 12px; padding: 12px; text-align: left; width: 100%;
-    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  /* ── 书架 ──
+     一栏正文 + 一栏带表头的「页边注」：阅读进度与已译章节数右对齐进页边栏，用等宽字体排
+     （像书目卡上的编号），表头只印一次；英雄区不是卡片而是一个标题页，用同一套栏位，
+     所以整页是同一张表——留白不是空着，是一栏有标签的数据。
+     配色一律取自五档阅读底色派生的语义色，不额外引入色相：书架和阅读器必须像同一个产品。 */
+  main.shelf {
+    /* 一栏可读宽度：行宽跟着正文栏宽走（≈阅读器 36 字），否则每行被拉到千余像素，
+       中间全是撑出来的空白。 */
+    max-width: min(720px, 100%);
+    padding-top: 14px;
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
+    /* 行左右内缩：英雄区与列表行共用同一个值，页边栏的数字才能逐列对齐 */
+    --shelf-inset: 2px;
   }
-  .book-card img.cover, .cover-fallback {
-    width: 74px; height: 100px; object-fit: cover; border-radius: 6px; flex: none;
-    background: linear-gradient(135deg, #d9c9a8, #b09268);
+  .cover-box {
+    position: relative; width: 100%;
+    border-radius: var(--cover-r, 10px); overflow: hidden;
+    background: var(--expand-bg);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .10), 0 8px 18px -10px rgba(0, 0, 0, .35);
   }
-  .book-meta { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
-  .book-meta .title { font-weight: 700; font-size: 15px; }
-  .book-meta .sub { font-size: 12px; color: var(--muted); }
-  .progress-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: auto; }
-  .progress-bar i { display: block; height: 100%; background: var(--accent); }
+  /* 3:4 撑高：百分比 padding 以「自身宽度」为参照（所以必须由伪元素撑，
+     不能在 .cover-box 上直接写 padding-top——那是按父元素宽度算的，
+     固定宽度封面（英雄区/列表行）会被撑成整页高）。 */
+  .cover-box::before { content: ''; display: block; padding-top: 133.333%; }
+  @supports (aspect-ratio: 3 / 4) {
+    .cover-box { aspect-ratio: 3 / 4; }
+    .cover-box::before { display: none; }
+  }
+  .cover-box img.cv { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* 无封面：程序化「字母封面」——平色底 + accent 衬线首字（对齐 legado 默认封面的做法），
+     不做标题重复，也不用渐变。 */
+  .cover-fallback {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--expand-bg);
+  }
+  .cover-fallback .cf-t {
+    font-family: var(--font-display); font-weight: 700; line-height: 1;
+    font-size: var(--fb-fs, 26px); color: var(--accent);
+  }
+
+  /* 英雄区：标题页。大衬线书名占满正文栏，下面一行是「读到哪 + 页边数据」，再下面是行动 */
+  .shelf-hero { padding: 2px 0 18px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .shelf-kicker { font-size: 10.5px; letter-spacing: .3em; color: var(--muted); }
+  .shelf-title {
+    font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.25;
+    margin-top: 10px; letter-spacing: .01em;
+  }
+  .shelf-hero-foot {
+    display: flex; align-items: flex-start; gap: 14px; margin-top: 15px;
+    padding-right: var(--shelf-inset);   /* 与 .shelf-row 同栏位，数字列对齐 */
+  }
+  .shelf-hero .cover-box {
+    width: 46px; flex: none; --cover-r: 4px; --fb-fs: 15px;
+    box-shadow: none; outline: 1px solid var(--border); outline-offset: -1px;
+  }
+  .shelf-hero-col { flex: 1; min-width: 0; }
+  /* 数字与「读到哪」按基线对齐，所以这里是 baseline 而不是 center */
+  .shelf-ledger { display: flex; align-items: baseline; gap: 14px; }
+  .shelf-ledger .where {
+    flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .shelf-cta {
+    display: inline-block; margin-top: 10px; padding: 7px 14px; border-radius: 8px;
+    background: var(--accent); color: var(--on-accent, #fff); font-size: 13px; font-weight: 600;
+  }
+
+  /* 表头：栏位宽度与每行、英雄区共用，表头只印一次 */
+  .shelf-head {
+    display: flex; align-items: baseline; gap: 14px;
+    padding: 13px var(--shelf-inset) 7px;   /* 左右内缩同 .shelf-row，页边栏右边界才对齐 */
+    border-bottom: 1px solid var(--border);
+  }
+  .shelf-head .t { flex: 1; font-size: 10.5px; letter-spacing: .3em; color: var(--muted); }
+  .shelf-col { flex: none; font-size: 10.5px; letter-spacing: .18em; color: var(--muted); text-align: right; }
+  .shelf-col.pct { width: 62px; }
+  .shelf-col.cnt { width: 82px; }
+  /* 页边栏的数字：等宽 + 右对齐 + 固定列宽，所以表头、英雄区、每一行都落在同一条竖线上 */
+  .shelf-num {
+    flex: none; font-family: var(--font-data); font-size: 12.5px;
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .shelf-num.pct { width: 62px; color: var(--text); }
+  .shelf-num.cnt { width: 82px; color: var(--muted); }
+
+  /* 列表行：封面 | 书名 + 读到哪 | 页边数据。行宽＝正文栏，不加卡片壳 */
+  .shelf-row {
+    display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+    padding: 11px var(--shelf-inset); border: 0; background: none; border-radius: 10px;
+  }
+  .shelf-row + .shelf-row { box-shadow: inset 0 1px 0 var(--border); }  /* 发丝分隔线，不动圆角 */
+  .shelf-row:hover { background: var(--expand-bg); }
+  /* 列表里封面小，投影会糊成一团，改用 1px 内描边勾边 */
+  .shelf-row .cover-box {
+    width: 42px; flex: none; --cover-r: 4px; --fb-fs: 14px;
+    box-shadow: none; outline: 1px solid var(--border); outline-offset: -1px;
+  }
+  .shelf-row-body { flex: 1; min-width: 0; }
+  .shelf-row .shelf-row-title {
+    font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .shelf-row:hover .shelf-row-title { color: var(--accent); }
+  .shelf-row-sub {
+    font-size: 11.5px; color: var(--muted); margin-top: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 窄屏：页边栏收窄，把宽度还给书名 */
+  @media (max-width: 520px) {
+    .shelf-head, .shelf-row, .shelf-ledger, .shelf-hero-foot { gap: 10px; }
+    .shelf-col.pct, .shelf-num.pct { width: 46px; }
+    .shelf-col.cnt, .shelf-num.cnt { width: 66px; }
+  }
 
   /* ── 目录抽屉 ── */
   #catalog-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .38); display: none; z-index: 40; }
@@ -497,12 +597,13 @@ function initFontPicker() {
 
 // ── 背景预设（对齐 App ReaderBgPresets 五档与 ReaderPalette 正文色）──
 // accent 与状态色成套定义：青绿档用绿强调、深夜档整体提亮，避免暗底上棕字对比不足。
+// onAccent 是压在 accent 上的前景色（徽标、主按钮）——深夜档 accent 偏亮，须用深字。
 const BG_PRESETS = [
-  { name: '暖白', bg: '#faf7f2', text: '#2c2825', muted: '#6b635b', accent: '#9a6b3f' },
-  { name: '米色', bg: '#f5f0e8', text: '#2c2825', muted: '#6b635b', accent: '#8d6238' },
-  { name: '青绿', bg: '#f0f4ee', text: '#2c2825', muted: '#5f6b5c', accent: '#4f7a5a' },
-  { name: '灰米', bg: '#eeece8', text: '#2c2825', muted: '#6b635b', accent: '#7d6a55' },
-  { name: '深夜', bg: '#2c2825', text: 'rgba(250,247,242,.92)', muted: '#b8afa3', accent: '#c99a6a' }
+  { name: '暖白', bg: '#faf7f2', text: '#2c2825', muted: '#6b635b', accent: '#9a6b3f', onAccent: '#fff' },
+  { name: '米色', bg: '#f5f0e8', text: '#2c2825', muted: '#6b635b', accent: '#8d6238', onAccent: '#fff' },
+  { name: '青绿', bg: '#f0f4ee', text: '#2c2825', muted: '#5f6b5c', accent: '#4f7a5a', onAccent: '#fff' },
+  { name: '灰米', bg: '#eeece8', text: '#2c2825', muted: '#6b635b', accent: '#7d6a55', onAccent: '#fff' },
+  { name: '深夜', bg: '#2c2825', text: 'rgba(250,247,242,.92)', muted: '#b8afa3', accent: '#c99a6a', onAccent: '#2c2825' }
 ];
 const STATUS_LIGHT = { done: '#6a9955', failed: '#c25b4e', toolong: '#d09a3e' };
 const STATUS_DARK = { done: '#8fbf78', failed: '#e0857a', toolong: '#e0b256' };
@@ -546,6 +647,7 @@ function applyBg() {
   root.setProperty('--text', p.text);
   root.setProperty('--muted', p.muted);
   root.setProperty('--accent', p.accent);
+  root.setProperty('--on-accent', p.onAccent || '#fff');
   root.setProperty('--dot-done', st.done);
   root.setProperty('--dot-failed', st.failed);
   root.setProperty('--dot-toolong', st.toolong);
@@ -720,85 +822,182 @@ async function route() {
 }
 
 // ── 书架 ──
+// 一栏正文 + 一栏带表头的「页边注」（设计定稿；曾经比较过的其它版式已删除）。
+// 数据源：/api/books（别名 → 进度摘要 + 封面 URL）。
 async function renderShelf() {
   $('btn-back').style.display = 'none';
   $('btn-catalog').style.display = 'none';
   $('mode-seg').style.display = 'none';
   $('page-title').textContent = '译读 · Web 伴读';
   main.classList.remove('reader');
+  main.classList.add('shelf');
   main.removeAttribute('lang');
   main.innerHTML = '<div class="empty">加载中…</div>';
+  let books;
   try {
-    const books = await api('/api/books');
-    main.innerHTML = '';
-    if (!books.length) {
-      const e = document.createElement('div');
-      e.className = 'empty';
-      e.textContent = '书架还是空的，先在手机 App 里导入书籍吧。';
-      main.appendChild(e);
-      return;
-    }
-    const grid = document.createElement('div');
-    grid.className = 'shelf';
-    books.forEach(b => grid.appendChild(buildBookCard(b)));
-    main.appendChild(grid);
+    books = await api('/api/books');
   } catch (e) {
-    renderError(e.message, renderShelf);
+    renderError(e.message, () => renderShelf());
+    return;
   }
+  main.innerHTML = '';
+  if (!books.length) {
+    const e = document.createElement('div');
+    e.className = 'empty';
+    e.textContent = '书架还是空的，先在手机 App 里导入书籍吧。';
+    main.appendChild(e);
+    return;
+  }
+  const byRecent = books.slice().sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
+  const hero = byRecent.find(b => b.lastReadChapterId) || byRecent[0];
+  main.appendChild(buildShelfHero(hero));
+  const rest = books.filter(b => b !== hero);
+  if (!rest.length) return;
+  main.appendChild(buildShelfHead(rest.length));
+  const list = document.createElement('div');
+  rest.forEach(b => list.appendChild(buildShelfRow(b)));
+  main.appendChild(list);
 }
 
-function buildBookCard(b) {
-  const card = document.createElement('button');
-  card.type = 'button';
-  card.className = 'book-card';
-  card.setAttribute('aria-label', b.title + '，' + (b.lastReadChapterTitle ? '读到 ' + b.lastReadChapterTitle : '未开始阅读'));
-
-  // hasCover 为 false 时直接给占位块：省掉一次必然 404 的封面请求与回退
-  const fallbackCover = () => {
-    const fb = document.createElement('div');
-    fb.className = 'cover-fallback';
-    fb.setAttribute('role', 'img');
-    fb.setAttribute('aria-label', b.title + ' 封面');
-    return fb;
-  };
-  let cover;
+// ── 书架通用构件 ──
+/** 3:4 封面盒：有封面用封面，无封面用「字母封面」。 */
+function coverNode(b) {
+  const box = document.createElement('div');
+  box.className = 'cover-box';
   if (b.hasCover) {
-    cover = document.createElement('img');
-    cover.className = 'cover';
-    cover.loading = 'lazy';
-    cover.decoding = 'async';
-    cover.alt = b.title + ' 封面';
-    cover.onerror = () => cover.replaceWith(fallbackCover());
-    cover.src = withToken('/cover/' + b.id);
+    const img = document.createElement('img');
+    img.className = 'cv';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.alt = b.title + ' 封面';
+    img.onerror = () => img.replaceWith(fallbackCover(b));
+    img.src = withToken('/cover/' + b.id);
+    box.appendChild(img);
   } else {
-    cover = fallbackCover();
+    box.appendChild(fallbackCover(b));
   }
+  return box;
+}
+/** 无封面时的程序化封面：平色底 + 衬线首字（不做标题重复，标题位置另有安排）。 */
+function fallbackCover(b) {
+  const fb = document.createElement('div');
+  fb.className = 'cover-fallback';
+  fb.setAttribute('role', 'img');
+  fb.setAttribute('aria-label', b.title + ' 封面');
+  const t = document.createElement('span');
+  t.className = 'cf-t';
+  t.textContent = monogram(b.title);
+  fb.appendChild(t);
+  return fb;
+}
+function monogram(title) {
+  const s = (title || '').replace(/^[\s《「『【（(〈\["']+/, '');
+  return s.charAt(0) || '书';
+}
+function readPct(b) { return Math.round((b.progress || 0) * 100); }
+function shelfAria(b) {
+  return b.title + '，' + (b.lastReadChapterTitle ? '读到 ' + b.lastReadChapterTitle : '未开始阅读')
+    + '，阅读进度 ' + readPct(b) + '%，已译 ' + b.translatedCount + '/' + b.totalChapters + ' 章';
+}
+function bookButton(cls, b) {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = cls;
+  el.setAttribute('aria-label', shelfAria(b));
+  el.onclick = () => { location.hash = '#/book/' + b.id; };
+  return el;
+}
+/** 整块可点的英雄区：div + role=button（里面要放块级内容，不能用 button 套 div），回车/空格同样可开。 */
+function clickable(cls, b) {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  el.setAttribute('aria-label', shelfAria(b));
+  el.onclick = () => { location.hash = '#/book/' + b.id; };
+  el.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); el.click(); }
+  });
+  return el;
+}
+/** 页边栏的一格数据（等宽、右对齐、固定列宽）。kind 决定列宽与颜色：pct | cnt */
+function shelfNum(kind, text) {
+  const s = document.createElement('span');
+  s.className = 'shelf-num ' + kind;
+  s.textContent = text;
+  return s;
+}
+function whereLine(text) {
+  const s = document.createElement('span');
+  s.className = 'where';
+  s.textContent = text;
+  return s;
+}
 
-  const meta = document.createElement('div');
-  meta.className = 'book-meta';
+/** 英雄区：标题页。大书名 + 一行「读到哪 + 页边数据」+ 行动；栏位与列表行完全共用。 */
+function buildShelfHero(b) {
+  const wrap = clickable('shelf-hero', b);
+  const kicker = document.createElement('div');
+  kicker.className = 'shelf-kicker';
+  kicker.textContent = b.lastReadChapterId ? '最近在读' : '尚未开始';
   const title = document.createElement('div');
-  title.className = 'title'; title.textContent = b.title;
-  const readSub = document.createElement('div');
-  readSub.className = 'sub';
-  readSub.textContent = b.lastReadChapterTitle ? '读到：' + b.lastReadChapterTitle : '未开始阅读';
-  const fmtSub = document.createElement('div');
-  fmtSub.className = 'sub';
-  fmtSub.textContent = (b.format === 'epub' ? 'EPUB' : 'TXT') + ' · ' + b.totalChapters + ' 章';
-  const pct = Math.round((b.progress || 0) * 100);
-  const bar = document.createElement('div');
-  bar.className = 'progress-bar';
-  bar.setAttribute('aria-hidden', 'true');
-  const fill = document.createElement('i');
-  fill.style.width = pct + '%';
-  bar.appendChild(fill);
-  const pctSub = document.createElement('div');
-  pctSub.className = 'sub';
-  pctSub.textContent = pct + '% · 已译 ' + b.translatedCount + '/' + b.totalChapters + ' 章';
-  meta.append(title, readSub, fmtSub, bar, pctSub);
+  title.className = 'shelf-title';
+  title.textContent = b.title;
 
-  card.append(cover, meta);
-  card.onclick = () => { location.hash = '#/book/' + b.id; };
-  return card;
+  const foot = document.createElement('div');
+  foot.className = 'shelf-hero-foot';
+  foot.appendChild(coverNode(b));
+  const col = document.createElement('div');
+  col.className = 'shelf-hero-col';
+  const ledger = document.createElement('div');
+  ledger.className = 'shelf-ledger';
+  ledger.append(
+    whereLine(b.lastReadChapterTitle ? '读到 ' + b.lastReadChapterTitle
+      : (b.format === 'epub' ? 'EPUB' : 'TXT') + ' · 共 ' + b.totalChapters + ' 章'),
+    shelfNum('pct', readPct(b) + '%'),
+    shelfNum('cnt', b.translatedCount + '/' + b.totalChapters));
+  const cta = document.createElement('span');
+  cta.className = 'shelf-cta';
+  cta.textContent = b.lastReadChapterId ? '继续阅读 →' : '开始阅读 →';
+  col.append(ledger, cta);
+  foot.appendChild(col);
+  wrap.append(kicker, title, foot);
+  return wrap;
+}
+
+/** 表头：只印一次栏位名。栏名是纯视觉对齐用，逐行的 aria-label 已含完整信息，故对读屏隐藏。 */
+function buildShelfHead(n) {
+  const head = document.createElement('div');
+  head.className = 'shelf-head';
+  const t = document.createElement('span');
+  t.className = 't';
+  t.textContent = '全部书籍 · ' + n;
+  const p = document.createElement('span');
+  p.className = 'shelf-col pct';
+  p.textContent = '进度';
+  const c = document.createElement('span');
+  c.className = 'shelf-col cnt';
+  c.textContent = '已译';
+  p.setAttribute('aria-hidden', 'true');
+  c.setAttribute('aria-hidden', 'true');
+  head.append(t, p, c);
+  return head;
+}
+
+function buildShelfRow(b) {
+  const row = bookButton('shelf-row', b);
+  row.appendChild(coverNode(b));
+  const body = document.createElement('div');
+  body.className = 'shelf-row-body';
+  const title = document.createElement('div');
+  title.className = 'shelf-row-title';
+  title.textContent = b.title;
+  const sub = document.createElement('div');
+  sub.className = 'shelf-row-sub';
+  sub.textContent = b.lastReadChapterTitle ? '读到 ' + b.lastReadChapterTitle : '未开始阅读';
+  body.append(title, sub);
+  row.append(body, shelfNum('pct', readPct(b) + '%'), shelfNum('cnt', b.translatedCount + '/' + b.totalChapters));
+  return row;
 }
 
 // ── 阅读页 ──
@@ -808,6 +1007,7 @@ function renderReaderShell() {
   $('mode-seg').style.display = 'flex';
   $('page-title').textContent = state.book.title;
   $('catalog-title').textContent = state.book.title + ' · 目录';
+  main.classList.remove('shelf');
   main.classList.add('reader');
   syncModeSeg();
   main.innerHTML = '<div class="empty">加载中…</div>';
@@ -1232,9 +1432,9 @@ document.addEventListener('keydown', (ev) => {
     if (state.catalogOpen) { closeCatalog(); $('btn-catalog').focus(); return; }
     if (settingsOpen) { closeSettings(); return; }
   }
-  if (state.view !== 'reader' || state.catalogOpen || !state.book) return;
   const tag = ev.target && ev.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (state.view !== 'reader' || state.catalogOpen || !state.book) return;
   const idx = state.chapters.findIndex(x => x.id === state.chapterId);
   if (ev.key === 'ArrowLeft' && idx > 0) goChapter(idx - 1);
   if (ev.key === 'ArrowRight' && idx >= 0 && idx < state.chapters.length - 1) goChapter(idx + 1);

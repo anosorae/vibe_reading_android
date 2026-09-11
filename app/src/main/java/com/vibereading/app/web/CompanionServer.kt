@@ -26,7 +26,10 @@ class CompanionServer(
 
     override fun serve(session: IHTTPSession): Response {
         if (!authorize(session)) {
-            return json(Response.Status.UNAUTHORIZED, CompanionResult.failure("缺少或错误的 Token"))
+            // 浏览器直接导航（地址栏、历史记录、旧书签）被拒时给可读说明页：
+            // 裸 JSON 会让用户只看到一串 {} 而不知道要去手机重新复制地址。
+            return if (prefersHtml(session)) unauthorizedHtml()
+            else json(Response.Status.UNAUTHORIZED, CompanionResult.failure("缺少或错误的 Token"))
         }
         val uri = session.uri.trimEnd('/')
         return try {
@@ -56,7 +59,14 @@ class CompanionServer(
                 ?: return json(Response.Status.BAD_REQUEST, CompanionResult.failure("非法书籍 ID"))
             return coverResponse(bookId)
         }
-        if (uri.isEmpty()) return assetResponse("web/index.html", MIME_HTML)
+        if (uri.isEmpty()) {
+            // 首次带 token 访问时种 Cookie：之后地址里没有 token（手输 IP、书签、
+            // 从地址栏复制出来的地址）也能打开，这是「网站打不开」类问题的兜底。
+            return assetResponse("web/index.html", MIME_HTML).apply {
+                addHeader("Set-Cookie", "$COOKIE_NAME=$token; Path=/; SameSite=Lax; HttpOnly")
+                addHeader("Cache-Control", "no-store")
+            }
+        }
         if (uri == "/api/books") return jsonOk(api.books())
 
         URI_CHAPTERS.matchEntire(uri)?.let { m ->
@@ -160,10 +170,45 @@ class CompanionServer(
 
     // ── 工具 ──
 
-    /** Token 校验：query 参数或 header 任一命中即可（伴读地址自带 ?token=）。 */
-    private fun authorize(session: IHTTPSession): Boolean {
-        if (session.parameters["token"]?.firstOrNull() == token) return true
-        return session.headers["x-companion-token"] == token
+    /** Token 校验（ADR-005 三通道）：query 参数、`X-Companion-Token`、Cookie 任一命中即可。 */
+    private fun authorize(session: IHTTPSession): Boolean = tokenAccepted(
+        queryToken = session.parameters["token"]?.firstOrNull(),
+        headerToken = session.headers["x-companion-token"],
+        cookieHeader = session.headers["cookie"],
+        expected = token
+    )
+
+    /** 浏览器导航（Accept 首选 text/html）被拒时改用说明页，接口调用仍返回 JSON。 */
+    private fun prefersHtml(session: IHTTPSession): Boolean =
+        session.headers["accept"]?.contains("text/html", ignoreCase = true) == true
+
+    /**
+     * Token 失效时的说明页。这段 HTML 必须自包含：静态页 index.html 同样在 Token
+     * 校验之后，拿不到 assets，也不能依赖任何接口。
+     */
+    private fun unauthorizedHtml(): Response {
+        val html = """
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>译读 · 请重新复制访问地址</title>
+            </head>
+            <body style="margin:0;padding:48px 20px;background:#faf7f2;color:#2c2825;line-height:1.8;
+                         font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+            <div style="max-width:34em;margin:0 auto">
+            <h1 style="font-size:18px;margin:0 0 14px">这个地址的访问 Token 不对</h1>
+            <p style="margin:0 0 12px">Token 每次在手机上开启 Web 伴读都会重新生成，旧书签、旧地址和
+            从地址栏复制出来的地址都会失效。</p>
+            <p style="margin:0">请在手机 App「设置 → Web 伴读」里点一下那条地址复制，粘贴到地址栏打开；
+            手机通知栏里的地址也可以。</p>
+            </div>
+            </body>
+            </html>
+        """.trimIndent()
+        return newFixedLengthResponse(Response.Status.UNAUTHORIZED, MIME_HTML, html)
+            .apply { addHeader("Cache-Control", "no-store") }
     }
 
     private fun readBody(session: IHTTPSession): String {
@@ -203,5 +248,30 @@ class CompanionServer(
         private val URI_TRANSLATE = Regex("^/api/chapters/(\\d+)/translate$")
 
         private const val MIME_HTML = "text/html; charset=utf-8"
+        internal const val COOKIE_NAME = "companion_token"
+
+        /**
+         * Token 三通道判定（ADR-005）。抽成纯函数便于单测：鉴权是安全相关的，
+         * 并且「旧地址打不开」的排查成本很高，不能让它的正确性只靠人工核对。
+         */
+        internal fun tokenAccepted(
+            queryToken: String?,
+            headerToken: String?,
+            cookieHeader: String?,
+            expected: String
+        ): Boolean {
+            if (expected.isEmpty()) return false
+            if (queryToken == expected) return true
+            if (headerToken == expected) return true
+            return cookieToken(cookieHeader) == expected
+        }
+
+        /** 从 Cookie 请求头里取出伴读 Token；无该 Cookie 返回 null。 */
+        internal fun cookieToken(cookieHeader: String?): String? =
+            cookieHeader?.split(';')
+                ?.asSequence()
+                ?.map { it.trim() }
+                ?.firstOrNull { it.startsWith("$COOKIE_NAME=") }
+                ?.substringAfter('=')
     }
 }

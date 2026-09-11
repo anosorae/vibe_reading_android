@@ -57,7 +57,8 @@ import com.vibereading.app.ui.theme.WereadColors
 fun BookshelfScreen(
     vm: BookshelfViewModel,
     onOpenBook: (Long) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    coverTransition: @Composable (Long) -> Modifier = { Modifier }
 ) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
@@ -263,7 +264,8 @@ fun BookshelfScreen(
                                         accentColor = accentColor,
                                         onClick = { onOpenBook(item.book.id) },
                                         onLongClick = { menuBook = item },
-                                        coverHeight = coverHeight
+                                        coverHeight = coverHeight,
+                                        coverModifier = coverTransition(item.book.id)
                                     )
                                 }
                             }
@@ -278,7 +280,8 @@ fun BookshelfScreen(
                                     item = item,
                                     accentColor = accentColor,
                                     onClick = { onOpenBook(item.book.id) },
-                                    onLongClick = { menuBook = item }
+                                    onLongClick = { menuBook = item },
+                                    coverModifier = coverTransition(item.book.id)
                                 )
                             }
                         }
@@ -529,7 +532,8 @@ private fun BookRow(
     item: BookShelfItem,
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    coverModifier: Modifier = Modifier
 ) {
     val book = item.book
 
@@ -544,7 +548,7 @@ private fun BookRow(
         BookCover(
             title = book.title,
             coverPath = book.coverPath,
-            modifier = Modifier.width(56.dp).height(76.dp)
+            modifier = Modifier.width(56.dp).height(76.dp).then(coverModifier)
         )
 
         Spacer(Modifier.width(12.dp))
@@ -615,7 +619,8 @@ private fun BookGridCard(
     accentColor: androidx.compose.ui.graphics.Color,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    coverHeight: Dp = 160.dp
+    coverHeight: Dp = 160.dp,
+    coverModifier: Modifier = Modifier
 ) {
     val book = item.book
 
@@ -628,6 +633,7 @@ private fun BookGridCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(coverHeight)
+                .then(coverModifier)
                 .clip(RoundedCornerShape(8.dp))
         ) {
             BookCover(

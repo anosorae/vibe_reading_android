@@ -1,9 +1,12 @@
 package com.vibereading.app.ui.navigation
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +44,7 @@ object Routes {
     fun reader(bookId: Long) = "reader/$bookId"
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
@@ -86,62 +90,81 @@ fun AppNavigation() {
         }
     }
 
-    NavHost(navController = navController, startDestination = Routes.BOOKSHELF) {
+    SharedTransitionLayout {
+        val bookTransitionScope = this
+        NavHost(navController = navController, startDestination = Routes.BOOKSHELF) {
 
-        composable(Routes.BOOKSHELF) {
-            val vm: BookshelfViewModel = viewModel(
-                factory = BookshelfViewModel.Factory(bookRepo, chapterRepo, settingsRepo)
-            )
-            BookshelfScreen(
-                vm = vm,
-                onOpenBook = { bookId ->
-                    // 打开书籍链路耗时探针起点（详见 OpenBookProbe）
-                    OpenBookProbe.begin()
-                    navController.navigate(Routes.reader(bookId))
+            composable(
+                route = Routes.BOOKSHELF,
+                exitTransition = {
+                    if (targetState.destination.route == Routes.READER) {
+                        ExitTransition.None
+                    } else null
                 },
-                onOpenSettings = { navController.navigate(Routes.SETTINGS) }
-            )
-        }
-
-        composable(
-            route = Routes.READER,
-            arguments = listOf(navArgument("bookId") { type = NavType.LongType }),
-            // 阅读器入场过渡：淡入 + 轻微放大（打开过程中的加载由 ReaderScreen 内的
-            // 过渡遮罩呈现，遮罩与阅读器背景同色，衔接无缝）
-            enterTransition = {
-                fadeIn(tween(durationMillis = 220)) + scaleIn(
-                    initialScale = 0.96f,
-                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing)
+                popEnterTransition = {
+                    if (initialState.destination.route == Routes.READER) {
+                        EnterTransition.None
+                    } else null
+                }
+            ) {
+                val vm: BookshelfViewModel = viewModel(
+                    factory = BookshelfViewModel.Factory(bookRepo, chapterRepo, settingsRepo)
+                )
+                BookshelfScreen(
+                    vm = vm,
+                    onOpenBook = { bookId ->
+                        // 打开书籍链路耗时探针起点（详见 OpenBookProbe）
+                        OpenBookProbe.begin()
+                        navController.navigate(Routes.reader(bookId)) { launchSingleTop = true }
+                    },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    coverTransition = { bookId ->
+                        with(bookTransitionScope) { bookContainerBounds(bookId, this@composable) }
+                    }
                 )
             }
-        ) { entry ->
-            val bookId = entry.arguments?.getLong("bookId") ?: return@composable
-            val vm: ReaderViewModel = viewModel(
-                factory = ReaderViewModel.Factory(
-                    bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase,
-                    llmApiService = translationService,
-                    appContext = application
+
+            composable(
+                route = Routes.READER,
+                arguments = listOf(navArgument("bookId") { type = NavType.LongType }),
+                // 书架保持静止可见，封面和正文在其上方共享边界；不叠加整屏淡化。
+                enterTransition = { EnterTransition.None },
+                popEnterTransition = { null },
+                popExitTransition = {
+                    if (targetState.destination.route == Routes.BOOKSHELF) {
+                        ExitTransition.None
+                    } else null
+                }
+            ) { entry ->
+                val bookId = entry.arguments?.getLong("bookId") ?: return@composable
+                val vm: ReaderViewModel = viewModel(
+                    factory = ReaderViewModel.Factory(
+                        bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase,
+                        llmApiService = translationService,
+                        appContext = application
+                    )
                 )
-            )
-            ReaderScreen(
-                vm = vm,
-                onBack = { navController.popBackStack() }
-            )
-        }
+                Box(Modifier.fillMaxSize().then(
+                    with(bookTransitionScope) { bookContainerBounds(bookId, this@composable, isCover = false) }
+                )) {
+                    ReaderScreen(vm = vm, onBack = { navController.popBackStack() })
+                }
+            }
 
-        composable(Routes.SETTINGS) {
-            val vm: SettingsViewModel = viewModel(
-                factory = SettingsViewModel.Factory(settingsRepo, llmProfileRepo, application)
-            )
-            SettingsScreen(
-                vm = vm,
-                onBack = { navController.popBackStack() },
-                onOpenLogs = { navController.navigate(Routes.LOGS) }
-            )
-        }
+            composable(Routes.SETTINGS) {
+                val vm: SettingsViewModel = viewModel(
+                    factory = SettingsViewModel.Factory(settingsRepo, llmProfileRepo, application)
+                )
+                SettingsScreen(
+                    vm = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenLogs = { navController.navigate(Routes.LOGS) }
+                )
+            }
 
-        composable(Routes.LOGS) {
-            LogViewerScreen(onBack = { navController.popBackStack() })
+            composable(Routes.LOGS) {
+                LogViewerScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

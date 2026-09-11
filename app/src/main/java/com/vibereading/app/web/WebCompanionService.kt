@@ -3,6 +3,7 @@ package com.vibereading.app.web
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -16,6 +17,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
+import com.vibereading.app.MainActivity
 import com.vibereading.app.VibeReadingApp
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
@@ -46,9 +48,18 @@ class WebCompanionService : Service() {
     private var server: CompanionServer? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
+    /** 系统时长上限已处理过：两个 onTimeout 重载只会执行一次收尾。 */
+    private var timeoutHandled = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 通知栏「停止服务」：像 legado 一样可以直接从常驻通知关掉伴读
+        if (intent?.action == ACTION_STOP) {
+            AppLog.put("Web 伴读服务：从通知栏停止")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         // Token 由 start() 经 Intent 传入（设置页在 start() 返回后即可展示地址）；
         // START_STICKY 重启等 intent=null 场景回退到内存值或重新生成。
         val token = intent?.getStringExtra(EXTRA_TOKEN) ?: currentToken ?: newToken()
@@ -67,6 +78,54 @@ class WebCompanionService : Service() {
             stopSelf()
         }
         return START_STICKY
+    }
+
+    /**
+     * Android 15 起 `dataSync` 类前台服务有「每 24 小时累计约 6 小时」的运行上限，
+     * 额度用尽时系统回调这里。必须在回调内停掉服务，否则系统会抛异常（进程崩溃）；
+     * 同时留一条可划掉的说明通知——服务停了网页就打不开，用户需要知道原因和怎么恢复。
+     *
+     * 两个重载都覆盖：系统在不同版本调用的重载不同，用标志位保证只处理一次。
+     */
+    override fun onTimeout(startId: Int) {
+        handleForegroundTimeout()
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        handleForegroundTimeout()
+    }
+
+    private fun handleForegroundTimeout() {
+        if (timeoutHandled) return
+        timeoutHandled = true
+        AppLog.put("Web 伴读服务：达到系统前台服务运行时长上限，已自动停止")
+        notifyTimedOut()
+        stopSelf()
+    }
+
+    /** 与前台通知用不同 id：前台通知会被 stopForeground 一起清掉，这条要留下来。 */
+    private fun notifyTimedOut() {
+        val full = "系统限制了这类后台服务的运行时长（Android 对数据同步类前台服务约 6 小时/天），" +
+            "伴读服务已自动停止，网页暂时打不开。要继续使用，请在手机 App「设置 → Web 伴读服务」里重新开启。"
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Web 伴读已停止")
+            .setContentText(full)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(full))
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this, 0,
+                    Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        runCatching {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(TIMEOUT_NOTIFICATION_ID, notification)
+        }.onFailure { AppLog.put("伴读停止说明通知发送失败", it) }
     }
 
     private fun startServer(token: String): Boolean {
@@ -121,6 +180,24 @@ class WebCompanionService : Service() {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            // 点通知回 App（设置页里能复制地址、关服务）
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this, 0,
+                    Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+            .addAction(
+                NotificationCompat.Action(
+                    android.R.drawable.ic_menu_close_clear_cancel, "停止服务",
+                    PendingIntent.getService(
+                        this, 0,
+                        Intent(this, WebCompanionService::class.java).setAction(ACTION_STOP),
+                        PendingIntent.FLAG_IMMUTABLE
+                    )
+                )
+            )
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -207,8 +284,14 @@ class WebCompanionService : Service() {
         const val DEFAULT_PORT = 9700
         private const val CHANNEL_ID = "web_companion"
         private const val NOTIFICATION_ID = 1002
+
+        /** 系统时长上限导致停止时的说明通知（与前台通知分开，前者会被清掉）。 */
+        private const val TIMEOUT_NOTIFICATION_ID = 1003
         private const val SERVER_START_TIMEOUT_MS = 5000
         private const val EXTRA_TOKEN = "extra_token"
+
+        /** 通知栏「停止服务」动作。 */
+        private const val ACTION_STOP = "com.vibereading.app.web.action.STOP"
 
         @Volatile
         var isRunning: Boolean = false

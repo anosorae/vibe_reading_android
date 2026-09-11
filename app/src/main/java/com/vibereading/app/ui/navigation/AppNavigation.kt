@@ -82,10 +82,13 @@ fun AppNavigation() {
         llmProfileRepo.ensureDefaultProfile()
     }
 
-    // Web 伴读服务（ADR-005）：上次开启过则随 App 启动自动拉起前台服务
+    // Web 伴读服务（ADR-005）：不随 App 启动自动拉起——每次启动 App 开关都归为关闭，
+    // 由用户在设置页手动开启。它是前台服务、会在通知栏留常驻通知，不该在用户没要求时
+    // 自行出现。进程内 Activity 重建（如旋转）时服务仍在运行，此时不动标志，避免
+    // 「开关显示关闭但服务实际在跑」的不一致。
     LaunchedEffect(Unit) {
-        if (settingsRepo.webCompanionEnabled.first()) {
-            WebCompanionService.start(application)
+        if (!WebCompanionService.isRunning && settingsRepo.webCompanionEnabled.first()) {
+            settingsRepo.saveWebCompanionEnabled(false)
         }
     }
 

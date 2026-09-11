@@ -1,5 +1,11 @@
 package com.vibereading.app.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -33,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.ThemeMode
@@ -54,6 +62,21 @@ fun SettingsScreen(
     onOpenLogs: () -> Unit = {}
 ) {
     val state by vm.uiState.collectAsState()
+    val context = LocalContext.current
+    // 伴读是前台服务，靠常驻通知展示含 Token 的地址、也靠它把服务锁在前台。
+    // Android 13+ 必须先拿到通知权限，否则服务照跑但通知栏里什么都看不到。
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        vm.toggleWebCompanion(true)
+        if (!granted) {
+            Toast.makeText(
+                context,
+                "未授予通知权限：伴读会照常运行，但通知栏不会显示常驻地址",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
     val editApiKey by vm.editApiKey.collectAsState()
     val editApiBase by vm.editApiBase.collectAsState()
     val editModel by vm.editModel.collectAsState()
@@ -377,7 +400,20 @@ fun SettingsScreen(
                     }
                     Switch(
                         checked = state.webCompanionRunning,
-                        onCheckedChange = { vm.toggleWebCompanion(it) },
+                        onCheckedChange = { on ->
+                            val needNotifPermission = on &&
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.POST_NOTIFICATIONS
+                                ) != PackageManager.PERMISSION_GRANTED
+                            // 先要权限再启服务：授权回调里无论通过与否都会启动，避免开关
+                            // 打开却没反应；拒绝时给出提示而不是静默失败。
+                            if (needNotifPermission) {
+                                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                vm.toggleWebCompanion(on)
+                            }
+                        },
                         colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
                     )
                 }
@@ -407,6 +443,12 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "此地址已常驻通知栏，锁屏后也能查看",
+                                fontSize = 12.sp,
+                                color = VibeColors.WarmGray
                             )
                         }
                     }

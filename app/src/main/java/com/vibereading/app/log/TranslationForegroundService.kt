@@ -1,14 +1,10 @@
 package com.vibereading.app.log
 
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
@@ -38,22 +34,9 @@ class TranslationForegroundService : Service() {
     }
 
     private fun startForegroundCompat() {
-        val notification = buildNotification()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Android 14+ 必须指定 foregroundServiceType
-                androidx.core.app.ServiceCompat.startForeground(
-                    this, NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-        } catch (e: Exception) {
-            // 前台通知创建失败必须 stopSelf，否则会 ANR/崩溃
-            AppLog.put("前台服务通知创建失败", e)
-            stopSelf()
-        }
+        val ok = startForegroundDataSync(NOTIFICATION_ID, buildNotification(), "前台服务通知创建失败")
+        // 前台通知创建失败必须 stopSelf，否则会 ANR/崩溃
+        if (!ok) stopSelf()
     }
 
     private fun buildNotification(): Notification {
@@ -112,31 +95,15 @@ class TranslationForegroundService : Service() {
         private const val WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L // 10 分钟兜底，防止泄漏
 
         /** 注册通知渠道，在 Application.onCreate 调用一次。 */
-        fun createNotificationChannel(context: Context) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "翻译",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                enableLights(false)
-                enableVibration(false)
-                setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-            }
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
-        }
+        fun createNotificationChannel(context: Context) =
+            createQuietNotificationChannel(context, CHANNEL_ID, "翻译")
 
         /** 翻译开始时启动前台服务。 */
         fun start(context: Context) {
             val intent = Intent(context, TranslationForegroundService::class.java)
-            try {
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-            } catch (e: Exception) {
-                // 后台启动受限时退化为普通 startService；最坏情况服务无法前台化，
-                // 但 appScope 仍在运行，前台返回后可继续。
-                AppLog.put("startForegroundService 受限，退化为 startService", e)
+            // 后台启动受限时退化为普通 startService；最坏情况服务无法前台化，
+            // 但 appScope 仍在运行，前台返回后可继续。
+            if (!startForegroundServiceLogged(context, intent, "startForegroundService 受限，退化为 startService")) {
                 runCatching { context.startService(intent) }
             }
         }

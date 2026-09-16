@@ -328,19 +328,20 @@ class ChapterPaginator(
                 }
 
                 is FlowItem.Para -> {
+                    // 以下四项 zh/en 两分支完全相同，提到分支外避免两份拷贝。
+                    // 拆分片段的原文子区间基准：新段落从段首起，续段从切分点起
+                    // （页区间互斥是 offset→页 唯一映射的前提，见 pageForOffset）
+                    val base = if (isChunk) chunk!!.sourceBase else item.sourceStartOffset
+                    // 排版文本长度与原文区间长度可能不一致（译文文本按原文 offset 近似定位），
+                    // 子区间统一收口在段落原文范围内，保证互斥且不越界
+                    fun sourceEnd(len: Int) = (base + len).coerceIn(item.sourceStartOffset, item.sourceEndOffset)
+                    val cont = isChunk
+                    // 续段顶格：同段跨页的延续文本不带首行缩进（渲染端同口径）
+                    val paraStyle = if (cont) style.body.copy(textIndent = null) else style.body
                     if (mode == "zh") {
                         // zh 模式：以中文侧文本排版分页；英文书译文未就绪回退英文原文（ADR-003）
-                        val cont = isChunk
                         val text = if (isChunk) chunk!!.text
                             else item.cnText.ifBlank { item.enText.orEmpty() }
-                        // 拆分片段的原文子区间基准：新段落从段首起，续段从切分点起
-                        // （页区间互斥是 offset→页 唯一映射的前提，见 pageForOffset）
-                        val base = if (isChunk) chunk!!.sourceBase else item.sourceStartOffset
-                        // 排版文本长度与原文区间长度可能不一致（译文文本按原文 offset 近似定位），
-                        // 子区间统一收口在段落原文范围内，保证互斥且不越界
-                        fun sourceEnd(len: Int) = (base + len).coerceIn(item.sourceStartOffset, item.sourceEndOffset)
-                        // 续段顶格：同段跨页的延续文本不带首行缩进（渲染端同口径）
-                        val paraStyle = if (cont) style.body.copy(textIndent = null) else style.body
                         val layout = measureLayout(text, paraStyle)
                         val h = layout.size.height.toFloat()
                         val remaining = contentHeightPx - used
@@ -383,21 +384,12 @@ class ChapterPaginator(
                     } else {
                         // en 模式：以英文侧文本排版分页（中文侧通过弹窗显示，不参与排版测量）；
                         // 双语对只有两侧都在才成立（英文书译文未就绪时按单语英文原文排版，无气泡）
-                        val cont = isChunk
                         val en = if (isChunk) chunk!!.text
                             else item.enText?.takeIf { it.isNotBlank() } ?: item.cnText
-                        // 拆分片段的原文子区间基准：新段落从段首起，续段从切分点起
-                        // （页区间互斥是 offset→页 唯一映射的前提，见 pageForOffset）
-                        val base = if (isChunk) chunk!!.sourceBase else item.sourceStartOffset
-                        // 排版文本长度与原文区间长度可能不一致（译文文本按原文 offset 近似定位），
-                        // 子区间统一收口在段落原文范围内，保证互斥且不越界
-                        fun sourceEnd(len: Int) = (base + len).coerceIn(item.sourceStartOffset, item.sourceEndOffset)
                         // 切分片段与整段同口径：双语对的每个片段（含续段）渲染时都加
                         // 4dp top/bottom padding 和中文气泡（ADR-004），测量必须同样计入，
                         // 否则每片段凭空多出 8dp，页面内容逐段下移、仿真卷页起手上下断层
                         val hasTranslation = item.cnText.isNotBlank() && item.enText?.isNotBlank() == true
-                        // 续段顶格：同段跨页的延续文本不带首行缩进（渲染端同口径）
-                        val paraStyle = if (cont) style.body.copy(textIndent = null) else style.body
                         val enLayout = measureLayout(en, paraStyle)
                         val h = enLayout.size.height.toFloat()
                         // 双语对额外占位：PageBilingualParagraph 的 4dp top + 4dp bottom padding

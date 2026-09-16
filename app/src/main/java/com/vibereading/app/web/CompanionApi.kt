@@ -6,6 +6,7 @@ import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.domain.model.Book
 import com.vibereading.app.domain.model.BookShelfItem
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.domain.model.ReadingPosition
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.ui.reader.TranslationCoordinator
 import com.vibereading.app.ui.reader.content.ReadingContent
@@ -46,9 +47,7 @@ class CompanionApi(
                     book = book,
                     translatedCount = chapters.count { it.status == Chapter.STATUS_DONE },
                     lastReadChapterTitle = lastReadChapter?.title,
-                    progress = if (book.totalChapters > 0 && lastReadChapter != null) {
-                        (lastReadChapter.chapterIndex + 1).toFloat() / book.totalChapters
-                    } else 0f
+                    progress = BookShelfItem.progressOf(book.totalChapters, lastReadChapter?.chapterIndex)
                 )
             ),
             chapters = chapters.sortedBy { it.chapterIndex }.map { CompanionChapter.from(it) }
@@ -73,7 +72,7 @@ class CompanionApi(
      */
     suspend fun saveProgress(bookId: Long, chapterId: Long, offset: Int): Boolean {
         val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return false
-        val normalized = normalizeCompanionOffset(offset, chapter.content.length)
+        val normalized = ReadingPosition.clampOffset(offset, chapter.content.length)
         return bookRepo.updateLastReadProgress(bookId, chapterId, normalized)
     }
 

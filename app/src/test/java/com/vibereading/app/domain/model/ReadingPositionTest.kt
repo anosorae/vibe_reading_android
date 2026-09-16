@@ -30,4 +30,33 @@ class ReadingPositionTest {
     fun `normalized clamps to chapter length`() {
         assertEquals(ReadingPosition(1L, 4), ReadingPosition(1L, 20).normalized(4))
     }
+
+    // ── clampOffset：App 进度写入与 Web 伴读上报共用的归一化入口 ──
+
+    @Test
+    fun `clampOffset clamps negative offset to zero`() {
+        assertEquals(0, ReadingPosition.clampOffset(-5, 100))
+    }
+
+    @Test
+    fun `clampOffset keeps offset inside content`() {
+        assertEquals(42, ReadingPosition.clampOffset(42, 100))
+    }
+
+    @Test
+    fun `clampOffset clamps offset beyond content length to length`() {
+        assertEquals(100, ReadingPosition.clampOffset(150, 100))
+    }
+
+    @Test
+    fun `clampOffset handles empty chapter content`() {
+        assertEquals(0, ReadingPosition.clampOffset(10, 0))
+        assertEquals(0, ReadingPosition.clampOffset(-1, 0))
+    }
+
+    @Test
+    fun `clampOffset agrees with normalized`() {
+        val position = ReadingPosition(1L, 150)
+        assertEquals(position.normalized(100).offset, ReadingPosition.clampOffset(position.offset, 100))
+    }
 }

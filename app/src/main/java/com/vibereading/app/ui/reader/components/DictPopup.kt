@@ -18,19 +18,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.vibereading.app.domain.model.DictEntry
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.pagination.PageStyle
-import kotlin.math.roundToInt
 
 /**
  * 词典查询结果弹窗（离线 ECDICT）：显示在长按点附近，展示音标 / 词性 / 中文释义。
@@ -47,29 +41,12 @@ fun DictPopup(
     pageStyle: PageStyle,
     onDismiss: () -> Unit
 ) {
-    val density = LocalDensity.current
-    val gap = with(density) { 8.dp.roundToPx() }
-    val horizontalMargin = with(density) { 8.dp.roundToPx() }
     // 弹窗内样式不继承段落的缩进/两端对齐
     val popupBody = pageStyle.body.copy(textIndent = null, textAlign = TextAlign.Start)
     val popupCn = pageStyle.cn.copy(textIndent = null, textAlign = TextAlign.Start)
 
     Popup(
-        popupPositionProvider = object : PopupPositionProvider {
-            override fun calculatePosition(
-                anchorBounds: IntRect,
-                windowSize: IntSize,
-                layoutDirection: LayoutDirection,
-                popupSize: IntSize
-            ): IntOffset {
-                var x = (anchor.x - popupSize.width / 2f).roundToInt()
-                x = x.coerceIn(horizontalMargin, windowSize.width - popupSize.width - horizontalMargin)
-                // 上方优先，空间不足翻到下方
-                var y = (anchor.y - popupSize.height - gap).toInt()
-                if (y < horizontalMargin) y = (anchor.y + gap).toInt()
-                return IntOffset(x, y)
-            }
-        },
+        popupPositionProvider = SelectionPopupPositionProvider(LocalDensity.current) { anchor },
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true)
     ) {

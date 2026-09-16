@@ -2,12 +2,13 @@ package com.vibereading.app.data.repository
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.vibereading.app.data.local.AppDatabase
 import com.vibereading.app.domain.model.LlmProfile
+import com.vibereading.app.newInMemoryDb
+import com.vibereading.app.newPreferenceStore
+import com.vibereading.app.newTempPreferenceFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,10 +41,10 @@ class LlmProfileRepositoryTest {
 
     @Before
     fun setUp() {
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        db = newInMemoryDb()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        storeFile = File.createTempFile("vibe-llm-profiles", ".preferences_pb")
-        store = PreferenceDataStoreFactory.create(scope = scope, produceFile = { storeFile })
+        storeFile = newTempPreferenceFile("vibe-llm-profiles")
+        store = newPreferenceStore(scope, storeFile)
         repo = LlmProfileRepository(db.llmProfileDao(), SettingsRepository(context, store))
     }
 
@@ -54,23 +55,9 @@ class LlmProfileRepositoryTest {
         storeFile.delete()
     }
 
+    /** 直接落库一个档案（复用生产的 [toEntity] 映射，避免手抄字段导致漏测）。 */
     private suspend fun insertProfile(name: String, isActive: Boolean): Long =
-        db.llmProfileDao().insert(LlmProfile(name = name).let {
-            com.vibereading.app.data.local.entity.LlmProfileEntity(
-                name = it.name,
-                apiKey = it.apiKey,
-                apiBase = it.apiBase,
-                model = it.model,
-                chapterMaxChars = it.chapterMaxChars,
-                maxOutputTokens = it.maxOutputTokens,
-                enableThinking = it.enableThinking,
-                enableExplainThinking = it.enableExplainThinking,
-                autoTranslateNext = it.autoTranslateNext,
-                temperature = it.temperature,
-                topP = it.topP,
-                isActive = isActive
-            )
-        })
+        db.llmProfileDao().insert(LlmProfile(name = name).toEntity(isActive))
 
     @Test
     fun `updateProfile keeps isActive unchanged`() = runBlocking {

@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
+import com.vibereading.app.newTextMeasurer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,12 +42,7 @@ class ChapterPaginatorTest {
 
     @Before
     fun setUp() {
-        measurer = TextMeasurer(
-            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
-            androidx.compose.ui.unit.Density(1f),
-            LayoutDirection.Ltr,
-            64
-        )
+        measurer = newTextMeasurer()
     }
 
     private fun style(bottomJustify: Boolean = false): PageStyle = PageStyle(

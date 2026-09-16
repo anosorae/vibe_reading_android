@@ -44,12 +44,13 @@ object SourceLanguageDetector {
         return detect(qualified)
     }
 
+    /** 抽样文本：取前 [SAMPLE_PARAGRAPHS] 段正文拼接。
+     *  段落边界统一走 [ReadingContentParser]（识别 LF/CRLF/CR 与纯空白分隔行），
+     *  不再自行 `split("\n\n")`——那样会对 CRLF 正文静默失效。 */
     private fun sampleOf(text: String): String =
-        text.split("\n\n")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+        ReadingContentParser.parseParagraphs(text)
             .take(SAMPLE_PARAGRAPHS)
-            .joinToString("")
+            .joinToString("") { it.text }
 
     private fun ratioOf(sample: String): String {
         val cjkCount = CJK_REGEX.findAll(sample).count()

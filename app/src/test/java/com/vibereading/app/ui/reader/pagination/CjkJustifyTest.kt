@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
+import com.vibereading.app.newTextMeasurer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -39,12 +40,7 @@ class CjkJustifyTest {
 
     @Before
     fun setUp() {
-        measurer = TextMeasurer(
-            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
-            Density(1f),
-            LayoutDirection.Ltr,
-            64
-        )
+        measurer = newTextMeasurer()
     }
 
     private fun measure(text: AnnotatedString, style: TextStyle, width: Int) =

@@ -9,33 +9,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Web 伴读 JSON 层单测：offset 规范化语义 + 统一内容模型到伴读段落的映射
+ * Web 伴读 JSON 层单测：统一内容模型到伴读段落的映射
  * （offset 半开区间、插图段、无原文范围哨兵 -1）。
+ * offset 归一化语义由 `ReadingPositionTest#clampOffset` 覆盖（已收敛到 domain 单一入口）。
  */
 class CompanionJsonTest {
-
-    // ── offset 规范化（与 App 的半开区间/超长收敛语义一致） ──
-
-    @Test
-    fun `normalize clamps negative offset to zero`() {
-        assertEquals(0, normalizeCompanionOffset(-5, 100))
-    }
-
-    @Test
-    fun `normalize keeps offset inside content`() {
-        assertEquals(42, normalizeCompanionOffset(42, 100))
-    }
-
-    @Test
-    fun `normalize clamps offset beyond content length to length`() {
-        assertEquals(100, normalizeCompanionOffset(150, 100))
-    }
-
-    @Test
-    fun `normalize handles empty chapter content`() {
-        assertEquals(0, normalizeCompanionOffset(10, 0))
-        assertEquals(0, normalizeCompanionOffset(-1, 0))
-    }
 
     // ── 段落映射：单语章节 ──
 

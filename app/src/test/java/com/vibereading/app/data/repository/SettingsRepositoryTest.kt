@@ -2,9 +2,10 @@ package com.vibereading.app.data.repository
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.newPreferenceStore
+import com.vibereading.app.newTempPreferenceFile
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.junit.runner.RunWith
@@ -32,8 +33,8 @@ class SettingsRepositoryTest {
     @Before
     fun setUp() {
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        file = File.createTempFile("vibe-settings", ".preferences_pb")
-        store = PreferenceDataStoreFactory.create(scope = scope, produceFile = { file })
+        file = newTempPreferenceFile("vibe-settings")
+        store = newPreferenceStore(scope, file)
         repository = SettingsRepository(RuntimeEnvironment.getApplication(), store)
     }
 

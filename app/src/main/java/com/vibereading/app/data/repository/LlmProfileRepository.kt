@@ -103,34 +103,39 @@ class LlmProfileRepository(
         )
     }
 
-    private fun LlmProfileEntity.toDomain(): LlmProfile = LlmProfile(
-        id = id,
-        name = name,
-        apiKey = apiKey,
-        apiBase = apiBase,
-        model = model,
-        chapterMaxChars = chapterMaxChars,
-        maxOutputTokens = maxOutputTokens,
-        enableThinking = enableThinking,
-        enableExplainThinking = enableExplainThinking,
-        autoTranslateNext = autoTranslateNext,
-        temperature = temperature,
-        topP = topP
-    )
-
-    private fun LlmProfile.toEntity(isActive: Boolean): LlmProfileEntity = LlmProfileEntity(
-        id = id,
-        name = name,
-        apiKey = apiKey,
-        apiBase = apiBase,
-        model = model,
-        chapterMaxChars = chapterMaxChars,
-        maxOutputTokens = maxOutputTokens,
-        enableThinking = enableThinking,
-        enableExplainThinking = enableExplainThinking,
-        autoTranslateNext = autoTranslateNext,
-        temperature = temperature.coerceIn(0f, 2f),
-        topP = topP.coerceIn(0f, 1f),
-        isActive = isActive
-    )
 }
+
+// ── 实体 ↔ 领域模型映射 ──
+// 放在文件顶层且为 internal：单测直接复用同一份映射，不再手抄 13 个字段
+// （此前加字段时测试会静默漏测）。
+
+internal fun LlmProfileEntity.toDomain(): LlmProfile = LlmProfile(
+    id = id,
+    name = name,
+    apiKey = apiKey,
+    apiBase = apiBase,
+    model = model,
+    chapterMaxChars = chapterMaxChars,
+    maxOutputTokens = maxOutputTokens,
+    enableThinking = enableThinking,
+    enableExplainThinking = enableExplainThinking,
+    autoTranslateNext = autoTranslateNext,
+    temperature = temperature,
+    topP = topP
+)
+
+internal fun LlmProfile.toEntity(isActive: Boolean): LlmProfileEntity = LlmProfileEntity(
+    id = id,
+    name = name,
+    apiKey = apiKey,
+    apiBase = apiBase,
+    model = model,
+    chapterMaxChars = chapterMaxChars,
+    maxOutputTokens = maxOutputTokens,
+    enableThinking = enableThinking,
+    enableExplainThinking = enableExplainThinking,
+    autoTranslateNext = autoTranslateNext,
+    temperature = temperature.coerceIn(0f, 2f),
+    topP = topP.coerceIn(0f, 1f),
+    isActive = isActive
+)

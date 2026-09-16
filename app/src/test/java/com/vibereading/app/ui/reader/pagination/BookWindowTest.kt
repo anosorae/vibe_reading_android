@@ -7,6 +7,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.newTextMeasurer
+import com.vibereading.app.testPageStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -43,22 +45,12 @@ class BookWindowTest {
 
     @Before
     fun setUp() {
-        measurer = TextMeasurer(
-            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
-            androidx.compose.ui.unit.Density(1f),
-            LayoutDirection.Ltr,
-            64
-        )
+        measurer = newTextMeasurer()
     }
 
     private fun window(mode: String = "zh") = BookWindow(
         chapters = chapters,
-        style = PageStyle(
-            body = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp),
-            cn = TextStyle(fontFamily = FontFamily.Default, fontSize = 14.sp, lineHeight = 21.sp),
-            title = TextStyle(fontFamily = FontFamily.Default, fontSize = 20.sp, lineHeight = 28.sp),
-            paragraphSpacingPx = 10f
-        ),
+        style = testPageStyle(),
         mode = mode,
         contentWidthPx = 400f,
         contentHeightPx = 600f,
@@ -193,12 +185,7 @@ class BookWindowTest {
         )
         val w = BookWindow(
             chapters = listOf(chapter),
-            style = PageStyle(
-                body = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp),
-                cn = TextStyle(fontFamily = FontFamily.Default, fontSize = 14.sp, lineHeight = 21.sp),
-                title = TextStyle(fontFamily = FontFamily.Default, fontSize = 20.sp, lineHeight = 28.sp),
-                paragraphSpacingPx = 10f
-            ),
+            style = testPageStyle(),
             mode = "zh",
             contentWidthPx = 400f,
             contentHeightPx = 600f,
@@ -231,12 +218,7 @@ class BookWindowTest {
         )
         val w = BookWindow(
             chapters = listOf(chapter),
-            style = PageStyle(
-                body = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp),
-                cn = TextStyle(fontFamily = FontFamily.Default, fontSize = 14.sp, lineHeight = 21.sp),
-                title = TextStyle(fontFamily = FontFamily.Default, fontSize = 20.sp, lineHeight = 28.sp),
-                paragraphSpacingPx = 10f
-            ),
+            style = testPageStyle(),
             mode = "zh",
             contentWidthPx = 300f,
             contentHeightPx = 400f,
@@ -271,12 +253,7 @@ class BookWindowTest {
         }
         val w = BookWindow(
             chapters = cnChapters,
-            style = PageStyle(
-                body = TextStyle(fontFamily = FontFamily.Default, fontSize = 16.sp, lineHeight = 24.sp),
-                cn = TextStyle(fontFamily = FontFamily.Default, fontSize = 14.sp, lineHeight = 21.sp),
-                title = TextStyle(fontFamily = FontFamily.Default, fontSize = 20.sp, lineHeight = 28.sp),
-                paragraphSpacingPx = 10f
-            ),
+            style = testPageStyle(),
             mode = "en",
             contentWidthPx = 300f,
             contentHeightPx = 500f,

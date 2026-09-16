@@ -1,18 +1,15 @@
 package com.vibereading.app.web
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.Uri
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.provider.Settings
@@ -25,6 +22,9 @@ import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.TranslationForegroundService
+import com.vibereading.app.log.createQuietNotificationChannel
+import com.vibereading.app.log.startForegroundDataSync
+import com.vibereading.app.log.startForegroundServiceLogged
 import com.vibereading.app.ui.reader.TranslationCoordinatorProvider
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -151,20 +151,8 @@ class WebCompanionService : Service() {
     }
 
     private fun startForegroundCompat(running: Boolean) {
-        val notification = buildNotification(running)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                androidx.core.app.ServiceCompat.startForeground(
-                    this, NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-        } catch (e: Exception) {
-            AppLog.put("伴读前台通知创建失败", e)
-            stopSelf()
-        }
+        val ok = startForegroundDataSync(NOTIFICATION_ID, buildNotification(running), "伴读前台通知创建失败")
+        if (!ok) stopSelf()
     }
 
     private fun buildNotification(running: Boolean): Notification {
@@ -325,13 +313,10 @@ class WebCompanionService : Service() {
             currentToken = token
             _urlFlow.value = currentUrl()
             val intent = Intent(context, WebCompanionService::class.java).putExtra(EXTRA_TOKEN, token)
-            try {
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-            } catch (e: Exception) {
+            if (!startForegroundServiceLogged(context, intent, "伴读服务 startForegroundService 失败")) {
                 isRunning = false
                 currentToken = null
                 _urlFlow.value = null
-                AppLog.put("伴读服务 startForegroundService 失败", e)
             }
         }
 
@@ -344,21 +329,8 @@ class WebCompanionService : Service() {
         }
 
         /** 注册通知渠道，在 Application.onCreate 调用一次。 */
-        fun createNotificationChannel(context: Context) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Web 伴读服务",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                enableLights(false)
-                enableVibration(false)
-                setSound(null, null)
-                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
-            }
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
-        }
+        fun createNotificationChannel(context: Context) =
+            createQuietNotificationChannel(context, CHANNEL_ID, "Web 伴读服务")
 
         /** 128-bit 随机 Token，URL 安全字符集。 */
         private fun newToken(): String {

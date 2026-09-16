@@ -3,6 +3,7 @@ package com.vibereading.app.data.local.dao
 import androidx.room.*
 import com.vibereading.app.data.local.entity.BookEntity
 import com.vibereading.app.data.local.entity.ChapterEntity
+import com.vibereading.app.domain.model.Chapter
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -24,11 +25,12 @@ interface BookDao {
 
     /** 书架关联查询：含派生译文数与 lastReadChapter 关系，供书架列表/网格展示进度。 */
     @Transaction
-    @Query("""
-        SELECT books.*,
-            (SELECT COUNT(*) FROM chapters WHERE chapters.bookId = books.id AND chapters.status = 2) AS translatedCount
-        FROM books
-    """)
+    @Query(
+        // 状态值拼接 Chapter.STATUS_DONE：注解参数须为编译期常量，字符串模板不允许
+        "SELECT books.*, (SELECT COUNT(*) FROM chapters " +
+            "WHERE chapters.bookId = books.id AND chapters.status = " + Chapter.STATUS_DONE + ") " +
+            "AS translatedCount FROM books"
+    )
     fun getBooksWithProgress(): Flow<List<BookWithProgress>>
 
     @Query("SELECT * FROM books WHERE id = :id")

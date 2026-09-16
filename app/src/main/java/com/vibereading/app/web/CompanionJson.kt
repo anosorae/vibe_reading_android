@@ -132,10 +132,3 @@ data class CompanionResult(val ok: Boolean, val error: String? = null, val data:
         fun failure(error: String) = CompanionResult(ok = false, error = error)
     }
 }
-
-/**
- * 把客户端上报的阅读 offset 规范化到章节原文长度内（半开区间）：
- * 负值取 0，超过章节长度按内容长度收敛。与 App 的 offset 规范化语义一致。
- */
-fun normalizeCompanionOffset(offset: Int, contentLength: Int): Int =
-    offset.coerceIn(0, contentLength.coerceAtLeast(0))

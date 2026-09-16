@@ -68,19 +68,12 @@ fun ReaderScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val flushScope = rememberCoroutineScope()
     val readingSettings = state.readingSettings
-    val bgPresets = listOf(
-        ReaderBgPresets.WarmCream,
-        ReaderBgPresets.DarkCream,
-        ReaderBgPresets.GreenTint,
-        ReaderBgPresets.GrayCream,
-        ReaderBgPresets.DarkNight
-    )
     val rawBgColor = if (state.nightMode) ReaderBgPresets.DarkNight
-    else bgPresets.getOrElse(readingSettings.bgColorIndex) { ReaderBgPresets.WarmCream }
+    else ReaderBgPresets.all.getOrElse(readingSettings.bgColorIndex) { ReaderBgPresets.WarmCream }
     // rememberUpdatedState 确保手势协程（pointerInput）内始终读到最新值，
     // 避免切换阅读背景后仿真卷页位图仍使用旧主题颜色。
     val bgColor by rememberUpdatedState(rawBgColor)
-    val isDark = state.nightMode || readingSettings.bgColorIndex == 4
+    val isDark = state.nightMode || ReaderBgPresets.isDark(readingSettings.bgColorIndex)
     val flipMode = readingSettings.pageFlipMode
     val isPagerMode = flipMode != ReadingSettings.FLIP_SCROLL
     val accentColor = MaterialTheme.colorScheme.primary

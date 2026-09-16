@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
+import com.vibereading.app.newTextMeasurer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -44,12 +45,7 @@ class LatinJustifyLetterSpacingTest {
 
     @Before
     fun setUp() {
-        measurer = TextMeasurer(
-            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
-            Density(2.625f),
-            LayoutDirection.Ltr,
-            64
-        )
+        measurer = newTextMeasurer(Density(2.625f))
     }
 
     private val english = "The quick brown fox jumps over the lazy dog. " +

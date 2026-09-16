@@ -50,6 +50,27 @@ class SourceLanguageDetectorTest {
         assertEquals(SourceLanguageDetector.ZH, SourceLanguageDetector.detect("$sample\n\n$tail"))
     }
 
+    // ── 段落边界走 ReadingContentParser（不再自建 split("\n\n")） ──
+
+    @Test
+    fun `crlf separated text samples first paragraphs`() {
+        // CRLF 正文：旧实现 split("\n\n") 对 "\r\n\r\n" 不生效，整章被当成一段
+        val sample = (0 until 20).joinToString("\r\n\r\n") { "第${it}段中文内容。" }
+        val tail = (0 until 50).joinToString("\r\n\r\n") {
+            "This is English paragraph number $it with enough words."
+        }
+        assertEquals(SourceLanguageDetector.ZH, SourceLanguageDetector.detect("$sample\r\n\r\n$tail"))
+    }
+
+    @Test
+    fun `whitespace only separator line splits paragraphs`() {
+        val sample = (0 until 20).joinToString("\n \n") { "第${it}段中文内容。" }
+        val tail = (0 until 50).joinToString("\n \n") {
+            "This is English paragraph number $it with enough words."
+        }
+        assertEquals(SourceLanguageDetector.ZH, SourceLanguageDetector.detect("$sample\n \n$tail"))
+    }
+
     // ── detectFirstNonBlank：跳过空首章/纯封面页（EPUB 卷首回归） ──
 
     @Test

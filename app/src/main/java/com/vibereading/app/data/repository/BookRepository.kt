@@ -34,7 +34,11 @@ class BookRepository(private val bookDao: BookDao) {
     suspend fun delete(id: Long) =
         bookDao.deleteById(id)
 
-    /** 保存阅读进度：记录章节及原文字符 offset。 */
+    /**
+     * 保存阅读进度：记录章节及原文字符 offset。
+     * [offset] 需由调用方按章节内容长度归一化（此处不读章节，无法补上界），
+     * 统一用 [ReadingPosition.clampOffset]；本方法只兜底下界。
+     */
     suspend fun updateLastReadProgress(bookId: Long, chapterId: Long, offset: Int): Boolean =
         bookDao.updateLastReadProgress(bookId, chapterId, offset.coerceAtLeast(0), System.currentTimeMillis()) > 0
 
@@ -68,8 +72,6 @@ class BookRepository(private val bookDao: BookDao) {
         book = book.toDomain(),
         translatedCount = translatedCount,
         lastReadChapterTitle = lastReadChapter?.title,
-        progress = if (book.totalChapters > 0 && lastReadChapter != null) {
-            (lastReadChapter.chapterIndex + 1).toFloat() / book.totalChapters
-        } else 0f
+        progress = BookShelfItem.progressOf(book.totalChapters, lastReadChapter?.chapterIndex)
     )
 }

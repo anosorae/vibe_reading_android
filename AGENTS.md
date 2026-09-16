@@ -33,6 +33,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/components/TextSelection.kt` — 长按选词：`TextSelectionState`、`SelectableParagraphText`、`findWordBoundary`（BreakIterator 分词）
     - `reader/components/SelectionHandles.kt` — 选词双端拖拽手柄（屏幕级覆盖层，ReaderScreen 层级渲染，拖拽扩展选区）
     - `reader/components/SelectionToolbar.kt` — 选词工具栏（查词/复制/解释）
+    - `reader/components/SelectionPopupPositionProvider.kt` — 选词相关弹窗（工具栏/词典/解释）共用的定位策略唯一实现
     - `reader/components/DictPopup.kt` — 词典查询结果弹窗
     - `reader/components/IllustrationBlock.kt` — 正文插图块（分页固定高/滚动自然高）与全屏预览叠加层（双指缩放）
     - `reader/components/ExplainPopup.kt` — LLM 单词解释结果弹窗（`WordExplanation`）
@@ -51,14 +52,14 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/pagination/PageCurl.kt` — Legado 仿真卷页几何移植
     - `reader/pagination/ReaderFonts.kt` — 字体解析单一数据源：内置开源字体目录（多镜像下载）、系统字体映射、SAF 导入 URI 解析；中英槽位按字形过滤
     - `reader/pagination/ReaderMetrics.kt` — 排版、标题、双语 padding、气泡尺寸共享常量
-  - `log/` — 三层日志：`AppLog`（内存环形缓冲，最新在前上限 100）、`LogUtils`+`AsyncFileHandler`（`java.util.logging` 异步写 `<externalCacheDir>/logs/`）、`CrashHandler`（全局未捕获异常落盘 `<externalCacheDir>/crash/`，内含 `CrashMark` 标志位）、`CrashLogFiles`（崩溃文件列表/读取/删除）、`LogContext`（进程级 Context + 单线程后台执行器）
+  - `log/` — 三层日志：`AppLog`（内存环形缓冲，最新在前上限 100）、`LogUtils`+`AsyncFileHandler`（`java.util.logging` 异步写 `<externalCacheDir>/logs/`）、`CrashHandler`（全局未捕获异常落盘 `<externalCacheDir>/crash/`，内含 `CrashMark` 标志位）、`CrashLogFiles`（崩溃文件列表/读取/删除）、`LogContext`（进程级 Context + 单线程后台执行器）、`ForegroundServiceSupport`（两个前台服务共用的「提升为前台 / 注册低打扰通知渠道 / 启动服务」样板）
   - `log/TranslationForegroundService.kt` — 翻译前台服务：翻译期间前台通知 + partial wake lock + WiFi lock，后台保持 SSE 长连接不断（服务本身不运行翻译逻辑）
   - `web/` — Web 伴读服务（ADR-005，局域网网页阅读手机书库）：`CompanionServer.kt`（NanoHTTPD 内嵌服务器：路由分发、Token 校验、静态页与封面/插图二进制响应，suspend 业务经 runBlocking 桥接）、`CompanionApi.kt`（伴读业务处理：书架/章节/正文只读 + 进度回写 + languageMode 切换 + 翻译「开始/重试」触发，不提供导入删书与配置管理）、`CompanionJson.kt`（伴读 JSON DTO 与 `normalizeCompanionOffset` 规范化）、`WebCompanionService.kt`（伴读前台服务：通知栏展示含 Token 地址 + WakeLock/WifiLock + 端口 9700，Token 由 `start()` 生成经 Intent 传入；通知带「停止服务」动作；覆盖 `onTimeout` 处理 Android 15 `dataSync` 前台服务的每日时长上限，到点停服务并发一条可划掉的说明通知）
   - `app/src/main/assets/web/index.html` — 伴读单页前端（无构建原生 JS，随 APK 打包）：书架/阅读/目录抽屉，点击段落展开另一侧文本，进度定位与防抖回写，翻译状态 4s 轮询
   - `MainActivity.kt` — 唯一 Activity，`enableEdgeToEdge` + `VibeReadingTheme { AppNavigation() }`
   - `ui/log/LogViewerScreen.kt` — 日志查看器：运行日志/崩溃日志双 Tab，清除与复制
   - `VibeReadingApp.kt` — Application，持有 Room 单例；`onCreate` 中先装 `CrashHandler` 再 `AppLog.init`/`LogUtils.init`/`logDeviceInfo`，并注册翻译/伴读两个通知渠道
-- `app/src/test/java/` — LLM/SSE、迁移、DAO、设置仓库、解析器、阅读位置、分页窗口、仿真/手势、位图渲染、选词分词、词典查询、翻译状态机与伴读 JSON 层单测
+- `app/src/test/java/` — LLM/SSE、迁移、DAO、设置仓库、解析器、阅读位置、分页窗口、仿真/手势、位图渲染、选词分词、词典查询、翻译状态机与伴读 JSON 层单测。共用夹具集中在 `TestFixtures.kt`（`newTextMeasurer`/`testPageStyle`/`newInMemoryDb`/`seedBookAndChapters`/`newPreferenceStore`/`inMemoryPreferenceStore`），`FakeTranslationService.kt` 独立成文件；新增测试不要再手写这些样板
 - `docs/` — ADR 文档
 - `reference_code/legado-E/` — Legado 开源阅读器参考源码，**只读，禁止修改**。
 - `tools/build_dict_db.py` — 词典库构建脚本（CSV → 四列 SQLite → gzip 资产）
@@ -122,7 +123,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 
 ## 复用与内聚
 
-- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，中文两端对齐用 `CjkJustifier`，章节状态颜色用 `chapterStatusColor`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
+- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，中文两端对齐用 `CjkJustifier`，章节状态颜色/提示用 `chapterStatusColor`/`chapterStatusHint`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`（offset 归一化走 `ReadingPosition.clampOffset`），书架进度用 `BookShelfItem.progressOf`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，选词弹窗定位用 `SelectionPopupPositionProvider`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，阅读背景档位用 `ReaderBgPresets.all`/`isDark`，前台服务样板用 `log/ForegroundServiceSupport`，设备信息用 `LogUtils.deviceInfoText`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
 - 错误路径（`catch` / `Result.exceptionOrNull()`）除了写 UI 状态外，应调用 `AppLog.put(msg, throwable)` 落日志，便于用户在「设置 → 调试 → 日志」中定位 bug；不要散落 `android.util.Log` 或 `printStackTrace`。
 - 修改跨组件概念前先搜索其单一数据源；不要在组件内复制常量或重新解析章节文本。
 - 共享 Composable 优先复用 `ReadingChapterTitle`、`ReadingParagraphItem`、`BilingualParagraph`；新增视觉差异应通过参数表达，而不是复制组件。

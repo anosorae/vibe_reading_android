@@ -178,11 +178,7 @@ class BookshelfViewModel(
             ?: fileName.removeSuffix(".epub").ifBlank { "未知书名" }
         // 跳过「卷首」等空/纯封面章节取首个有足够文本的章节判定（ADR-003）
         val sourceLanguage = SourceLanguageDetector.detectFirstNonBlank(
-            parsed.chapters.map { chapter ->
-                chapter.paragraphs
-                    .filterIsInstance<EpubParser.Paragraph.Text>()
-                    .joinToString("\n\n") { it.value }
-            }
+            EpubParser.chapterTextsForDetection(parsed)
         )
 
         val newBook = Book(

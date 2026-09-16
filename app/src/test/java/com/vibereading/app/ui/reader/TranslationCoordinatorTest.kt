@@ -1,10 +1,9 @@
 package com.vibereading.app.ui.reader
 
 import android.content.Context
-import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.vibereading.app.FakeTranslationService
 import com.vibereading.app.data.local.AppDatabase
-import com.vibereading.app.data.local.entity.BookEntity
 import com.vibereading.app.data.local.entity.ChapterEntity
 import com.vibereading.app.data.remote.TranslationEvent
 import com.vibereading.app.data.remote.TranslationService
@@ -12,6 +11,8 @@ import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.parser.IllustrationLink
+import com.vibereading.app.newInMemoryDb
+import com.vibereading.app.seedBookAndChapters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,32 +29,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-
-/** 可配置事件序列的假翻译服务，记录最后一次调用的入参。 */
-class FakeTranslationService(
-    var events: List<TranslationEvent> = emptyList()
-) : TranslationService {
-    var lastTitle: String? = null
-    var lastContent: String? = null
-    var lastSourceLanguage: String? = null
-    var callCount = 0
-
-    override fun translateStream(
-        settings: LlmSettings,
-        chapterTitle: String,
-        chapterContent: String,
-        sourceLanguage: String
-    ): Flow<TranslationEvent> = flow {
-        callCount++
-        lastTitle = chapterTitle
-        lastContent = chapterContent
-        lastSourceLanguage = sourceLanguage
-        emit(TranslationEvent.Started)
-        events.forEach { emit(it) }
-    }
-
-    override suspend fun testConnection(settings: LlmSettings): Result<String> = Result.success("ok")
-}
 
 /**
  * TranslationCoordinator 回归测试。
@@ -75,15 +50,13 @@ class TranslationCoordinatorTest {
 
     @Before
     fun setUp() {
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        db = newInMemoryDb()
         chapterRepo = ChapterRepository(db.chapterDao())
         scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         runBlocking {
-            db.bookDao().insert(
-                BookEntity(id = bookId, title = "测试书", totalChapters = 1, lastReadAt = 1L, createdAt = 1L)
-            )
-            val ids = db.chapterDao().insertAll(
-                listOf(ChapterEntity(bookId = bookId, title = "第一章", chapterIndex = 0, content = "正文"))
+            val ids = seedBookAndChapters(
+                db, bookId = bookId, chapterCount = 1,
+                chapterTitle = { "第一章" }, chapterContent = { "正文" }
             )
             chapterId = ids[0]
             chapter = chapterRepo.getChapterById(bookId, chapterId)!!

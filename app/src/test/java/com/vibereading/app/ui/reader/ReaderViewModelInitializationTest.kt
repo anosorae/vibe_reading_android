@@ -1,35 +1,29 @@
 package com.vibereading.app.ui.reader
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.viewModelScope
-import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.vibereading.app.FakeTranslationService
 import com.vibereading.app.VibeReadingApp
-import com.vibereading.app.data.local.AppDatabase
-import com.vibereading.app.data.local.entity.BookEntity
-import com.vibereading.app.data.local.entity.ChapterEntity
-import com.vibereading.app.domain.model.ReadingPosition
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
+import com.vibereading.app.domain.model.ReadingPosition
 import com.vibereading.app.domain.model.ReadingSettings
+import com.vibereading.app.inMemoryPreferenceStore
+import com.vibereading.app.newInMemoryDb
+import com.vibereading.app.seedBookAndChapters
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,19 +37,16 @@ class ReaderViewModelInitializationTest {
     fun `opening loads saved chapter before full book and preserves restored offset`() = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val app = ApplicationProvider.getApplicationContext<VibeReadingApp>()
-        val db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java).build()
-        val store = object : DataStore<Preferences> {
-            override val data = MutableStateFlow(emptyPreferences())
-            override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
-                transform(data.value).also { data.value = it }
-        }
+        val db = newInMemoryDb()
+        val store = inMemoryPreferenceStore()
         val settings = SettingsRepository(app, store)
         var vm: ReaderViewModel? = null
         try {
-            db.bookDao().insert(BookEntity(id = 1, title = "测试", totalChapters = 3, lastReadAt = 1, createdAt = 1))
-            val ids = db.chapterDao().insertAll((0..2).map {
-                ChapterEntity(bookId = 1, title = "章节$it", chapterIndex = it, content = "正文".repeat(100))
-            })
+            val ids = seedBookAndChapters(
+                db, bookId = 1L, chapterCount = 3,
+                bookTitle = "测试", chapterTitle = { "章节$it" },
+                chapterContent = { "正文".repeat(100) }
+            )
             val books = BookRepository(db.bookDao())
             books.updateLastReadProgress(1, ids[1], 42)
             settings.saveReadingSettings(ReadingSettings(fontSize = 23))
@@ -95,14 +86,10 @@ class ReaderViewModelInitializationTest {
     private fun checkInitialization(cached: Boolean) = runTest {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
         val app = ApplicationProvider.getApplicationContext<VibeReadingApp>()
-        val db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java).build()
+        val db = newInMemoryDb()
         val ready = CompletableDeferred<Unit>().apply { if (cached) complete(Unit) }
-        val values = MutableStateFlow(emptyPreferences())
-        val store = object : DataStore<Preferences> {
-            override val data = flow { ready.await(); emitAll(values) }
-            override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences =
-                transform(values.value).also { values.value = it }
-        }
+        // gate 非空：首次收集 data 先等待 ready，模拟未预热的 DataStore 冷启动
+        val store = inMemoryPreferenceStore(gate = ready)
         val settings = SettingsRepository(app, store)
         try {
             settings.saveReadingSettings(ReadingSettings(fontSize = 21, paragraphSpacing = 25))

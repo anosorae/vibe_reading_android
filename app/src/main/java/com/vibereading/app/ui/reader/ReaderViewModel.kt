@@ -352,38 +352,37 @@ class ReaderViewModel(
         }
     }
 
+    /**
+     * 打开浮层：浮层与工具栏互斥，本次为首次打开时收起工具栏。
+     * [isVisible] 与 [open] 都在 `update` 闭包内求值，保持状态变更的原子性。
+     */
+    private fun openOverlay(
+        isVisible: ReaderUiState.() -> Boolean,
+        open: ReaderUiState.() -> ReaderUiState
+    ) {
+        _uiState.update { state ->
+            val opening = !state.isVisible()
+            state.open().copy(toolbarVisible = if (opening) false else state.toolbarVisible)
+        }
+    }
+
     fun toggleToolbar() {
         _uiState.update { it.copy(toolbarVisible = !it.toolbarVisible) }
     }
 
-    fun toggleCatalog() {
-        _uiState.update {
-            val opening = !it.catalogVisible
-            it.copy(catalogVisible = true, toolbarVisible = if (opening) false else it.toolbarVisible)
-        }
-    }
+    fun toggleCatalog() = openOverlay({ catalogVisible }) { copy(catalogVisible = true) }
 
     fun dismissCatalog() {
         _uiState.update { it.copy(catalogVisible = false, toolbarVisible = true) }
     }
 
-    fun toggleSettings() {
-        _uiState.update {
-            val opening = !it.settingsVisible
-            it.copy(settingsVisible = true, toolbarVisible = if (opening) false else it.toolbarVisible)
-        }
-    }
+    fun toggleSettings() = openOverlay({ settingsVisible }) { copy(settingsVisible = true) }
 
     fun dismissSettings() {
         _uiState.update { it.copy(settingsVisible = false, toolbarVisible = true) }
     }
 
-    fun toggleLlmSettings() {
-        _uiState.update {
-            val opening = !it.llmSettingsVisible
-            it.copy(llmSettingsVisible = true, toolbarVisible = if (opening) false else it.toolbarVisible)
-        }
-    }
+    fun toggleLlmSettings() = openOverlay({ llmSettingsVisible }) { copy(llmSettingsVisible = true) }
 
     fun dismissLlmSettings() {
         llmEditDirty = false
@@ -469,66 +468,36 @@ class ReaderViewModel(
 
     // ── 翻译参数（解绑自 LLM 配置，即时持久化到活跃 profile） ──
 
-    fun updateLlmChapterMaxChars(value: Int) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(chapterMaxChars = value)) }
+    /**
+     * 更新活跃档案的一组翻译参数：UI 状态即时生效，同一组参数异步落库。
+     * 无活跃档案时只更新运行时状态（不落库），与逐字段实现的原行为一致。
+     */
+    private fun updateActiveProfile(transform: (LlmSettings) -> LlmSettings) {
+        val updated = transform(_uiState.value.llmSettings)
+        _uiState.update { it.copy(llmSettings = updated) }
         viewModelScope.launch {
             val id = _uiState.value.activeProfileId ?: return@launch
             val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(chapterMaxChars = value), isActive = true)
+            llmProfileRepo.updateProfileWithActiveState(
+                updated.toLlmProfile(name = profile.name, id = profile.id),
+                isActive = true
+            )
         }
     }
-    fun updateLlmMaxOutputTokens(value: Int) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(maxOutputTokens = value)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(maxOutputTokens = value), isActive = true)
-        }
-    }
-    fun updateLlmThinking(enabled: Boolean) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableThinking = enabled)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableThinking = enabled), isActive = true)
-        }
-    }
-    fun updateLlmExplainThinking(enabled: Boolean) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(enableExplainThinking = enabled)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(enableExplainThinking = enabled), isActive = true)
-        }
-    }
+
+    fun updateLlmChapterMaxChars(value: Int) = updateActiveProfile { it.copy(chapterMaxChars = value) }
+    fun updateLlmMaxOutputTokens(value: Int) = updateActiveProfile { it.copy(maxOutputTokens = value) }
+    fun updateLlmThinking(enabled: Boolean) = updateActiveProfile { it.copy(enableThinking = enabled) }
+    fun updateLlmExplainThinking(enabled: Boolean) = updateActiveProfile { it.copy(enableExplainThinking = enabled) }
+
     fun updateLlmAutoTranslateNext(enabled: Boolean) {
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(autoTranslateNext = enabled)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(autoTranslateNext = enabled), isActive = true)
-        }
+        updateActiveProfile { it.copy(autoTranslateNext = enabled) }
         // 打开开关时立即预译下一章（无需等到下次切章），并让目录圆点立刻反映
         if (enabled) prefetchNextChapterIfNeeded()
     }
-    fun updateLlmTemperature(value: Float) {
-        val clamped = value.coerceIn(0f, 2f)
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(temperature = clamped)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(temperature = clamped), isActive = true)
-        }
-    }
-    fun updateLlmTopP(value: Float) {
-        val clamped = value.coerceIn(0f, 1f)
-        _uiState.update { it.copy(llmSettings = it.llmSettings.copy(topP = clamped)) }
-        viewModelScope.launch {
-            val id = _uiState.value.activeProfileId ?: return@launch
-            val profile = _uiState.value.profiles.find { it.id == id } ?: return@launch
-            llmProfileRepo.updateProfileWithActiveState(profile.copy(topP = clamped), isActive = true)
-        }
-    }
+
+    fun updateLlmTemperature(value: Float) = updateActiveProfile { it.copy(temperature = value.coerceIn(0f, 2f)) }
+    fun updateLlmTopP(value: Float) = updateActiveProfile { it.copy(topP = value.coerceIn(0f, 1f)) }
 
     private fun currentEditedLlmSettings(): LlmSettings =
         _uiState.value.llmSettings.copy(

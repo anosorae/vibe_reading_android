@@ -44,13 +44,7 @@ fun ReaderSettingsSheet(
     onUpdate: (ReadingSettings) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val bgPresets = listOf(
-        ReaderBgPresets.WarmCream,
-        ReaderBgPresets.DarkCream,
-        ReaderBgPresets.GreenTint,
-        ReaderBgPresets.GrayCream,
-        ReaderBgPresets.DarkNight
-    )
+    val bgPresets = ReaderBgPresets.all
     val flipModes = listOf(
         ReadingSettings.FLIP_PAGER to "平移",
         ReadingSettings.FLIP_SIMULATION to "仿真",

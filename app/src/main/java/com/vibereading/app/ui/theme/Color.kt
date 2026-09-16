@@ -83,4 +83,12 @@ object ReaderBgPresets {
     val GreenTint = Color(0xFFF0F4EE)
     val GrayCream = Color(0xFFEEECE8)
     val DarkNight = Color(0xFF2C2825)
+
+    /** 阅读背景档位，**顺序即 `ReadingSettings.bgColorIndex` 的取值语义**：只能追加在末尾，不得插入或重排。 */
+    val all: List<Color> = listOf(WarmCream, DarkCream, GreenTint, GrayCream, DarkNight)
+
+    /** 深色档位下标（顶栏/底栏/浮层据此取深色或浅色语义色）。 */
+    private val darkIndices: Set<Int> = setOf(all.indexOf(DarkNight))
+
+    fun isDark(index: Int): Boolean = index in darkIndices
 }

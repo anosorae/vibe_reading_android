@@ -63,7 +63,8 @@ class CrashHandler(private val context: Context) : Thread.UncaughtExceptionHandl
         @Synchronized
         private fun saveCrashInfoToFile(context: Context, ex: Throwable) {
             val sb = StringBuilder()
-            appendDeviceInfo(context, sb)
+            // 与启动日志共用同一份设备信息（崩溃路径跳过 WebView UA 以免加载 provider）
+            sb.append(LogUtils.deviceInfoText(context, includeUserAgent = false))
             val writer = StringWriter()
             val printWriter = PrintWriter(writer)
             ex.printStackTrace(printWriter)
@@ -87,20 +88,6 @@ class CrashHandler(private val context: Context) : Thread.UncaughtExceptionHandl
                     if (it.lastModified() < expireTime) it.delete()
                 }
                 File(crashFolder, fileName).writeText(sb.toString())
-            }
-        }
-
-        private fun appendDeviceInfo(context: Context, sb: StringBuilder) {
-            runCatching {
-                sb.append("MANUFACTURER=").append(Build.MANUFACTURER).append("\n")
-                sb.append("BRAND=").append(Build.BRAND).append("\n")
-                sb.append("MODEL=").append(Build.MODEL).append("\n")
-                sb.append("SDK_INT=").append(Build.VERSION.SDK_INT).append("\n")
-                sb.append("RELEASE=").append(Build.VERSION.RELEASE).append("\n")
-                sb.append("packageName=").append(context.packageName).append("\n")
-                sb.append("heapSize=").append(Runtime.getRuntime().maxMemory()).append("\n")
-                sb.append("versionName=").append(BuildConfig.VERSION_NAME).append("\n")
-                sb.append("versionCode=").append(BuildConfig.VERSION_CODE).append("\n")
             }
         }
     }

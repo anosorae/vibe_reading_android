@@ -23,29 +23,24 @@ object AppLog {
         LogContext.init(context)
     }
 
-    @Synchronized
-    fun put(message: String?, throwable: Throwable? = null, toast: Boolean = false) {
-        message ?: return
-        if (toast) toastOnUi(message)
-        if (mLogs.size > MAX_SIZE) mLogs.removeLastOrNull()
-        if (throwable == null) {
-            LogUtils.d("AppLog", message)
-        } else {
-            LogUtils.d("AppLog", "$message\n${throwable.stackTraceToString()}")
-        }
-        mLogs.add(0, Triple(System.currentTimeMillis(), message, throwable))
-        if (com.vibereading.app.BuildConfig.DEBUG) {
-            val caller = Thread.currentThread().stackTrace.elementAtOrNull(3)?.className ?: "AppLog"
-            android.util.Log.e(caller, message, throwable)
-        }
-    }
+    fun put(message: String?, throwable: Throwable? = null, toast: Boolean = false) =
+        record(message, throwable, toast, persist = true)
 
     /** 不写入文件日志，仅记录到内存，避免 [LogUtils] 出错时递归。 */
+    fun putNotSave(message: String?, throwable: Throwable? = null, toast: Boolean = false) =
+        record(message, throwable, toast, persist = false)
+
     @Synchronized
-    fun putNotSave(message: String?, throwable: Throwable? = null, toast: Boolean = false) {
+    private fun record(message: String?, throwable: Throwable?, toast: Boolean, persist: Boolean) {
         message ?: return
         if (toast) toastOnUi(message)
         if (mLogs.size > MAX_SIZE) mLogs.removeLastOrNull()
+        if (persist) {
+            LogUtils.d(
+                "AppLog",
+                if (throwable == null) message else "$message\n${throwable.stackTraceToString()}"
+            )
+        }
         mLogs.add(0, Triple(System.currentTimeMillis(), message, throwable))
         if (com.vibereading.app.BuildConfig.DEBUG) {
             val caller = Thread.currentThread().stackTrace.elementAtOrNull(3)?.className ?: "AppLog"

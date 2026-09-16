@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.parser.IllustrationLink
+import com.vibereading.app.newTextMeasurer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -32,12 +33,7 @@ class IllustrationPaginationTest {
 
     @Before
     fun setUp() {
-        measurer = TextMeasurer(
-            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
-            androidx.compose.ui.unit.Density(1f),
-            LayoutDirection.Ltr,
-            64
-        )
+        measurer = newTextMeasurer()
     }
 
     private val style = PageStyle(

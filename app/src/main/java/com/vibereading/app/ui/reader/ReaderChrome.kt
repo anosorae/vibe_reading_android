@@ -467,15 +467,10 @@ fun BoxScope.TranslationStatusPanel(
             // ── 非流式章节状态提示 ──
             val status = activeChapter.status
             val reason = state.errorMessage ?: activeChapter.errorMessage
-            val (hintText, hintColor) = when (status) {
-                Chapter.STATUS_FAILED -> ("翻译失败" to VibeColors.RedMuted)
-                Chapter.STATUS_IN_PROGRESS -> ("翻译中…" to VibeColors.BlueMuted)
-                Chapter.STATUS_TOO_LONG -> ("章节过长" to VibeColors.Amber)
-                else -> ("等待翻译" to VibeColors.WarmGray)
-            }
+            val (hintText, hintColor) = chapterStatusHint(status)
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(hintText, fontSize = 12.sp, color = hintColor)
-                if (reason != null && status in setOf(Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG)) {
+                if (reason != null && chapterStatusHasReason(status)) {
                     Text(
                         reason,
                         fontSize = 11.sp,

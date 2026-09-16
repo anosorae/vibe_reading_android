@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.newTextMeasurer
 import com.vibereading.app.ui.reader.ReaderPageGeometry
 import com.vibereading.app.ui.reader.ReaderPalette
 import org.junit.Assert.assertEquals
@@ -59,12 +60,7 @@ class RenderPageBitmapTitleOffsetTest {
 
     @Before
     fun setUp() {
-        measurer = TextMeasurer(
-            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
-            densityObj,
-            LayoutDirection.Ltr,
-            64
-        )
+        measurer = newTextMeasurer(densityObj)
     }
 
     private fun chapter(section: String?) = Chapter(

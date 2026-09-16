@@ -8,6 +8,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vibereading.app.data.local.dao.BookWithProgress
 import com.vibereading.app.data.local.entity.BookEntity
 import com.vibereading.app.data.local.entity.ChapterEntity
+import com.vibereading.app.newInMemoryDb
+import com.vibereading.app.seedBookAndChapters
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -36,8 +38,7 @@ class BookChapterDaoTest {
 
     @Before
     fun setUp() {
-        db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-            .build()
+        db = newInMemoryDb()
     }
 
     @After
@@ -45,33 +46,10 @@ class BookChapterDaoTest {
         db.close()
     }
 
-    private suspend fun seedBookAndChapters(
-        bookId: Long = 1L,
-        chapterCount: Int = 3
-    ): List<Long> {
-        db.bookDao().insert(
-            BookEntity(
-                id = bookId, title = "测试书", totalChapters = chapterCount,
-                lastReadAt = 1000L, createdAt = 1000L
-            )
-        )
-        val ids = db.chapterDao().insertAll(
-            (0 until chapterCount).map { index ->
-                ChapterEntity(
-                    bookId = bookId,
-                    title = "第${index + 1}章",
-                    chapterIndex = index,
-                    content = "正文${index + 1}"
-                )
-            }
-        )
-        return ids
-    }
-
     @Test
     fun `translatedCount derives from done chapters`() = runBlocking {
         val bookId = 1L
-        val ids = seedBookAndChapters(bookId)
+        val ids = seedBookAndChapters(db, bookId)
         // 初始：无 DONE 章节
         val items0 = db.bookDao().getBooksWithProgress().first()
         assertEquals(0, items0[0].translatedCount)
@@ -93,7 +71,7 @@ class BookChapterDaoTest {
     @Test
     fun `stale run cannot complete after chapter reset`() = runBlocking {
         val bookId = 1L
-        val ids = seedBookAndChapters(bookId)
+        val ids = seedBookAndChapters(db, bookId)
         val chapterId = ids[0]
 
         // 任务 A 开始（runId=1），随后用户重译：取消 A 恢复 PENDING，任务 B 开始（runId=2）
@@ -119,7 +97,7 @@ class BookChapterDaoTest {
     @Test
     fun `stale error and cancel are rejected`() = runBlocking {
         val bookId = 1L
-        val ids = seedBookAndChapters(bookId)
+        val ids = seedBookAndChapters(db, bookId)
         val chapterId = ids[0]
 
         assertTrue(db.chapterDao().startTranslationRun(bookId, chapterId, 1L, 1) > 0)
@@ -143,7 +121,7 @@ class BookChapterDaoTest {
 
     @Test
     fun `translation run is scoped to book`() = runBlocking {
-        val ids = seedBookAndChapters(1L, 2)
+        val ids = seedBookAndChapters(db, 1L, 2)
         val otherBookId = 2L
         db.bookDao().insert(BookEntity(id = otherBookId, title = "另一本书", totalChapters = 1))
         db.chapterDao().insertAll(
@@ -162,7 +140,7 @@ class BookChapterDaoTest {
     @Test
     fun `progress update only applies to chapters of the book`() = runBlocking {
         val bookId = 1L
-        val ids = seedBookAndChapters(bookId)
+        val ids = seedBookAndChapters(db, bookId)
         val otherBookId = 2L
         db.bookDao().insert(BookEntity(id = otherBookId, title = "另一本书", totalChapters = 1))
         db.chapterDao().insertAll(
@@ -184,7 +162,7 @@ class BookChapterDaoTest {
     @Test
     fun `shelf item carries derived translated count`() = runBlocking {
         val bookId = 1L
-        val ids = seedBookAndChapters(bookId)
+        val ids = seedBookAndChapters(db, bookId)
         db.chapterDao().startTranslationRun(bookId, ids[0], 1L, 1)
         db.chapterDao().completeTranslationRun(bookId, ids[0], 1L, "EN 1", 2)
         db.bookDao().updateLastReadProgress(bookId, ids[1], 5, System.currentTimeMillis())
@@ -199,7 +177,7 @@ class BookChapterDaoTest {
     @Test
     fun `source language correction clears all translations and resets display mode`() = runBlocking {
         val bookId = 1L
-        val ids = seedBookAndChapters(bookId)
+        val ids = seedBookAndChapters(db, bookId)
         // 两章已完成翻译（旧方向）
         db.chapterDao().startTranslationRun(bookId, ids[0], 1L, 1)
         db.chapterDao().completeTranslationRun(bookId, ids[0], 1L, "EN 1", 2)
@@ -228,7 +206,7 @@ class BookChapterDaoTest {
     @Test
     fun `source language defaults to zh for existing books`() = runBlocking {
         val bookId = 1L
-        seedBookAndChapters(bookId)
+        seedBookAndChapters(db, bookId)
         val book = db.bookDao().getBookById(bookId)!!
         assertEquals("zh", book.sourceLanguage)
         assertEquals("zh", book.languageMode)

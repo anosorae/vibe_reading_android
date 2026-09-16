@@ -175,6 +175,17 @@ object EpubParser {
         }
     }
 
+    /**
+     * 供原文语言判定使用的纯文本章节视图（ADR-003）：只取文本段落并按 `\n\n` 契约拼接，
+     * 插图链接不参与判定。分段契约由本解析器（[toChapterDicts]）统一持有，调用方不再自行拼接。
+     */
+    fun chapterTextsForDetection(book: EpubBook): List<String> =
+        book.chapters.map { chapter ->
+            chapter.paragraphs
+                .filterIsInstance<Paragraph.Text>()
+                .joinToString("\n\n") { it.value }
+        }
+
     // ── 内部结构 ──
 
     private data class TocEntry(

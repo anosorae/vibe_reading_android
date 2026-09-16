@@ -82,26 +82,34 @@ object LogUtils {
 
     /** 写入设备/应用信息，作为每次启动的首条日志，便于排查环境相关 bug。 */
     fun logDeviceInfo() {
-        d("DeviceInfo") {
-            buildString {
-                runCatching {
-                    append("MANUFACTURER=").append(Build.MANUFACTURER).append("\n")
-                    append("BRAND=").append(Build.BRAND).append("\n")
-                    append("MODEL=").append(Build.MODEL).append("\n")
-                    append("SDK_INT=").append(Build.VERSION.SDK_INT).append("\n")
-                    append("RELEASE=").append(Build.VERSION.RELEASE).append("\n")
-                    val userAgent = try {
-                        WebSettings.getDefaultUserAgent(LogContext.get())
-                    } catch (e: Throwable) {
-                        e.toString()
-                    }
-                    append("WebViewUserAgent=").append(userAgent).append("\n")
-                    append("packageName=").append(LogContext.get().packageName).append("\n")
-                    append("heapSize=").append(Runtime.getRuntime().maxMemory()).append("\n")
-                    append("versionName=").append(BuildConfig.VERSION_NAME).append("\n")
-                    append("versionCode=").append(BuildConfig.VERSION_CODE).append("\n")
+        d("DeviceInfo") { deviceInfoText(LogContext.get(), includeUserAgent = true) }
+    }
+
+    /**
+     * 设备/应用信息文本，启动日志与崩溃日志共用同一份字段（此前两处各写一遍，字段会漂移）。
+     *
+     * [includeUserAgent] 仅启动路径传 true：读取默认 UA 会触发 WebView provider 加载，
+     * 在崩溃处理线程上做这件事有死锁风险，故崩溃路径跳过该字段。
+     */
+    fun deviceInfoText(context: Context, includeUserAgent: Boolean): String = buildString {
+        runCatching {
+            append("MANUFACTURER=").append(Build.MANUFACTURER).append("\n")
+            append("BRAND=").append(Build.BRAND).append("\n")
+            append("MODEL=").append(Build.MODEL).append("\n")
+            append("SDK_INT=").append(Build.VERSION.SDK_INT).append("\n")
+            append("RELEASE=").append(Build.VERSION.RELEASE).append("\n")
+            if (includeUserAgent) {
+                val userAgent = try {
+                    WebSettings.getDefaultUserAgent(context)
+                } catch (e: Throwable) {
+                    e.toString()
                 }
+                append("WebViewUserAgent=").append(userAgent).append("\n")
             }
+            append("packageName=").append(context.packageName).append("\n")
+            append("heapSize=").append(Runtime.getRuntime().maxMemory()).append("\n")
+            append("versionName=").append(BuildConfig.VERSION_NAME).append("\n")
+            append("versionCode=").append(BuildConfig.VERSION_CODE).append("\n")
         }
     }
 

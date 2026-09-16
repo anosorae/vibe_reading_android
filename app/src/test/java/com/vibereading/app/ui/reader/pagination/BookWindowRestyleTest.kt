@@ -4,10 +4,12 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.test.core.app.ApplicationProvider
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.newTextMeasurer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,12 +52,7 @@ class BookWindowRestyleTest {
 
     @Before
     fun setUp() {
-        measurer = TextMeasurer(
-            createFontFamilyResolver(ApplicationProvider.getApplicationContext()),
-            androidx.compose.ui.unit.Density(2.625f),
-            LayoutDirection.Ltr,
-            64
-        )
+        measurer = newTextMeasurer(Density(2.625f))
     }
 
     private fun style(widthPx: Float, bodySp: Float = 16f) = PageStyle(

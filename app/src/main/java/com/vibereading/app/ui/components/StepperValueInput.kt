@@ -24,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
@@ -60,7 +59,6 @@ fun StepperValueInput(
     value: Int,
     range: IntRange,
     step: Int,
-    accentColor: Color,
     onValueChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
     fieldWidth: Dp = 68.dp
@@ -78,7 +76,6 @@ fun StepperValueInput(
             digits.toIntOrNull()?.let { if (it in range) onValueChange(it) }
         },
         fieldWidth = fieldWidth,
-        accentColor = accentColor,
         canDecrement = value > range.first,
         canIncrement = value < range.last,
         onDecrement = { onValueChange((value - step).coerceIn(range)) },
@@ -106,7 +103,6 @@ fun StepperValueInput(
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     step: Float,
-    accentColor: Color,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     decimals: Int = 1,
@@ -130,7 +126,6 @@ fun StepperValueInput(
             filtered.toFloatOrNull()?.let { if (it in range) onValueChange(it.roundTo(decimals)) }
         },
         fieldWidth = fieldWidth,
-        accentColor = accentColor,
         canDecrement = value > range.start + 1e-4f,
         canIncrement = value < range.endInclusive - 1e-4f,
         onDecrement = { commit(value - step) },
@@ -151,7 +146,6 @@ private fun StepperPill(
     text: String,
     onTextChange: (String) -> Unit,
     fieldWidth: Dp,
-    accentColor: Color,
     canDecrement: Boolean,
     canIncrement: Boolean,
     onDecrement: () -> Unit,
@@ -182,7 +176,7 @@ private fun StepperPill(
             ),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onDone() }),
-            cursorBrush = SolidColor(accentColor),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             singleLine = true
         )
         StepperButton(Icons.Filled.Add, "增加", canIncrement, onIncrement)

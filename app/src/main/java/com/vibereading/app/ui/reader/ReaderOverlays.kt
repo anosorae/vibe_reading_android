@@ -127,7 +127,7 @@ fun BoxScope.ReaderContentOverlays(
         modifier = Modifier.align(Alignment.TopCenter)
     ) {
         ReaderTopToolbar(
-            state.bookTitle, state.mode, state.activeChapter?.status, model.background,
+            state.bookTitle, state.mode, state.activeChapter?.status, model.background, model.isDark,
             actions::leaveReader, actions::switchMode
         )
     }

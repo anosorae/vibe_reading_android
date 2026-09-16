@@ -139,6 +139,7 @@ fun ReaderTopToolbar(
     mode: String,
     activeChapterStatus: Int?,
     barColor: Color,
+    isDark: Boolean,
     onBack: () -> Unit,
     onToggleMode: (String) -> Unit
 ) {
@@ -177,7 +178,7 @@ fun ReaderTopToolbar(
                 ModeButton("英文", mode == "en", onClick = { onToggleMode("en") })
             }
             if (activeChapterStatus != null) {
-                val dotColor = chapterStatusColor(activeChapterStatus)
+                val dotColor = chapterStatusColor(activeChapterStatus, isDark)
                 Spacer(Modifier.width(8.dp))
                 Box(
                     modifier = Modifier
@@ -470,7 +471,7 @@ fun BoxScope.TranslationStatusPanel(
             // 这类原因必须显示，否则用户只看到「待翻译」而不知道卡在哪。
             val runtimeReason = state.errorMessage
             val reason = runtimeReason ?: activeChapter.errorMessage
-            val (hintText, hintColor) = chapterStatusHint(status)
+            val (hintText, hintColor) = chapterStatusHint(status, isDark)
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(hintText, fontSize = 12.sp, color = hintColor)
                 if (reason != null && (runtimeReason != null || chapterStatusHasReason(status))) {

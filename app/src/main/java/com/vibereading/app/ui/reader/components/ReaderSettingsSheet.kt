@@ -178,7 +178,6 @@ fun ReaderSettingsSheet(
                     value = settings.fontSize,
                     range = 14..24,
                     step = 1,
-                    accentColor = accentColor,
                     fieldWidth = 52.dp,
                     onValueChange = { onUpdate(settings.copy(fontSize = it)) }
                 )
@@ -239,7 +238,7 @@ fun ReaderSettingsSheet(
                         modifier = Modifier.width(56.dp))
                     StepperValueInput(
                         value = settings.lineSpacing, range = 0..24, step = 1,
-                        accentColor = accentColor, fieldWidth = 52.dp,
+                        fieldWidth = 52.dp,
                         onValueChange = { onUpdate(settings.copy(lineSpacing = it)) }
                     )
                 }
@@ -248,7 +247,7 @@ fun ReaderSettingsSheet(
                         modifier = Modifier.width(56.dp))
                     StepperValueInput(
                         value = settings.paragraphSpacing, range = 4..32, step = 1,
-                        accentColor = accentColor, fieldWidth = 52.dp,
+                        fieldWidth = 52.dp,
                         onValueChange = { onUpdate(settings.copy(paragraphSpacing = it)) }
                     )
                 }
@@ -259,7 +258,7 @@ fun ReaderSettingsSheet(
                         modifier = Modifier.width(56.dp))
                     StepperValueInput(
                         value = settings.letterSpacing, range = -0.5f..0.5f, step = 0.01f,
-                        accentColor = accentColor, decimals = 2, fieldWidth = 52.dp,
+                        decimals = 2, fieldWidth = 52.dp,
                         onValueChange = { onUpdate(settings.copy(letterSpacing = it)) }
                     )
                 }
@@ -268,7 +267,7 @@ fun ReaderSettingsSheet(
                         modifier = Modifier.width(56.dp))
                     StepperValueInput(
                         value = settings.indentEm, range = 0f..4f, step = 0.5f,
-                        accentColor = accentColor, decimals = 1, fieldWidth = 52.dp,
+                        decimals = 1, fieldWidth = 52.dp,
                         onValueChange = { onUpdate(settings.copy(indentEm = it)) }
                     )
                 }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -45,11 +47,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -65,10 +67,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.WindowInsets
 import com.vibereading.app.domain.model.BookShelfItem
-import com.vibereading.app.ui.theme.VibeColors
+
+/** 网格封面宽高比（宽/高）：普通书封约 0.68，封面高度由列宽推出，不再按「一屏几行」反推。 */
+private const val COVER_ASPECT = 0.68f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,7 +79,6 @@ internal fun BookshelfTopBar(
     searchExpanded: Boolean,
     searchText: String,
     layout: String,
-    accentColor: Color,
     onSearchTextChange: (String) -> Unit,
     onToggleSearch: () -> Unit,
     onToggleLayout: () -> Unit,
@@ -87,16 +88,21 @@ internal fun BookshelfTopBar(
         windowInsets = stableInsets,
         title = {
             if (searchExpanded) {
-                OutlinedTextField(
+                // 收起态用 TopAppBar 的浅色容器 + 实心圆角输入框：原先是 OutlinedTextField
+                // 且容器色与背景同色，靠描边区分，而未聚焦描边在浅色档只有 1.15:1 —— 看不到输入框
+                TextField(
                     value = searchText,
                     onValueChange = onSearchTextChange,
-                    placeholder = { Text("搜索书名") },
+                    placeholder = { Text("搜索书名", style = MaterialTheme.typography.bodyMedium) },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                    shape = CircleShape,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
                     ),
-                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
             } else {
@@ -108,7 +114,8 @@ internal fun BookshelfTopBar(
                 Icon(
                     Icons.Filled.Search,
                     contentDescription = "搜索",
-                    tint = if (searchExpanded) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (searchExpanded) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = onToggleLayout) {
@@ -119,7 +126,11 @@ internal fun BookshelfTopBar(
                 )
             }
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "设置", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = "设置",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -130,7 +141,6 @@ internal fun BookshelfTopBar(
 internal fun BoxScope.BookshelfContent(
     state: BookshelfUiState,
     searchText: String,
-    accentColor: Color,
     coverTransition: @Composable (Long) -> Modifier,
     onOpenBook: (Long) -> Unit,
     onLongClickBook: (BookShelfItem) -> Unit,
@@ -138,30 +148,39 @@ internal fun BoxScope.BookshelfContent(
     onToggleOrder: (String) -> Unit
 ) {
     when {
-        state.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = accentColor)
+        state.isLoading -> CircularProgressIndicator(
+            modifier = Modifier.align(Alignment.Center),
+            color = MaterialTheme.colorScheme.primary
+        )
+
         state.items.isEmpty() -> EmptyShelf()
         else -> Column(modifier = Modifier.fillMaxSize()) {
             SortBar(
                 sort = state.sort,
                 sortOrder = state.sortOrder,
-                accentColor = accentColor,
                 onSort = onSort,
                 onToggleOrder = onToggleOrder
             )
             when {
-                state.filteredItems.isEmpty() -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("没有匹配「${searchText}」的书籍", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                state.filteredItems.isEmpty() -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "没有匹配「${searchText}」的书籍",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+
                 state.layout == "grid" -> BooksGrid(
                     items = state.filteredItems,
-                    accentColor = accentColor,
                     coverTransition = coverTransition,
                     onOpenBook = onOpenBook,
                     onLongClickBook = onLongClickBook
                 )
+
                 else -> BooksList(
                     items = state.filteredItems,
-                    accentColor = accentColor,
                     coverTransition = coverTransition,
                     onOpenBook = onOpenBook,
                     onLongClickBook = onLongClickBook
@@ -179,12 +198,20 @@ private fun EmptyShelf() {
                 Icons.Filled.MenuBook,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.outlineVariant
+                tint = MaterialTheme.colorScheme.outline
             )
             Spacer(Modifier.height(16.dp))
-            Text("书架空空如也", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "书架空空如也",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(8.dp))
-            Text("点击右下角 + 上传 TXT / EPUB 书籍", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+            Text(
+                "点击右下角 + 上传 TXT / EPUB 书籍",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.outline
+            )
         }
     }
 }
@@ -192,32 +219,36 @@ private fun EmptyShelf() {
 @Composable
 private fun BooksGrid(
     items: List<BookShelfItem>,
-    accentColor: Color,
     coverTransition: @Composable (Long) -> Modifier,
     onOpenBook: (Long) -> Unit,
     onLongClickBook: (BookShelfItem) -> Unit
 ) {
-    val gridHorizontalPadding = 16.dp
-    val gridVerticalPadding = 6.dp
+    val horizontalPadding = 16.dp
+    val verticalPadding = 6.dp
     val horizontalSpacing = 14.dp
-    val textAreaHeight = 34.dp
-    val rows = 3
+    val verticalSpacing = 20.dp
+    // 卡片宽度下限：再窄书名就只能显示一两个字
+    val minCardWidth = 96.dp
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val availH = maxHeight - gridVerticalPadding * 2
-        val verticalSpacing = 20.dp
-        val cardHeight = (availH - verticalSpacing * (rows - 1)) / rows
-        val coverHeight = cardHeight - textAreaHeight
+        // 列数按可用宽度推（手机 3 列，平板/折叠屏展开后自动加列），
+        // 封面高度再由列宽按书封比例推出 —— 原先写死 3 列 + 用屏高反推封面高度，
+        // 平板上一屏 3 行会把封面拉成大幅方块
+        val columns = maxOf(
+            3,
+            ((maxWidth - horizontalPadding * 2 + horizontalSpacing) / (minCardWidth + horizontalSpacing)).toInt()
+        )
+        val cardWidth = (maxWidth - horizontalPadding * 2 - horizontalSpacing * (columns - 1)) / columns
+        val coverHeight = cardWidth / COVER_ASPECT
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
+            columns = GridCells.Fixed(columns),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = gridHorizontalPadding, vertical = gridVerticalPadding),
+            contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = verticalPadding),
             horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
             verticalArrangement = Arrangement.spacedBy(verticalSpacing)
         ) {
             items(items, key = { it.book.id }) { item ->
                 BookGridCard(
                     item = item,
-                    accentColor = accentColor,
                     onClick = { onOpenBook(item.book.id) },
                     onLongClick = { onLongClickBook(item) },
                     coverHeight = coverHeight,
@@ -231,7 +262,6 @@ private fun BooksGrid(
 @Composable
 private fun BooksList(
     items: List<BookShelfItem>,
-    accentColor: Color,
     coverTransition: @Composable (Long) -> Modifier,
     onOpenBook: (Long) -> Unit,
     onLongClickBook: (BookShelfItem) -> Unit
@@ -240,7 +270,6 @@ private fun BooksList(
         items(items, key = { it.book.id }) { item ->
             BookRow(
                 item = item,
-                accentColor = accentColor,
                 onClick = { onOpenBook(item.book.id) },
                 onLongClick = { onLongClickBook(item) },
                 coverModifier = coverTransition(item.book.id)
@@ -258,15 +287,20 @@ internal fun BoxScope.ShelfMessageBanner(message: String?) {
         modifier = Modifier.align(Alignment.TopCenter).padding(16.dp)
     ) {
         if (message != null) {
+            // 失败/成功用容器色 + on* 文字色，不写死白字：写死白字在换主题后
+            // 会跟着底色一起漂，对比度不再可控
+            val failed = message.contains("失败")
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (message.contains("失败")) VibeColors.RedMuted else VibeColors.Sage,
+                shape = MaterialTheme.shapes.medium,
+                color = if (failed) MaterialTheme.colorScheme.errorContainer
+                else MaterialTheme.colorScheme.secondaryContainer,
                 tonalElevation = 4.dp
             ) {
                 Text(
                     message,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                    color = Color.White,
+                    color = if (failed) MaterialTheme.colorScheme.onErrorContainer
+                    else MaterialTheme.colorScheme.onSecondaryContainer,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -278,7 +312,6 @@ internal fun BoxScope.ShelfMessageBanner(message: String?) {
 private fun SortBar(
     sort: String,
     sortOrder: String,
-    accentColor: Color,
     onSort: (String) -> Unit,
     onToggleOrder: (String) -> Unit
 ) {
@@ -294,12 +327,25 @@ private fun SortBar(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "排序",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.width(4.dp))
         Box {
             TextButton(onClick = { menuExpanded = true }) {
-                Text(currentLabel, color = accentColor, fontSize = 13.sp)
-                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                Text(
+                    currentLabel,
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Icon(
+                    Icons.Filled.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
             }
             DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 options.forEach { (key, label) ->
@@ -314,10 +360,9 @@ private fun SortBar(
             }
         }
         Spacer(Modifier.weight(1f))
-        IconButton(
-            onClick = { onToggleOrder(if (isDesc) SortOrder.ASC else SortOrder.DESC) },
-            modifier = Modifier.size(32.dp)
-        ) {
+        // 不要给 IconButton 传 size(32.dp)：会把点击目标压到 32dp，
+        // 低于 M3 的 48dp 最小触摸目标（图标本身用 20dp 就够）
+        IconButton(onClick = { onToggleOrder(if (isDesc) SortOrder.ASC else SortOrder.DESC) }) {
             Icon(
                 if (isDesc) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
                 contentDescription = if (isDesc) "降序" else "升序",
@@ -332,7 +377,6 @@ private fun SortBar(
 @Composable
 internal fun BookRow(
     item: BookShelfItem,
-    accentColor: Color,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     coverModifier: Modifier = Modifier
@@ -377,21 +421,37 @@ internal fun BookRow(
                     Spacer(Modifier.width(3.dp))
                     Text(
                         item.lastReadChapterTitle,
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             } else {
-                Text("未开始阅读", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                Text(
+                    "未开始阅读",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("共 ${book.totalChapters} 章", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "共 ${book.totalChapters} 章",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (item.translatedCount > 0) {
-                    Text(" · ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("已译 ${item.translatedCount}", fontSize = 12.sp, color = VibeColors.Sage)
+                    Text(
+                        " · ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "已译 ${item.translatedCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
                 }
             }
         }
@@ -402,7 +462,6 @@ internal fun BookRow(
 @Composable
 internal fun BookGridCard(
     item: BookShelfItem,
-    accentColor: Color,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     coverHeight: Dp = 160.dp,
@@ -418,20 +477,26 @@ internal fun BookGridCard(
         )
     ) {
         Box(
-            modifier = Modifier.fillMaxWidth().height(coverHeight).then(coverModifier).clip(RoundedCornerShape(8.dp))
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(coverHeight)
+                .then(coverModifier)
+                .clip(MaterialTheme.shapes.small)
         ) {
             BookCover(title = book.title, coverPath = book.coverPath, modifier = Modifier.fillMaxSize())
             if (item.translatedCount > 0) {
+                // 徽标压在不透明的容器色上：放在封面图上还带透明度的话，
+                // 对比度会随封面本身的明暗漂移
                 Surface(
                     shape = RoundedCornerShape(topEnd = 8.dp, bottomStart = 8.dp),
-                    color = VibeColors.Sage.copy(alpha = 0.85f),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
                     modifier = Modifier.align(Alignment.TopEnd)
                 ) {
                     Text(
                         "${item.translatedCount}/${book.totalChapters}",
-                        fontSize = 10.sp,
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                     )
                 }
@@ -440,7 +505,7 @@ internal fun BookGridCard(
         Column(modifier = Modifier.padding(start = 2.dp, top = 4.dp, end = 2.dp)) {
             Text(
                 book.title,
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -452,7 +517,7 @@ internal fun BookGridCard(
             if (readChapters > 0) {
                 Text(
                     "已读${readChapters}/${book.totalChapters}章",
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

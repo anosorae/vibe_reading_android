@@ -56,7 +56,6 @@ import com.vibereading.app.ui.theme.WereadColors
 @Composable
 internal fun ThemeSettingsSection(
     theme: ThemeSettings,
-    accentColor: Color,
     onThemeModeChange: (ThemeMode) -> Unit,
     onAccentChange: (AppAccent) -> Unit
 ) {
@@ -75,13 +74,13 @@ internal fun ThemeSettingsSection(
                     onClick = { onThemeModeChange(mode) },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (selected) accentColor.copy(alpha = 0.1f) else Color.Transparent
+                        containerColor = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         label,
-                        color = if (selected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp
                     )
                 }
@@ -93,10 +92,11 @@ internal fun ThemeSettingsSection(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             AccentPreview(
                 label = "原木",
+                // 色板预览必须画**该套色板自己**的取值，不能取当前主题的 primary ——
+                // 否则切到青简后两个色块会变成同一个颜色
                 primary = VibeColors.Sienna,
                 bg = VibeColors.Cream,
                 selected = theme.accent == AppAccent.VIBE,
-                accentColor = accentColor,
                 onClick = { onAccentChange(AppAccent.VIBE) }
             )
             AccentPreview(
@@ -104,7 +104,6 @@ internal fun ThemeSettingsSection(
                 primary = WereadColors.Accent,
                 bg = WereadColors.Cream,
                 selected = theme.accent == AppAccent.WEREAD,
-                accentColor = accentColor,
                 onClick = { onAccentChange(AppAccent.WEREAD) }
             )
         }
@@ -118,7 +117,6 @@ internal fun LlmProfilesSection(
     editApiKey: String,
     editApiBase: String,
     editModel: String,
-    accentColor: Color,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onSelect: (Long) -> Unit,
@@ -165,14 +163,14 @@ internal fun LlmProfilesSection(
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "返回",
-                        tint = accentColor,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "返回配置列表",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = accentColor,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -183,7 +181,6 @@ internal fun LlmProfilesSection(
                     editApiBase = editApiBase,
                     editModel = editModel,
                     showApiKey = state.showApiKey,
-                    accentColor = accentColor,
                     testResult = state.testResult,
                     testSuccess = state.testSuccess,
                     onUpdateName = onUpdateName,
@@ -202,7 +199,6 @@ internal fun LlmProfilesSection(
                 LlmProfileList(
                     profiles = state.profiles,
                     activeProfileId = state.activeProfileId,
-                    accentColor = accentColor,
                     onSelect = onSelect,
                     onEdit = onEdit,
                     onDelete = onDelete,
@@ -216,7 +212,6 @@ internal fun LlmProfilesSection(
 @Composable
 internal fun TranslationParamsSection(
     llmSettings: LlmSettings,
-    accentColor: Color,
     onUpdateChapterMaxChars: (Int) -> Unit,
     onUpdateMaxOutputTokens: (Int) -> Unit,
     onToggleThinking: (Boolean) -> Unit,
@@ -228,7 +223,6 @@ internal fun TranslationParamsSection(
     SectionCard {
         LlmTranslationParams(
             llmSettings = llmSettings,
-            accentColor = accentColor,
             onUpdateChapterMaxChars = onUpdateChapterMaxChars,
             onUpdateMaxOutputTokens = onUpdateMaxOutputTokens,
             onToggleThinking = onToggleThinking,
@@ -244,7 +238,6 @@ internal fun TranslationParamsSection(
 internal fun WebCompanionSection(
     running: Boolean,
     url: String?,
-    accentColor: Color,
     onToggle: (Boolean) -> Unit,
     onCopyUrl: (String) -> Unit
 ) {
@@ -257,12 +250,16 @@ internal fun WebCompanionSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("局域网网页阅读", style = MaterialTheme.typography.bodyMedium)
-                Text("同一 WiFi 下的电脑浏览器可阅读本书库", fontSize = 12.sp, color = VibeColors.WarmGray)
+                Text(
+                    "同一 WiFi 下的电脑浏览器可阅读本书库",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Switch(
                 checked = running,
                 onCheckedChange = onToggle,
-                colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+                colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
             )
         }
         if (running && url != null) {
@@ -276,7 +273,11 @@ internal fun WebCompanionSection(
                     .clickable { onCopyUrl(url) }
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text("在电脑浏览器打开（点击复制）", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    Text(
+                        "在电脑浏览器打开（点击复制）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         url,
@@ -286,7 +287,11 @@ internal fun WebCompanionSection(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text("此地址已常驻通知栏，锁屏后也能查看", fontSize = 12.sp, color = VibeColors.WarmGray)
+                    Text(
+                        "此地址已常驻通知栏，锁屏后也能查看",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -351,7 +356,7 @@ private fun SectionCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Column(modifier = Modifier.padding(16.dp), content = content)
     }
@@ -363,7 +368,6 @@ private fun AccentPreview(
     primary: Color,
     bg: Color,
     selected: Boolean,
-    accentColor: Color,
     onClick: () -> Unit
 ) {
     Column(
@@ -372,11 +376,11 @@ private fun AccentPreview(
             .clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
             .background(
-                if (selected) accentColor.copy(alpha = 0.08f) else Color.Transparent,
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
                 RoundedCornerShape(10.dp)
             )
             .then(
-                if (selected) Modifier.border(2.dp, accentColor, RoundedCornerShape(10.dp))
+                if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
                 else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
             )
             .padding(14.dp)
@@ -397,7 +401,7 @@ private fun AccentPreview(
             label,
             fontSize = 12.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

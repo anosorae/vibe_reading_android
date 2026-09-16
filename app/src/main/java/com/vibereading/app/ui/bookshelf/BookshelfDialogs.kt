@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.HideImage
@@ -37,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.domain.model.BookShelfItem
-import com.vibereading.app.ui.theme.VibeColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -63,7 +63,11 @@ internal fun BookActionsSheet(
             BookImageStore.canRestoreEmbeddedCover(item.book.id, item.book.coverPath)
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
                 item.book.title,
@@ -109,8 +113,8 @@ internal fun BookActionsSheet(
                 )
             }
             ListItem(
-                headlineContent = { Text("删除", color = VibeColors.RedMuted) },
-                leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null, tint = VibeColors.RedMuted) },
+                headlineContent = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 modifier = Modifier.clickable(onClick = onDelete)
             )
             Spacer(Modifier.height(12.dp))
@@ -131,7 +135,7 @@ internal fun DeleteBookDialog(
         text = { Text("确定要删除《${item.book.title}》吗？此操作不可恢复。") },
         confirmButton = {
             TextButton(onClick = { onConfirm(item) }) {
-                Text("删除", color = VibeColors.RedMuted)
+                Text("删除", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
@@ -185,7 +189,7 @@ internal fun ConfirmSourceLanguageDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(item, targetLang) }) {
-                Text("确认", color = VibeColors.RedMuted)
+                Text("确认", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }

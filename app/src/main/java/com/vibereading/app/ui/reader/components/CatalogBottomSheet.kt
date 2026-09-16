@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.ui.reader.chapterStatusColor
+import com.vibereading.app.ui.theme.LocalIsDarkTheme
 
 data class CatalogGroup(
     val section: String?,
@@ -186,7 +187,9 @@ private fun ChapterItem(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
-    val statusColor = chapterStatusColor(chapter.status)
+    // 目录抽屉是 Material 表面（容器色取 colorScheme.surface），按**主题深浅**取状态色，
+    // 而不是阅读背景深浅 —— 两者可以不一致（浅色主题 + 深色阅读背景）
+    val statusColor = chapterStatusColor(chapter.status, LocalIsDarkTheme.current)
 
     val bgColor = if (isActive) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)

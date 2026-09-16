@@ -8,11 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -46,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.LlmSettings
-import com.vibereading.app.ui.theme.VibeColors
 
 /**
  * LLM 配置面板的共享组件（单一实现）。
@@ -61,12 +58,12 @@ import com.vibereading.app.ui.theme.VibeColors
 
 /** 「LLM 配置」/「翻译参数」小标题。 */
 @Composable
-fun LlmSectionTitle(title: String, accentColor: Color) {
+fun LlmSectionTitle(title: String) {
     Text(
         title,
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.SemiBold,
-        color = accentColor
+        color = MaterialTheme.colorScheme.primary
     )
 }
 
@@ -74,8 +71,9 @@ fun LlmSectionTitle(title: String, accentColor: Color) {
 @Composable
 fun LlmTestResultBanner(testResult: String, testSuccess: Boolean?) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = if (testSuccess == true) VibeColors.SageLight else VibeColors.RedMuted.copy(alpha = 0.1f)
+        shape = MaterialTheme.shapes.small,
+        color = if (testSuccess == true) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.errorContainer
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -84,7 +82,8 @@ fun LlmTestResultBanner(testResult: String, testSuccess: Boolean?) {
             Text(
                 if (testSuccess == true) "✓ 连接成功" else "✗ 连接失败",
                 fontWeight = FontWeight.SemiBold,
-                color = if (testSuccess == true) VibeColors.Sage else VibeColors.RedMuted
+                color = if (testSuccess == true) MaterialTheme.colorScheme.onSecondaryContainer
+                else MaterialTheme.colorScheme.onErrorContainer
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -104,7 +103,6 @@ fun LlmTestResultBanner(testResult: String, testSuccess: Boolean?) {
 fun LlmProfileList(
     profiles: List<LlmProfile>,
     activeProfileId: Long?,
-    accentColor: Color,
     onSelect: (Long) -> Unit,
     onEdit: (Long) -> Unit,
     onDelete: ((Long) -> Unit)? = null,
@@ -116,15 +114,15 @@ fun LlmProfileList(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .clickable { onSelect(profile.id) }
                     .background(
-                        if (isActive) accentColor.copy(alpha = 0.08f) else Color.Transparent,
-                        RoundedCornerShape(8.dp)
+                        if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
+                        MaterialTheme.shapes.small
                     )
                     .then(
-                        if (isActive) Modifier.border(1.5.dp, accentColor, RoundedCornerShape(8.dp))
-                        else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                        if (isActive) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
+                        else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
                     )
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -134,7 +132,7 @@ fun LlmProfileList(
                     Icon(
                         Icons.Filled.Check,
                         contentDescription = "当前使用",
-                        tint = accentColor,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -159,10 +157,7 @@ fun LlmProfileList(
                 )
                 Spacer(Modifier.width(4.dp))
                 // 编辑
-                IconButton(
-                    onClick = { onEdit(profile.id) },
-                    modifier = Modifier.size(32.dp)
-                ) {
+                IconButton(onClick = { onEdit(profile.id) }) {
                     Icon(
                         Icons.Filled.Edit, "编辑",
                         modifier = Modifier.size(16.dp),
@@ -171,10 +166,7 @@ fun LlmProfileList(
                 }
                 // 删除（仅多配置时）
                 if (onDelete != null && profiles.size > 1) {
-                    IconButton(
-                        onClick = { onDelete(profile.id) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
+                    IconButton(onClick = { onDelete(profile.id) }) {
                         Icon(
                             Icons.Filled.Delete, "删除",
                             modifier = Modifier.size(16.dp),
@@ -189,8 +181,8 @@ fun LlmProfileList(
             OutlinedButton(
                 onClick = onAdd,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = accentColor)
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
@@ -213,7 +205,6 @@ fun LlmProfileEditor(
     editApiBase: String,
     editModel: String,
     showApiKey: Boolean,
-    accentColor: Color,
     testResult: String?,
     testSuccess: Boolean?,
     onUpdateApiKey: (String) -> Unit,
@@ -231,7 +222,7 @@ fun LlmProfileEditor(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (editorTitle != null) {
-            LlmSectionTitle(editorTitle, accentColor)
+            LlmSectionTitle(editorTitle)
         }
 
         if (editName != null && onUpdateName != null) {
@@ -240,7 +231,7 @@ fun LlmProfileEditor(
                 onValueChange = onUpdateName,
                 label = { Text("配置名称") },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.small,
                 singleLine = true
             )
         }
@@ -260,7 +251,7 @@ fun LlmProfileEditor(
                 }
             },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.small,
             singleLine = true
         )
 
@@ -270,7 +261,7 @@ fun LlmProfileEditor(
             onValueChange = onUpdateApiBase,
             label = { Text("API Base URL") },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.small,
             singleLine = true
         )
 
@@ -280,7 +271,7 @@ fun LlmProfileEditor(
             onValueChange = onUpdateModel,
             label = { Text("模型") },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
+            shape = MaterialTheme.shapes.small,
             singleLine = true
         )
 
@@ -292,8 +283,8 @@ fun LlmProfileEditor(
             Button(
                 onClick = onSave,
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                shape = MaterialTheme.shapes.small,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 enabled = !isSaving
             ) {
                 Text("保存")
@@ -301,7 +292,7 @@ fun LlmProfileEditor(
             OutlinedButton(
                 onClick = onTest,
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp),
+                shape = MaterialTheme.shapes.small,
                 enabled = !isTesting
             ) {
                 if (isTesting) {
@@ -316,7 +307,7 @@ fun LlmProfileEditor(
             OutlinedButton(
                 onClick = onCancel,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
+                shape = MaterialTheme.shapes.small
             ) {
                 Text("取消")
             }
@@ -334,7 +325,6 @@ private fun LlmSwitchRow(
     title: String,
     description: String,
     checked: Boolean,
-    accentColor: Color,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -344,12 +334,13 @@ private fun LlmSwitchRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(description, fontSize = 12.sp, color = VibeColors.WarmGray)
+            Text(description, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
+            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
         )
     }
 }
@@ -362,7 +353,6 @@ private fun LlmStepperRow(
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     step: Float,
-    accentColor: Color,
     onValueChange: (Float) -> Unit
 ) {
     Row(
@@ -372,13 +362,13 @@ private fun LlmStepperRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(description, fontSize = 12.sp, color = VibeColors.WarmGray)
+            Text(description, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         StepperValueInput(
             value = value,
             range = range,
             step = step,
-            accentColor = accentColor,
             onValueChange = onValueChange
         )
     }
@@ -392,7 +382,6 @@ private fun LlmIntStepperRow(
     value: Int,
     range: IntRange,
     step: Int,
-    accentColor: Color,
     onValueChange: (Int) -> Unit
 ) {
     Row(
@@ -402,13 +391,13 @@ private fun LlmIntStepperRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(description, fontSize = 12.sp, color = VibeColors.WarmGray)
+            Text(description, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         StepperValueInput(
             value = value,
             range = range,
             step = step,
-            accentColor = accentColor,
             onValueChange = onValueChange
         )
     }
@@ -423,7 +412,6 @@ private fun LlmIntStepperRow(
 @Composable
 fun LlmTranslationParams(
     llmSettings: LlmSettings,
-    accentColor: Color,
     onUpdateChapterMaxChars: (Int) -> Unit,
     onUpdateMaxOutputTokens: (Int) -> Unit,
     onToggleThinking: (Boolean) -> Unit,
@@ -440,7 +428,6 @@ fun LlmTranslationParams(
             value = llmSettings.chapterMaxChars,
             range = CHAPTER_MAX_CHARS_RANGE,
             step = 1000,
-            accentColor = accentColor,
             onValueChange = onUpdateChapterMaxChars
         )
 
@@ -450,7 +437,6 @@ fun LlmTranslationParams(
             value = llmSettings.maxOutputTokens,
             range = MAX_OUTPUT_TOKENS_RANGE,
             step = 1024,
-            accentColor = accentColor,
             onValueChange = onUpdateMaxOutputTokens
         )
 
@@ -460,7 +446,6 @@ fun LlmTranslationParams(
             title = "思考模式",
             description = "允许模型输出思考过程",
             checked = llmSettings.enableThinking,
-            accentColor = accentColor,
             onCheckedChange = onToggleThinking
         )
 
@@ -468,7 +453,6 @@ fun LlmTranslationParams(
             title = "解释时思考",
             description = "选词解释时使用深度思考模式",
             checked = llmSettings.enableExplainThinking,
-            accentColor = accentColor,
             onCheckedChange = onToggleExplainThinking
         )
 
@@ -477,8 +461,7 @@ fun LlmTranslationParams(
                 title = "提前翻译下一章",
                 description = "英文阅读时自动预译未译的下一章",
                 checked = llmSettings.autoTranslateNext,
-                accentColor = accentColor,
-                onCheckedChange = onToggleAutoTranslateNext
+                    onCheckedChange = onToggleAutoTranslateNext
             )
         }
 
@@ -490,7 +473,6 @@ fun LlmTranslationParams(
             value = llmSettings.temperature,
             range = TEMPERATURE_RANGE,
             step = DECIMAL_PARAM_STEP,
-            accentColor = accentColor,
             onValueChange = onUpdateTemperature
         )
 
@@ -500,7 +482,6 @@ fun LlmTranslationParams(
             value = llmSettings.topP,
             range = TOP_P_RANGE,
             step = DECIMAL_PARAM_STEP,
-            accentColor = accentColor,
             onValueChange = onUpdateTopP
         )
     }

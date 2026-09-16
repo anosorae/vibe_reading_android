@@ -29,17 +29,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
-import com.vibereading.app.ui.theme.VibeColors
-import com.vibereading.app.ui.theme.WereadColors
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -55,7 +51,6 @@ fun SettingsScreen(
     val editName by vm.editName.collectAsState()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val accentColor = if (state.theme.accent == AppAccent.WEREAD) WereadColors.Accent else VibeColors.Sienna
     var llmExpanded by remember { mutableStateOf(true) }
 
     // 伴读是前台服务，靠常驻通知展示含 Token 的地址、也靠它把服务锁在前台。
@@ -101,7 +96,6 @@ fun SettingsScreen(
         ) {
             ThemeSettingsSection(
                 theme = state.theme,
-                accentColor = accentColor,
                 onThemeModeChange = vm::updateThemeMode,
                 onAccentChange = vm::updateAccent
             )
@@ -111,7 +105,6 @@ fun SettingsScreen(
                 editApiKey = editApiKey,
                 editApiBase = editApiBase,
                 editModel = editModel,
-                accentColor = accentColor,
                 expanded = llmExpanded,
                 onExpandedChange = { llmExpanded = it },
                 onSelect = vm::selectProfile,
@@ -129,7 +122,6 @@ fun SettingsScreen(
             )
             TranslationParamsSection(
                 llmSettings = state.llmSettings,
-                accentColor = accentColor,
                 onUpdateChapterMaxChars = vm::updateChapterMaxChars,
                 onUpdateMaxOutputTokens = vm::updateMaxOutputTokens,
                 onToggleThinking = vm::updateThinking,
@@ -140,7 +132,6 @@ fun SettingsScreen(
             WebCompanionSection(
                 running = state.webCompanionRunning,
                 url = state.webCompanionUrl,
-                accentColor = accentColor,
                 onToggle = { on ->
                     val needNotifPermission = on &&
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&

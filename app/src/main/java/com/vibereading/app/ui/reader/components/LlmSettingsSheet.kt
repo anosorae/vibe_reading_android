@@ -88,7 +88,7 @@ fun LlmSettingsSheet(
             )
 
             // ── LLM 配置 ──
-            LlmSectionTitle("LLM 配置", accentColor)
+            LlmSectionTitle("LLM 配置")
 
             Spacer(Modifier.height(10.dp))
 
@@ -124,7 +124,6 @@ fun LlmSettingsSheet(
                     editApiBase = state.editApiBase,
                     editModel = state.editModel,
                     showApiKey = showApiKey,
-                    accentColor = accentColor,
                     testResult = state.testResult,
                     testSuccess = state.testSuccess,
                     onUpdateApiKey = actions::updateApiKey,
@@ -139,7 +138,6 @@ fun LlmSettingsSheet(
                 LlmProfileList(
                     profiles = state.profiles,
                     activeProfileId = state.activeProfileId,
-                    accentColor = accentColor,
                     onSelect = actions::switchProfile,
                     onEdit = actions::editProfile
                 )
@@ -148,11 +146,10 @@ fun LlmSettingsSheet(
             // ── 翻译参数 ──
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
-            LlmSectionTitle("翻译参数", accentColor)
+            LlmSectionTitle("翻译参数")
 
             LlmTranslationParams(
                 llmSettings = state.llmSettings,
-                accentColor = accentColor,
                 onUpdateChapterMaxChars = actions::updateChapterMaxChars,
                 onUpdateMaxOutputTokens = actions::updateMaxOutputTokens,
                 onToggleThinking = actions::toggleThinking,

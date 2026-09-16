@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,17 +21,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.BookShelfItem
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
-import com.vibereading.app.ui.theme.VibeColors
-import com.vibereading.app.ui.theme.WereadColors
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +39,6 @@ fun BookshelfScreen(
 ) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
-    val accentColor = if (state.accent == AppAccent.WEREAD) WereadColors.Accent else VibeColors.Sienna
 
     var menuBook by remember { mutableStateOf<BookShelfItem?>(null) }
     var confirmDeleteBook by remember { mutableStateOf<BookShelfItem?>(null) }
@@ -98,7 +94,6 @@ fun BookshelfScreen(
                 searchExpanded = searchExpanded,
                 searchText = searchText,
                 layout = state.layout,
-                accentColor = accentColor,
                 onSearchTextChange = {
                     searchText = it
                     vm.setSearchQuery(it)
@@ -121,8 +116,8 @@ fun BookshelfScreen(
                 // TXT 与 EPUB 一起可选（ADR-002）；部分文件管理器对 epub 上报的 MIME 不规范，
                 // 同时给出具体类型与通配扩展名兜底
                 onClick = { fileLauncher.launch(arrayOf("text/plain", "application/epub+zip", "*/*")) },
-                containerColor = accentColor,
-                contentColor = Color.White
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "上传书籍")
             }
@@ -132,7 +127,6 @@ fun BookshelfScreen(
             BookshelfContent(
                 state = state,
                 searchText = searchText,
-                accentColor = accentColor,
                 coverTransition = coverTransition,
                 onOpenBook = onOpenBook,
                 onLongClickBook = { menuBook = it },

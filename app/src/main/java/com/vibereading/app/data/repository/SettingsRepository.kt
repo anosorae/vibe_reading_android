@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import com.vibereading.app.BuildConfig
 import com.vibereading.app.domain.model.AppAccent
+import com.vibereading.app.domain.model.LlmDefaults
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.domain.model.ThemeMode
@@ -36,7 +37,7 @@ class SettingsRepository(
     }
 
     private val defaultApiBase: String
-        get() = BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/').ifEmpty { "https://api.deepseek.com" }
+        get() = BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/').ifEmpty { LlmDefaults.API_BASE }
 
     /**
      * 读取 DataStore 中的旧 LLM 键，返回 [LlmSettings] 用于创建默认 profile。
@@ -50,9 +51,9 @@ class SettingsRepository(
         return LlmSettings(
             apiKey = prefs[LlmKeys.API_KEY]?.trim() ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
             apiBase = prefs[LlmKeys.API_BASE]?.trim()?.trimEnd('/')?.ifEmpty { defaultApiBase } ?: defaultApiBase,
-            model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { "deepseek-v4-flash" },
-chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: 60000,
-                    enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: false
+            model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { LlmDefaults.MODEL },
+chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: LlmDefaults.CHAPTER_MAX_CHARS,
+                    enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: LlmDefaults.ENABLE_THINKING
         )
     }
 

@@ -3,6 +3,7 @@ package com.vibereading.app
 import android.app.Application
 import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.data.local.AppDatabase
+import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.CrashHandler
 import com.vibereading.app.log.LogUtils
@@ -15,6 +16,14 @@ import kotlinx.coroutines.SupervisorJob
 
 class VibeReadingApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
+
+    /**
+     * LLM 网络服务：进程级单一实例（内含共享 OkHttpClient 连接池）。
+     * 同时实现翻译与单词解释两个接口，由本类作为组合根提供给
+     * AppNavigation / [com.vibereading.app.ui.reader.TranslationCoordinatorProvider]，
+     * 避免各处各自 new 一份（此前有 3 个实例、3 套连接池）。
+     */
+    val llmApiService: LlmApiService by lazy { LlmApiService() }
 
     /**
      * 应用级协程作用域：翻译等合法后台任务在此运行，生命周期独立于 Activity/ViewModel，

@@ -8,6 +8,7 @@ import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.AppAccent
+import com.vibereading.app.domain.model.LlmDefaults
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.domain.model.LlmSettings
@@ -163,8 +164,8 @@ class SettingsViewModel(
         _uiState.update { it.copy(editingProfile = newProfile, isNewProfile = true) }
         _editName.value = ""
         _editApiKey.value = ""
-        _editApiBase.value = "https://api.deepseek.com"
-        _editModel.value = "deepseek-v4-flash"
+        _editApiBase.value = LlmDefaults.API_BASE
+        _editModel.value = LlmDefaults.MODEL
     }
 
     /** 开始编辑某个配置 */
@@ -346,8 +347,8 @@ class SettingsViewModel(
         return ep.copy(
             name = _editName.value.trim().ifEmpty { "未命名" },
             apiKey = _editApiKey.value.trim(),
-            apiBase = _editApiBase.value.trim().trimEnd('/').ifEmpty { "https://api.deepseek.com" },
-            model = _editModel.value.trim().ifEmpty { "deepseek-v4-flash" }
+            apiBase = _editApiBase.value.trim().trimEnd('/').ifEmpty { LlmDefaults.API_BASE },
+            model = _editModel.value.trim().ifEmpty { LlmDefaults.MODEL }
         )
     }
 

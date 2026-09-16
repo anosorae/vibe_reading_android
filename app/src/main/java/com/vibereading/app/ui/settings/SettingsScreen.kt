@@ -18,12 +18,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,21 +29,15 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.vibereading.app.domain.model.AppAccent
-import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.ThemeMode
-import com.vibereading.app.ui.components.CHAPTER_MAX_CHARS_RANGE
-import com.vibereading.app.ui.components.DECIMAL_PARAM_STEP
-import com.vibereading.app.ui.components.MAX_OUTPUT_TOKENS_RANGE
-import com.vibereading.app.ui.components.TEMPERATURE_RANGE
-import com.vibereading.app.ui.components.StepperValueInput
-import com.vibereading.app.ui.components.TOP_P_RANGE
+import com.vibereading.app.ui.components.LlmProfileEditor
+import com.vibereading.app.ui.components.LlmProfileList
+import com.vibereading.app.ui.components.LlmTranslationParams
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.WereadColors
@@ -231,13 +219,15 @@ fun SettingsScreen(
 
                         Spacer(Modifier.height(8.dp))
 
-                        LlmProfileForm(
-                            state = state,
+                        LlmProfileEditor(
                             editName = editName,
                             editApiKey = editApiKey,
                             editApiBase = editApiBase,
                             editModel = editModel,
+                            showApiKey = state.showApiKey,
                             accentColor = accentColor,
+                            testResult = state.testResult,
+                            testSuccess = state.testSuccess,
                             onUpdateName = vm::updateEditName,
                             onUpdateApiKey = vm::updateEditApiKey,
                             onUpdateApiBase = vm::updateEditApiBase,
@@ -245,11 +235,14 @@ fun SettingsScreen(
                             onToggleShowApiKey = vm::toggleShowApiKey,
                             onSave = vm::saveProfile,
                             onTest = vm::testConnection,
+                            isSaving = state.isSaving,
+                            isTesting = state.isTesting,
+                            editorTitle = if (state.isNewProfile) "新建配置" else "编辑配置",
                             onCancel = vm::cancelEdit
                         )
                     } else {
                         // ── 配置列表 ──
-                        ProfileList(
+                        LlmProfileList(
                             profiles = state.profiles,
                             activeProfileId = state.activeProfileId,
                             accentColor = accentColor,
@@ -265,121 +258,17 @@ fun SettingsScreen(
             // ── 翻译参数 ──
             SectionHeader("翻译参数")
             SectionCard {
-                val ls = state.llmSettings
-
-                // 单章字符上限：步进器微调 + 直接输入
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("单章字符上限", style = MaterialTheme.typography.bodyMedium)
-                        Text("超过该字符数的章节跳过翻译", fontSize = 12.sp, color = VibeColors.WarmGray)
-                    }
-                    StepperValueInput(
-                        value = ls.chapterMaxChars,
-                        range = CHAPTER_MAX_CHARS_RANGE,
-                        step = 1000,
-                        accentColor = accentColor,
-                        onValueChange = vm::updateChapterMaxChars
-                    )
-                }
-
-                // 最大输出Token：翻译请求的最大输出 token 数
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("最大输出Token", style = MaterialTheme.typography.bodyMedium)
-                        Text("模型单次翻译输出的最大 token 数", fontSize = 12.sp, color = VibeColors.WarmGray)
-                    }
-                    StepperValueInput(
-                        value = ls.maxOutputTokens,
-                        range = MAX_OUTPUT_TOKENS_RANGE,
-                        step = 1024,
-                        accentColor = accentColor,
-                        onValueChange = vm::updateMaxOutputTokens
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                // 思考模式
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("思考模式", style = MaterialTheme.typography.bodyMedium)
-                        Text("允许模型输出思考过程", fontSize = 12.sp, color = VibeColors.WarmGray)
-                    }
-                    Switch(
-                        checked = ls.enableThinking,
-                        onCheckedChange = { vm.updateThinking(it) },
-                        colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
-                    )
-                }
-
-                // 解释时思考
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("解释时思考", style = MaterialTheme.typography.bodyMedium)
-                        Text("选词解释时使用深度思考模式", fontSize = 12.sp, color = VibeColors.WarmGray)
-                    }
-                    Switch(
-                        checked = ls.enableExplainThinking,
-                        onCheckedChange = { vm.updateExplainThinking(it) },
-                        colors = SwitchDefaults.colors(checkedTrackColor = accentColor)
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                // 采样温度
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("采样温度", style = MaterialTheme.typography.bodyMedium)
-                        Text("越高输出越随机，越低越确定；建议与 top_p 二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
-                    }
-                    StepperValueInput(
-                        value = ls.temperature,
-                        range = TEMPERATURE_RANGE,
-                        step = DECIMAL_PARAM_STEP,
-                        accentColor = accentColor,
-                        onValueChange = vm::updateTemperature
-                    )
-                }
-
-                // Top P
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Top P", style = MaterialTheme.typography.bodyMedium)
-                        Text("仅考虑前 top_p 概率的 token；建议与采样温度二选一调整", fontSize = 12.sp, color = VibeColors.WarmGray)
-                    }
-                    StepperValueInput(
-                        value = ls.topP,
-                        range = TOP_P_RANGE,
-                        step = DECIMAL_PARAM_STEP,
-                        accentColor = accentColor,
-                        onValueChange = vm::updateTopP
-                    )
-                }
+                LlmTranslationParams(
+                    llmSettings = state.llmSettings,
+                    accentColor = accentColor,
+                    onUpdateChapterMaxChars = vm::updateChapterMaxChars,
+                    onUpdateMaxOutputTokens = vm::updateMaxOutputTokens,
+                    onToggleThinking = vm::updateThinking,
+                    onToggleExplainThinking = vm::updateExplainThinking,
+                    onUpdateTemperature = vm::updateTemperature,
+                    onUpdateTopP = vm::updateTopP,
+                    dividerBetweenGroups = true
+                )
             }
 
             // ── Web 伴读服务 ──
@@ -496,240 +385,6 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(32.dp))
-        }
-    }
-}
-
-/** 配置档案列表：名称 + 模型，活跃配置高亮，可切换/编辑/删除 */
-@Composable
-private fun ProfileList(
-    profiles: List<LlmProfile>,
-    activeProfileId: Long?,
-    accentColor: Color,
-    onSelect: (Long) -> Unit,
-    onEdit: (Long) -> Unit,
-    onDelete: (Long) -> Unit,
-    onAdd: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        profiles.forEach { profile ->
-            val isActive = profile.id == activeProfileId
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onSelect(profile.id) }
-                    .background(
-                        if (isActive) accentColor.copy(alpha = 0.08f) else Color.Transparent,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .then(
-                        if (isActive) Modifier.border(1.5.dp, accentColor, RoundedCornerShape(8.dp))
-                        else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
-                    )
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 活跃标记
-                if (isActive) {
-                    Icon(
-                        Icons.Filled.Check,
-                        contentDescription = "当前使用",
-                        tint = accentColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                }
-                // 名称
-                Text(
-                    profile.name.ifEmpty { "未命名" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(8.dp))
-                // 模型
-                Text(
-                    profile.model,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.width(4.dp))
-                // 编辑
-                IconButton(
-                    onClick = { onEdit(profile.id) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(Icons.Filled.Edit, "编辑", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                // 删除（仅多配置时）
-                if (profiles.size > 1) {
-                    IconButton(
-                        onClick = { onDelete(profile.id) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Filled.Delete, "删除", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
-                    }
-                }
-            }
-        }
-
-        // 添加按钮
-        OutlinedButton(
-            onClick = onAdd,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = accentColor)
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("添加配置")
-        }
-    }
-}
-
-/** 配置编辑表单：名称 + API Key / Base / Model + 保存/测试 */
-@Composable
-private fun LlmProfileForm(
-    state: SettingsUiState,
-    editName: String,
-    editApiKey: String,
-    editApiBase: String,
-    editModel: String,
-    accentColor: Color,
-    onUpdateName: (String) -> Unit,
-    onUpdateApiKey: (String) -> Unit,
-    onUpdateApiBase: (String) -> Unit,
-    onUpdateModel: (String) -> Unit,
-    onToggleShowApiKey: () -> Unit,
-    onSave: () -> Unit,
-    onTest: () -> Unit,
-    onCancel: () -> Unit
-) {
-    val isnew = state.isNewProfile
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 标题
-        Text(
-            if (isnew) "新建配置" else "编辑配置",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = accentColor
-        )
-
-        // 配置名称
-        OutlinedTextField(
-            value = editName,
-            onValueChange = onUpdateName,
-            label = { Text("配置名称") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            singleLine = true
-        )
-
-        // API Key
-        OutlinedTextField(
-            value = editApiKey,
-            onValueChange = onUpdateApiKey,
-            label = { Text("API Key") },
-            visualTransformation = if (state.showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = onToggleShowApiKey) {
-                    Icon(
-                        if (state.showApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (state.showApiKey) "隐藏" else "显示"
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            singleLine = true
-        )
-
-        // API Base
-        OutlinedTextField(
-            value = editApiBase,
-            onValueChange = onUpdateApiBase,
-            label = { Text("API Base URL") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            singleLine = true
-        )
-
-        // Model
-        OutlinedTextField(
-            value = editModel,
-            onValueChange = onUpdateModel,
-            label = { Text("模型") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            singleLine = true
-        )
-
-        // Action buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Button(
-                onClick = onSave,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                enabled = !state.isSaving
-            ) {
-                Text("保存")
-            }
-            OutlinedButton(
-                onClick = onTest,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(8.dp),
-                enabled = !state.isTesting
-            ) {
-                if (state.isTesting) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(4.dp))
-                }
-                Text("测试连接")
-            }
-        }
-
-        // Cancel button
-        OutlinedButton(
-            onClick = onCancel,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text("取消")
-        }
-
-        // Test result
-        if (state.testResult != null) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = if (state.testSuccess == true) VibeColors.SageLight else VibeColors.RedMuted.copy(alpha = 0.1f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (state.testSuccess == true) "✓ 连接成功" else "✗ 连接失败",
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (state.testSuccess == true) VibeColors.Sage else VibeColors.RedMuted
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        state.testResult ?: "",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
         }
     }
 }

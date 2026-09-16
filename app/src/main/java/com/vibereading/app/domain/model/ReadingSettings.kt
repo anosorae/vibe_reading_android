@@ -43,13 +43,13 @@ data class ReadingSettings(
 
 data class LlmSettings(
     val apiKey: String = "",
-    val apiBase: String = "https://api.deepseek.com",
-    val model: String = "deepseek-v4-flash",
-    val chapterMaxChars: Int = 60000,
-    val maxOutputTokens: Int = 32768,
-    val enableThinking: Boolean = false,
-    val enableExplainThinking: Boolean = false,
-    val autoTranslateNext: Boolean = false, // 英文阅读时预译下一章
-    val temperature: Float = 0.6f,
-    val topP: Float = 1f
+    val apiBase: String = LlmDefaults.API_BASE,
+    val model: String = LlmDefaults.MODEL,
+    val chapterMaxChars: Int = LlmDefaults.CHAPTER_MAX_CHARS,
+    val maxOutputTokens: Int = LlmDefaults.MAX_OUTPUT_TOKENS,
+    val enableThinking: Boolean = LlmDefaults.ENABLE_THINKING,
+    val enableExplainThinking: Boolean = LlmDefaults.ENABLE_EXPLAIN_THINKING,
+    val autoTranslateNext: Boolean = LlmDefaults.AUTO_TRANSLATE_NEXT, // 英文阅读时预译下一章
+    val temperature: Float = LlmDefaults.TEMPERATURE,
+    val topP: Float = LlmDefaults.TOP_P
 )

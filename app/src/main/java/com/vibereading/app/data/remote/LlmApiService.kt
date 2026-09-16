@@ -20,6 +20,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
@@ -51,18 +52,22 @@ private data class ChatCompletionMessage(
 )
 private data class ChatCompletionResponse(val choices: List<ChatCompletionChoice>? = null)
 
-class LlmApiService : TranslationService {
+class LlmApiService(
+    /** 共享单例：此前每个实例各建一套连接池（App/翻译协调器/设置页共 3 个）。 */
+    private val client: OkHttpClient = defaultClient,
+    private val gson: Gson = Gson()
+) : TranslationService, WordExplainService {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
-
-    private val gson = Gson()
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     companion object {
+        /** 进程级共享的 OkHttpClient（超时配置一处生效）。 */
+        val defaultClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+
         const val SYSTEM_PROMPT = """你是一位资深中英文学翻译。
 将用户给定的整章中文翻译为英文, 保留原文语气、风格、文学性。
 
@@ -157,6 +162,96 @@ class LlmApiService : TranslationService {
         return sb.toString()
     }
 
+    /**
+     * 构造 `chat/completions` 请求（翻译 / 连接测试 / 单词解释共用）。
+     * [stream] 决定是否声明 SSE 的 `Accept` 头。
+     */
+    private fun buildRequest(
+        settings: LlmSettings,
+        messages: List<Map<String, String>>,
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int,
+        stream: Boolean,
+        enableThinking: Boolean
+    ): Request {
+        val requestMap = mutableMapOf<String, Any>(
+            "model" to settings.model,
+            "messages" to messages,
+            "temperature" to temperature.coerceIn(0f, 2f),
+            "top_p" to topP.coerceIn(0f, 1f),
+            "max_tokens" to maxTokens,
+            "stream" to stream
+        )
+        // 思考模式：同时发送 OpenAI 兼容格式和 Qwen chat_template_kwargs 格式，
+        // 以兼容不同 API 后端（DashScope / vLLM / Ollama 等）。
+        requestMap["thinking"] = mapOf("type" to if (enableThinking) "enabled" else "disabled")
+        requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to enableThinking)
+
+        return Request.Builder()
+            .url(chatCompletionsUrl(settings.apiBase))
+            .addHeader("Authorization", "Bearer ${settings.apiKey}")
+            .addHeader("Content-Type", "application/json")
+            .apply { if (stream) addHeader("Accept", "text/event-stream") }
+            .post(gson.toJson(requestMap).toRequestBody(jsonMediaType))
+            .build()
+    }
+
+    /**
+     * 非流式调用的统一错误处理：网络/配置异常落日志并交给 [onFailure] 转成调用方的失败表示。
+     * [tag] 只作为日志前缀（"翻译" / "连接测试" / "单词解释"）。
+     *
+     * 取消异常必须重抛——协程取消不是业务失败，当成失败会污染 UI 状态。
+     */
+    private suspend fun <T> guarded(
+        tag: String,
+        fallbackMessage: String,
+        onFailure: (Exception) -> T,
+        block: suspend () -> T
+    ): T = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: IOException) {
+        AppLog.put("${tag}网络错误", e)
+        onFailure(Exception("网络错误: ${e.message}"))
+    } catch (e: Exception) {
+        AppLog.put("${tag}请求失败", e)
+        onFailure(Exception(e.message ?: fallbackMessage))
+    }
+
+    /**
+     * 非流式一次往返：构造请求 → 发请求 → 把响应体交给 [parse]。
+     * 连接测试与单词解释共用（此前两处各自重复 request 拼装与错误分支）。
+     */
+    private suspend fun <T> complete(
+        settings: LlmSettings,
+        messages: List<Map<String, String>>,
+        temperature: Float,
+        topP: Float,
+        maxTokens: Int,
+        enableThinking: Boolean,
+        tag: String,
+        fallbackMessage: String,
+        parse: (body: String) -> Result<T>
+    ): Result<T> = withContext(Dispatchers.IO) {
+        guarded(tag, fallbackMessage, onFailure = { Result.failure(it) }) {
+            val request = buildRequest(
+                settings, messages, temperature, topP, maxTokens,
+                stream = false, enableThinking = enableThinking
+            )
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string()?.take(200) ?: "Unknown"
+                    Result.failure<T>(Exception("API 错误 ${response.code}: $errorBody"))
+                } else {
+                    val body = response.body?.string()
+                    if (body == null) Result.failure<T>(Exception("空响应")) else parse(body)
+                }
+            }
+        }
+    }
+
     override fun translateStream(
         settings: LlmSettings,
         chapterTitle: String,
@@ -169,34 +264,18 @@ class LlmApiService : TranslationService {
         try {
             emit(TranslationEvent.Started)
             val userPrompt = buildUserPrompt(chapterTitle, chapterContent, sourceLanguage)
-            val requestMap = mutableMapOf<String, Any>(
-                "model" to settings.model,
-                "messages" to listOf(
+            val request = buildRequest(
+                settings = settings,
+                messages = listOf(
                     mapOf("role" to "system", "content" to translationSystemPrompt(sourceLanguage)),
                     mapOf("role" to "user", "content" to userPrompt)
                 ),
-                "temperature" to settings.temperature.coerceIn(0f, 2f),
-                "top_p" to settings.topP.coerceIn(0f, 1f),
-                "max_tokens" to settings.maxOutputTokens,
-                "stream" to true
+                temperature = settings.temperature,
+                topP = settings.topP,
+                maxTokens = settings.maxOutputTokens,
+                stream = true,
+                enableThinking = settings.enableThinking
             )
-            // 思考模式：同时发送 OpenAI 兼容格式和 Qwen chat_template_kwargs 格式，
-            // 以兼容不同 API 后端（DashScope / vLLM / Ollama 等）。
-            if (settings.enableThinking) {
-                requestMap["thinking"] = mapOf("type" to "enabled")
-                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to true)
-            } else {
-                requestMap["thinking"] = mapOf("type" to "disabled")
-                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to false)
-            }
-
-            val request = Request.Builder()
-                .url(chatCompletionsUrl(settings.apiBase))
-                .addHeader("Authorization", "Bearer ${settings.apiKey}")
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "text/event-stream")
-                .post(gson.toJson(requestMap).toRequestBody(jsonMediaType))
-                .build()
 
             call = client.newCall(request)
             currentCoroutineContext()[kotlinx.coroutines.Job]?.invokeOnCompletion { call?.cancel() }
@@ -270,51 +349,22 @@ class LlmApiService : TranslationService {
         }
     }.flowOn(Dispatchers.IO)
 
-    override suspend fun testConnection(settings: LlmSettings): Result<String> = withContext(Dispatchers.IO) {
+    override suspend fun testConnection(settings: LlmSettings): Result<String> = complete(
+        settings = settings,
+        messages = listOf(mapOf("role" to "user", "content" to "Say hi in one word.")),
+        temperature = settings.temperature,
+        topP = settings.topP,
+        maxTokens = settings.maxOutputTokens,
+        enableThinking = settings.enableThinking,
+        tag = "连接测试",
+        fallbackMessage = "请求配置无效"
+    ) { body ->
         try {
-            val requestMap = mutableMapOf<String, Any>(
-                "model" to settings.model,
-                "messages" to listOf(mapOf("role" to "user", "content" to "Say hi in one word.")),
-                "temperature" to settings.temperature.coerceIn(0f, 2f),
-                "top_p" to settings.topP.coerceIn(0f, 1f),
-                "max_tokens" to 10,
-                "stream" to false
-            )
-            if (settings.enableThinking) {
-                requestMap["thinking"] = mapOf("type" to "enabled")
-                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to true)
-            } else {
-                requestMap["thinking"] = mapOf("type" to "disabled")
-                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to false)
-            }
-            val request = Request.Builder()
-                .url(chatCompletionsUrl(settings.apiBase))
-                .addHeader("Authorization", "Bearer ${settings.apiKey}")
-                .addHeader("Content-Type", "application/json")
-                .post(gson.toJson(requestMap).toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val body = response.body?.string()?.take(200) ?: "Unknown"
-                    return@withContext Result.failure<String>(Exception("API 错误 ${response.code}: $body"))
-                }
-                val body = response.body?.string() ?: return@withContext Result.failure<String>(Exception("空响应"))
-                try {
-                    val resp = gson.fromJson(body, ChatCompletionResponse::class.java)
-                    Result.success(resp.choices?.firstOrNull()?.message?.content ?: "连接成功")
-                } catch (e: Exception) {
-                    AppLog.put("解析连接测试响应失败", e)
-                    Result.failure(Exception("解析响应失败: ${e.message}"))
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: java.io.IOException) {
-            AppLog.put("连接测试网络错误", e)
-            Result.failure(Exception("网络错误: ${e.message}"))
+            val resp = gson.fromJson(body, ChatCompletionResponse::class.java)
+            Result.success(resp?.choices?.firstOrNull()?.message?.content ?: "连接成功")
         } catch (e: Exception) {
-            AppLog.put("连接测试请求失败", e)
-            Result.failure(Exception(e.message ?: "请求配置无效"))
+            AppLog.put("解析连接测试响应失败", e)
+            Result.failure(Exception("解析响应失败: ${e.message}"))
         }
     }
 
@@ -322,71 +372,44 @@ class LlmApiService : TranslationService {
      * 调用 LLM 解释单词用法（非流式）。
      * 返回解析后的 [WordExplanation]，失败时返回带错误信息的 Result。
      */
-    suspend fun explainWord(
+    override suspend fun explainWord(
         settings: LlmSettings,
         word: String,
         paragraphContext: String
-    ): Result<WordExplanation> = withContext(Dispatchers.IO) {
+    ): Result<WordExplanation> = complete(
+        settings = settings,
+        messages = listOf(
+            mapOf("role" to "system", "content" to EXPLAIN_SYSTEM_PROMPT),
+            mapOf("role" to "user", "content" to buildExplainUserPrompt(word, paragraphContext))
+        ),
+        temperature = 0.3f,
+        topP = 0.9f,
+        maxTokens = 4096,
+        // 单词解释用独立的思考开关（enableExplainThinking），与整章翻译分开配置
+        enableThinking = settings.enableExplainThinking,
+        tag = "单词解释",
+        fallbackMessage = "解释请求失败"
+    ) { body ->
         try {
-            val requestMap = mutableMapOf<String, Any>(
-                "model" to settings.model,
-                "messages" to listOf(
-                    mapOf("role" to "system", "content" to EXPLAIN_SYSTEM_PROMPT),
-                    mapOf("role" to "user", "content" to buildExplainUserPrompt(word, paragraphContext))
-                ),
-                "temperature" to 0.3f,
-                "top_p" to 0.9f,
-                "max_tokens" to 4096,
-                "stream" to false
-            )
-            if (settings.enableExplainThinking) {
-                requestMap["thinking"] = mapOf("type" to "enabled")
-                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to true)
+            val message = gson.fromJson(body, ChatCompletionResponse::class.java)
+                ?.choices?.firstOrNull()?.message
+            // content 为空时回退 reasoning_content（思考模式下模型可能将答案放入 reasoning_content）
+            val content = if (!message?.content.isNullOrBlank()) message.content else message?.reasoning_content
+            if (content.isNullOrBlank()) {
+                AppLog.put("单词解释：模型返回内容为空，content=${message?.content?.length ?: 0}字, reasoning_content=${message?.reasoning_content?.length ?: 0}字")
+                Result.failure<WordExplanation>(Exception("模型返回内容为空"))
             } else {
-                requestMap["thinking"] = mapOf("type" to "disabled")
-                requestMap["chat_template_kwargs"] = mapOf("enable_thinking" to false)
-            }
-            val request = Request.Builder()
-                .url(chatCompletionsUrl(settings.apiBase))
-                .addHeader("Authorization", "Bearer ${settings.apiKey}")
-                .addHeader("Content-Type", "application/json")
-                .post(gson.toJson(requestMap).toRequestBody(jsonMediaType))
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string()?.take(200) ?: "Unknown"
-                    return@withContext Result.failure<WordExplanation>(Exception("API 错误 ${response.code}: $errorBody"))
+                // 提取 JSON：模型可能在外层包裹 markdown 代码块或思考过程
+                val json = extractJson(content)
+                val explanation = gson.fromJson(json, WordExplanation::class.java)
+                if (explanation == null) {
+                    AppLog.put("单词解释：解析结果为 null，extractJson 前200字: ${json.take(200)}")
                 }
-                val body = response.body?.string() ?: return@withContext Result.failure(Exception("空响应"))
-                try {
-                    val resp = gson.fromJson(body, ChatCompletionResponse::class.java)
-                    val message = resp.choices?.firstOrNull()?.message
-                    // content 为空时回退 reasoning_content（思考模式下模型可能将答案放入 reasoning_content）
-                    val content = if (!message?.content.isNullOrBlank()) message.content else message?.reasoning_content
-                    if (content.isNullOrBlank()) {
-                        AppLog.put("单词解释：模型返回内容为空，content=${message?.content?.length ?: 0}字, reasoning_content=${message?.reasoning_content?.length ?: 0}字")
-                        return@withContext Result.failure(Exception("模型返回内容为空"))
-                    }
-                    // 提取 JSON：模型可能在外层包裹 markdown 代码块或思考过程
-                    val json = extractJson(content)
-                    val explanation = gson.fromJson(json, WordExplanation::class.java)
-                    if (explanation == null) {
-                        AppLog.put("单词解释：解析结果为 null，extractJson 前200字: ${json.take(200)}")
-                    }
-                    Result.success(explanation)
-                } catch (e: Exception) {
-                    AppLog.put("解析单词解释结果失败", e)
-                    Result.failure(Exception("解析解释结果失败: ${e.message}"))
-                }
+                Result.success(explanation)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: java.io.IOException) {
-            AppLog.put("单词解释网络错误", e)
-            Result.failure(Exception("网络错误: ${e.message}"))
         } catch (e: Exception) {
-            AppLog.put("单词解释请求失败", e)
-            Result.failure(Exception(e.message ?: "解释请求失败"))
+            AppLog.put("解析单词解释结果失败", e)
+            Result.failure(Exception("解析解释结果失败: ${e.message}"))
         }
     }
 

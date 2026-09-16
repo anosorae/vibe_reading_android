@@ -293,7 +293,8 @@ object TranslationCoordinatorProvider {
 
     private fun create(app: VibeReadingApp): TranslationCoordinator = TranslationCoordinator(
         chapterRepo = ChapterRepository(app.database.chapterDao()),
-        translationService = LlmApiService(),
+        // 复用 App 组合根的实例，不再自建（否则连接池与超时配置在这里分叉）
+        translationService = app.llmApiService,
         scope = app.appScope,
         appContext = app
     )

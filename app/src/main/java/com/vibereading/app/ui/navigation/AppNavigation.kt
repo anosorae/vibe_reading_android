@@ -18,7 +18,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.vibereading.app.data.dict.DictDatabase
-import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.LlmProfileRepository
@@ -73,7 +72,8 @@ fun AppNavigation() {
     val chapterRepo = remember { ChapterRepository(db.chapterDao()) }
     val settingsRepo = remember { SettingsRepository(application) }
     val llmProfileRepo = remember { LlmProfileRepository(db.llmProfileDao(), settingsRepo) }
-    val translationService = remember { LlmApiService() }
+    // 进程级共享的 LLM 服务实例（翻译 + 单词解释由同一个对象承担）
+    val llmService = application.llmApiService
     // 内嵌 ECDICT 词典（惰性打开：首次查词才拷贝 asset + SQLite 打开）
     val dictDatabase = remember { DictDatabase.open(application) }
 
@@ -140,8 +140,8 @@ fun AppNavigation() {
                 val bookId = entry.arguments?.getLong("bookId") ?: return@composable
                 val vm: ReaderViewModel = viewModel(
                     factory = ReaderViewModel.Factory(
-                        bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase,
-                        llmApiService = translationService,
+                        bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, llmService, dictDatabase,
+                        wordExplainService = llmService,
                         appContext = application
                     )
                 )

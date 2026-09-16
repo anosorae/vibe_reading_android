@@ -3,6 +3,7 @@ package com.vibereading.app.data.repository
 import com.vibereading.app.BuildConfig
 import com.vibereading.app.data.local.dao.LlmProfileDao
 import com.vibereading.app.data.local.entity.LlmProfileEntity
+import com.vibereading.app.domain.model.LlmDefaults
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.toLlmProfile
@@ -97,9 +98,9 @@ class LlmProfileRepository(
         val model = BuildConfig.DEBUG_LLM_MODEL.trim()
         if (base.isEmpty() && key.isEmpty() && model.isEmpty()) return null
         return LlmSettings(
-            apiBase = if (base.isNotEmpty()) base else "https://api.deepseek.com",
+            apiBase = if (base.isNotEmpty()) base else LlmDefaults.API_BASE,
             apiKey = key,
-            model = if (model.isNotEmpty()) model else "deepseek-v4-flash"
+            model = if (model.isNotEmpty()) model else LlmDefaults.MODEL
         )
     }
 

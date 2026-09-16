@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import android.content.Context
 import com.vibereading.app.data.dict.DictDatabase
-import com.vibereading.app.data.remote.LlmApiService
+import com.vibereading.app.data.remote.WordExplainService
 import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
@@ -78,7 +78,7 @@ class ReaderViewModel(
     private val llmProfileRepo: LlmProfileRepository,
     private val translationService: TranslationService,
     private val dictDatabase: DictDatabase? = null,
-    private val llmApiService: LlmApiService? = null,
+    private val wordExplainService: WordExplainService? = null,
     appContext: Context
 ) : ViewModel() {
 
@@ -631,7 +631,7 @@ class ReaderViewModel(
     // ── LLM 词语解释（选词「解释」按钮） ──
 
     fun explainWord(word: String, paragraphText: String) {
-        val service = llmApiService
+        val service = wordExplainService
         if (service == null) {
             _uiState.update {
                 it.copy(explainWord = word, explainResult = null, explainLoading = false,
@@ -685,13 +685,13 @@ class ReaderViewModel(
         private val llmProfileRepo: LlmProfileRepository,
         private val translationService: TranslationService,
         private val dictDatabase: DictDatabase? = null,
-        private val llmApiService: LlmApiService? = null,
+        private val wordExplainService: WordExplainService? = null,
         private val appContext: Context
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ReaderViewModel(
-                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, llmApiService, appContext
+                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, wordExplainService, appContext
             ) as T
         }
     }

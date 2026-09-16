@@ -21,6 +21,8 @@ local.properties
 
 # ZCode 工具会话数据
 .zcode/
+.agents/
+/skills-lock.json
 
 # Release keystore（不入库，CI 通过 Secrets 注入）
 app/release.keystore

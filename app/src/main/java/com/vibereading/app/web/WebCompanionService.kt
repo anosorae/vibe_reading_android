@@ -66,6 +66,7 @@ class WebCompanionService : Service() {
         currentToken = token
         // START_STICKY 系统重启（intent=null）也会走到这里，保持 isRunning 与真实状态一致
         isRunning = true
+        TranslationCoordinatorProvider.notifyCompanionServiceStateChanged()
         val started = startServer(token)
         startForegroundCompat(started)
         if (started) {
@@ -259,6 +260,7 @@ class WebCompanionService : Service() {
         unregisterNetworkCallback()
         currentToken = null
         isRunning = false
+        TranslationCoordinatorProvider.notifyCompanionServiceStateChanged()
         _urlFlow.value = null
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
@@ -308,6 +310,7 @@ class WebCompanionService : Service() {
         fun start(context: Context) {
             if (isRunning) return
             isRunning = true
+            TranslationCoordinatorProvider.notifyCompanionServiceStateChanged()
             // 先定 Token 再拉起服务：调用方（设置页）在 start() 返回后即可展示完整地址
             val token = currentToken ?: newToken()
             currentToken = token
@@ -315,6 +318,7 @@ class WebCompanionService : Service() {
             val intent = Intent(context, WebCompanionService::class.java).putExtra(EXTRA_TOKEN, token)
             if (!startForegroundServiceLogged(context, intent, "伴读服务 startForegroundService 失败")) {
                 isRunning = false
+                TranslationCoordinatorProvider.notifyCompanionServiceStateChanged()
                 currentToken = null
                 _urlFlow.value = null
             }
@@ -323,6 +327,7 @@ class WebCompanionService : Service() {
         /** 停止伴读服务（幂等）。 */
         fun stop(context: Context) {
             isRunning = false
+            TranslationCoordinatorProvider.notifyCompanionServiceStateChanged()
             _urlFlow.value = null
             runCatching { context.stopService(Intent(context, WebCompanionService::class.java)) }
                 .onFailure { AppLog.put("伴读服务 stopService 失败", it) }

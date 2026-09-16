@@ -15,12 +15,15 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.newTextMeasurer
+import com.vibereading.app.ui.reader.ReaderContentInteractions
+import com.vibereading.app.ui.reader.ReaderLayoutSpec
 import com.vibereading.app.ui.reader.ReaderPageGeometry
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.components.ReadingChapterTitle
@@ -122,13 +125,16 @@ class PageGeometryConsistencyTest {
                     PageRenderer(
                         units = units,
                         mode = "zh",
-                        palette = ReaderPalette.of(isDark = false),
-                        pageStyle = style,
-                        paddingH = paddingH,
-                        paddingV = paddingV,
-                        statusBarPx = statusBarPx,
-                        navBarPx = navBarPx,
-                        contentWidthPx = geometry().contentWidthPx.toInt()
+                        layout = ReaderLayoutSpec(
+                            pageStyle = style,
+                            palette = ReaderPalette.of(isDark = false),
+                            geometry = geometry(),
+                            paddingH = paddingH,
+                            paddingV = paddingV,
+                            headerContentGap = 20,
+                            footerContentGap = 20
+                        ),
+                        interactions = ReaderContentInteractions()
                     )
             }
         }
@@ -341,7 +347,91 @@ class PageGeometryConsistencyTest {
         assertTrue("语料应产生跨页拆分片段以覆盖 splitFirst 分支", sawSplitFragment)
     }
 
-    // ── 4. 原文气泡矩形：位图侧必须与 BilingualParagraph 使用同一组常量 ──
+    // ── 4. bottomJustify：最终布局必须在分页期确定，计划器只消费 ──
+
+    @Test
+    fun bottomJustify_planUsesFinalLayoutForSecondParagraph() {
+        val justifyStyle = style.copy(bottomJustify = true)
+        val chapter = Chapter(
+            id = 1L, bookId = 1, title = "第一章", section = null, chapterIndex = 0,
+            content = (1..60).joinToString(PARA_SEP) {
+                "第${it}段正文内容，用于制造多段满页并验证第二块位置。" + "附加内容。".repeat(4)
+            }
+        )
+        val paginator = paginator(chapter, mode = "zh", pageStyle = justifyStyle)
+        val page = paginator.pages.dropLast(1).firstOrNull { candidate ->
+            candidate.units.none { it is PageUnit.Title } &&
+                candidate.units.filterIsInstance<PageUnit.Para>().size >= 2 &&
+                candidate.units.filterIsInstance<PageUnit.Para>().any { it.lineHeightExtraPx > 0f }
+        }
+        requireNotNull(page) { "语料应产生包含至少两个正文块的 bottomJustify 中间页" }
+        val paras = page.units.filterIsInstance<PageUnit.Para>()
+        val first = paras[0]
+        val second = paras[1]
+        val blocks = PageLayoutPlanner.plan(
+            units = page.units,
+            style = justifyStyle,
+            density = densityObj,
+            contentWidthPx = geometry().contentWidthPx,
+            mode = "zh"
+        )
+        val firstBlock = blocks.first { it.unit === first }
+        val secondBlock = blocks.first { it.unit === second }
+
+        assertTrue("首段应携带底部对齐额外行高", first.lineHeightExtraPx > 0f)
+        assertEquals(
+            "PageUnit.mainLayout 必须已是最终有效布局，不能仍保留自然高度",
+            first.lineCount * first.lineHeightExtraPx,
+            firstBlock.contentHeightPx - naturalLayoutHeight(first, justifyStyle, "zh"),
+            first.lineCount + 1f
+        )
+        assertEquals(
+            "第二正文块必须紧跟最终首块高度与实际段距，不能按自然 mainLayout 提前",
+            firstBlock.bottomPx + firstBlock.spacingBelowPx,
+            secondBlock.yPx,
+            0.01f
+        )
+    }
+
+    @Test
+    fun bottomJustify_bilingualBubbleUsesFinalBlockBottom() {
+        val justifyStyle = style.copy(bottomJustify = true)
+        val original = (1..70).joinToString(PARA_SEP) {
+            "English source paragraph $it contains enough words to occupy several wrapped lines on the page."
+        }
+        val translated = (1..70).joinToString(PARA_SEP) { "[$it] 第${it}段中文译文。" }
+        val chapter = Chapter(
+            id = 1L, bookId = 1, title = "Chapter One", section = null, chapterIndex = 0,
+            content = original,
+            translatedContent = translated
+        )
+        val paginator = paginator(chapter, mode = "en", pageStyle = justifyStyle)
+        val page = paginator.pages.dropLast(1).firstOrNull { candidate ->
+            candidate.units.none { it is PageUnit.Title } &&
+                candidate.units.filterIsInstance<PageUnit.Para>().size >= 2 &&
+                candidate.units.filterIsInstance<PageUnit.Para>().any { it.lineHeightExtraPx > 0f }
+        }
+        requireNotNull(page) { "语料应产生双语 bottomJustify 中间页" }
+        val blocks = PageLayoutPlanner.plan(
+            units = page.units,
+            style = justifyStyle,
+            density = densityObj,
+            contentWidthPx = geometry().contentWidthPx,
+            mode = "en"
+        )
+        val lastParaBlock = blocks.last { it.unit is PageUnit.Para }
+        val bubble = requireNotNull(lastParaBlock.bubble)
+        val bubbleBottomPx = with(densityObj) { ReaderMetrics.BUBBLE_BOTTOM_DP.dp.roundToPx() }
+
+        assertEquals(
+            "最终双语块气泡必须锚定最终布局块底",
+            lastParaBlock.bottomPx - bubbleBottomPx,
+            bubble.topPx + bubble.heightPx,
+            0.01f
+        )
+    }
+
+    // ── 5. 原文气泡矩形：位图侧必须与 BilingualParagraph 使用同一组常量 ──
 
     @Test
     fun bubbleRect_bitmapHonoursSharedMetrics() {
@@ -381,7 +471,35 @@ class PageGeometryConsistencyTest {
         )
     }
 
-    // ── 5. 插图单元：位图必须按排版器适配后的尺寸绘制 ──
+    // ── 6. 插图单元：位图必须按排版器适配后的尺寸绘制 ──
+
+    @Test
+    fun imageBlock_spacingBelowMatchesFollowingParagraph() {
+        val link = IllustrationLink.build("1/inline.jpg", 800, 600)
+        val chapter = Chapter(
+            id = 1L, bookId = 1, title = "第一章", section = null, chapterIndex = 0,
+            content = "$link$PARA_SEP 插图后的正文段落。"
+        )
+        val page = paginator(chapter, mode = "zh", pageStyle = style).pages.first()
+        val blocks = PageLayoutPlanner.plan(
+            units = page.units,
+            style = style,
+            density = densityObj,
+            contentWidthPx = geometry().contentWidthPx,
+            mode = "zh"
+        )
+        val imageBlock = blocks.first { it.unit is PageUnit.Image }
+        val paraBlock = blocks.first { it.unit is PageUnit.Para }
+        val expectedSpacing = with(densityObj) { style.paragraphSpacingPx.toDp().roundToPx() }.toFloat()
+
+        assertEquals("插图后的实际段距必须来自 PageStyle", expectedSpacing, imageBlock.spacingBelowPx, 0.01f)
+        assertEquals(
+            "插图后正文块顶必须等于插图块底加实际段距",
+            imageBlock.bottomPx + expectedSpacing,
+            paraBlock.yPx,
+            0.01f
+        )
+    }
 
     @Test
     fun imageUnit_bitmapUsesPaginatorFittedSize() {
@@ -465,6 +583,46 @@ class PageGeometryConsistencyTest {
     }
 
     // ── 辅助 ──
+
+    private fun paginator(
+        chapter: Chapter,
+        mode: String,
+        pageStyle: PageStyle = style
+    ) = ChapterPaginator(
+        chapterId = chapter.id,
+        items = BookWindow.buildChapterItems(chapter, mode),
+        style = pageStyle,
+        mode = mode,
+        contentWidthPx = geometry().contentWidthPx,
+        contentHeightPx = geometry().contentHeightPx,
+        measurer = newMeasurer(),
+        density = density
+    )
+
+    private fun naturalLayoutHeight(unit: PageUnit.Para, pageStyle: PageStyle, mode: String): Float {
+        val baseStyle = if (unit.continuation) pageStyle.body.copy(textIndent = null) else pageStyle.body
+        val text = if (mode == "zh") unit.cnText.ifBlank { unit.enText.orEmpty() }
+        else unit.enText ?: unit.cnText
+        val width = geometry().contentWidthPx.toInt()
+        val measurer = newMeasurer()
+        val justified = CjkJustifier.annotateDetailed(
+            text = text,
+            style = baseStyle,
+            contentWidthPx = width,
+            measurer = measurer,
+            justifyLastLine = unit.paragraphContinues
+        )
+        val effectiveStyle = if (justified.tookOver) {
+            baseStyle.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+        } else {
+            CjkJustifier.adjustLatinTextStyle(text, baseStyle)
+        }
+        return measurer.measure(
+            text = justified.annotated,
+            style = effectiveStyle,
+            constraints = Constraints(minWidth = width, maxWidth = width)
+        ).size.height.toFloat()
+    }
 
     private fun window(chapter: Chapter, mode: String): BookWindow = BookWindow(
         chapters = listOf(chapter),

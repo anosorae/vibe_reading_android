@@ -24,7 +24,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.Chapter
-import com.vibereading.app.ui.reader.ReaderPalette
+import com.vibereading.app.ui.reader.ReaderLayoutSpec
 import com.vibereading.app.ui.reader.chapterLabel
 import com.vibereading.app.ui.reader.pagination.BookWindow
 import java.text.SimpleDateFormat
@@ -48,18 +48,11 @@ fun PageInfoOverlays(
     chapters: List<Chapter>,
     activeChapterId: Long?,
     pagerState: PagerState,
-    palette: ReaderPalette,
-    padH: Int,
-    padV: Int,
-    headerContentGap: Int = 20,
-    footerContentGap: Int = 20,
-    statusBarPx: Int,
-    navBarPx: Int,
-    cutoutLeftPx: Int = 0,
-    cutoutRightPx: Int = 0
+    layout: ReaderLayoutSpec
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val palette = layout.palette
 
     // 时间 / 电量（对齐 Legado TimeBatteryReceiver）
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -101,20 +94,20 @@ fun PageInfoOverlays(
     val tipColor = palette.bodyText.copy(alpha = 0.7f)
 
     // 系统栏/挖孔用缓存值（不随沉浸式切换变化），与排版几何一致
-    val statusBarDp = with(density) { statusBarPx.toDp() }
-    val navBarDp = with(density) { navBarPx.toDp() }
-    val cutoutLeftDp = with(density) { cutoutLeftPx.toDp() }
-    val cutoutRightDp = with(density) { cutoutRightPx.toDp() }
+    val statusBarDp = with(density) { layout.geometry.statusBarPx.toDp() }
+    val navBarDp = with(density) { layout.geometry.navBarPx.toDp() }
+    val cutoutLeftDp = with(density) { layout.cutoutLeftPx.toDp() }
+    val cutoutRightDp = with(density) { layout.cutoutRightPx.toDp() }
     // 正文内容区边界（与排版几何一致：contentTop = statusBar + padV, contentBottom = navBar + padV）
-    val contentTopDp = statusBarDp + padV.dp
-    val contentBottomDp = navBarDp + padV.dp
+    val contentTopDp = statusBarDp + layout.paddingV.dp
+    val contentBottomDp = navBarDp + layout.paddingV.dp
     // 12sp 单行文字高度（用于推算页眉/页脚离正文区间距）
     val overlayTextHeightDp = 16.dp
     // 锚点退让量：手势导航设备（如小米 HyperOS）底部 inset 可能不足 16dp，
     // 推算结果为负会让 Compose padding 直接抛 IllegalArgumentException，必须钳到 0
     // （负数语义本就是「贴边」，与上文允许叠入系统栏区域的取舍一致）
-    val headerOffsetDp = (contentTopDp - headerContentGap.dp - overlayTextHeightDp).coerceAtLeast(0.dp)
-    val footerOffsetDp = (contentBottomDp - footerContentGap.dp - overlayTextHeightDp).coerceAtLeast(0.dp)
+    val headerOffsetDp = (contentTopDp - layout.headerContentGap.dp - overlayTextHeightDp).coerceAtLeast(0.dp)
+    val footerOffsetDp = (contentBottomDp - layout.footerContentGap.dp - overlayTextHeightDp).coerceAtLeast(0.dp)
 
     Box(modifier = Modifier.fillMaxSize()) {
         // ── 页眉（左上）：章节号 · 章节名 ──
@@ -133,7 +126,7 @@ fun PageInfoOverlays(
                 .align(Alignment.TopStart)
                 .padding(
                     top = headerOffsetDp,
-                    start = maxOf(padH.dp, cutoutLeftDp)
+                    start = maxOf(layout.paddingH.dp, cutoutLeftDp)
                 )
         )
 
@@ -147,7 +140,7 @@ fun PageInfoOverlays(
                 .align(Alignment.BottomStart)
                 .padding(
                     bottom = footerOffsetDp,
-                    start = maxOf(padH.dp, cutoutLeftDp)
+                    start = maxOf(layout.paddingH.dp, cutoutLeftDp)
                 )
         )
 
@@ -160,7 +153,7 @@ fun PageInfoOverlays(
                 .align(Alignment.BottomEnd)
                 .padding(
                     bottom = footerOffsetDp,
-                    end = maxOf(padH.dp, cutoutRightDp)
+                    end = maxOf(layout.paddingH.dp, cutoutRightDp)
                 )
         )
     }

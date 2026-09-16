@@ -57,16 +57,16 @@
 
 ## 6. 违反 KISS
 
-`if (run == runId)` 守卫 10 处；终态 `copy` 块 4 份（各清不同字段子集）；`TextPaginator.layoutUntil` 173 行；`PageCurl` 四个几何函数 350+ 行且直接读写 10+ 成员变量；长参数列表（`LlmSettingsSheet` 26 参数含 19 回调、`ReaderPager`/`ScrollReader` 各 15）；`mode: String` 无类型约束。
+`if (run == runId)` 守卫 10 处；终态 `copy` 块 4 份（各清不同字段子集）；`TextPaginator.layoutUntil` 173 行；`PageCurl` 四个几何函数 350+ 行且直接读写 10+ 成员变量；长参数列表（`LlmSettingsSheet` 26 参数含 **16 回调**、`ReaderPager`/`ScrollReader` 各 15）；`mode: String` 无类型约束。
 
-## 7. 已实施（M1–M5，每步都过了构建 + 单测 + 装机）
+## 7. 已实施（M1–M6，均完成构建 + 单测 + 装机）
 
 | 提交 | 内容 | 验证 |
 |---|---|---|
 | `3c251b7` **M1** | 纯机械 DRY：测试夹具 `TestFixtures.kt`（替换 11 处 `TextMeasurer`、6 处 `PageStyle`、5 处 Room 建库、2 处匿名 DataStore）；`FakeTranslationService` 独立；`AppLog` 去重；`ReaderViewModel` 的 `updateLlmXxx`/`toggleXxx` 合并；三处 Popup 定位合一（顺带修掉弹窗宽于窗口时 `coerceIn` 抛异常）；`ReaderBgPresets.all/isDark`；`TextPaginator` 重复函数；SQL/实体魔法数字改用 `Chapter.STATUS_*`；`ReadingPosition.clampOffset` 单点；`BookShelfItem.progressOf` 单点；前台服务与设备信息样板合一 | 268 单测全绿；装机无崩溃；`check_log_convention` 18 → 17 |
-| `3a39ce6` **M2** | LLM 面板共享实现 `ui/components/LlmPanels.kt`（`LlmSettingsSheet` 428→158 行、`SettingsScreen` 809→464 行）；`LlmApiService` 抽 `buildRequest`/`guarded`/`complete`；`WordExplainService` 接口（依赖倒置）；`LlmApiService` 注入 `OkHttpClient`/`Gson` 并收到 `VibeReadingApp` 组合根（消除 3 套连接池）；`LlmDefaults` 默认值 6→1 | 268 单测全绿（含迁移链，schema 未变）；装机无崩溃 |
-| `a308e5b` **M3** | **几何一致性测试网** `PageGeometryConsistencyTest`（7 用例：PageRenderer 落点、标题块高、页高/段距、气泡矩形、插图尺寸、跨页续段、计划契约）。断言「两侧一致」而非固定数值 | 274 全绿；**有效性已验**：故意改坏位图气泡/排版器段距/PageRenderer 边距/计划器段距，四次都由对应用例精确变红 |
-| `666600a` **M4** | **共享版面计划** `PageLayoutPlanner`：Compose 与位图都消费同一份几何，位图删掉全部手工 `cursorY` 累加；气泡圆角/插图比例魔法数进 `ReaderMetrics` | 275 全绿；装机无崩溃；M3 网抓到 2 处真实回归（见下） |
+| `3a39ce6` **M2** | LLM 面板共享实现 `ui/components/LlmPanels.kt`（`LlmSettingsSheet` 428→158 行、`SettingsScreen` 809→464 行）；`LlmApiService` 抽 `buildRequest`/`guarded`/`complete`；`WordExplainService` 接口（依赖倒置）；`LlmApiService` 注入 `OkHttpClient`/`Gson` 并收到 `VibeReadingApp` 组合根（消除主要重复连接池）；`LlmDefaults` 默认值 6→1。**复核纠正**：M2 未把全局 `SettingsViewModel` 的连接测试完全接到组合根，它仍自行创建 `LlmApiService`，留到本轮修复。 | 268 单测全绿（含迁移链，schema 未变）；装机无崩溃 |
+| `a308e5b` **M3** | **几何一致性测试网** `PageGeometryConsistencyTest`（**6 个 M3 用例**：PageRenderer 落点、标题块高、页高/段距、气泡矩形、插图尺寸、跨页续段）。断言「两侧一致」而非固定数值 | 274 全绿；**有效性已验**：故意改坏位图气泡/排版器段距/PageRenderer 边距，均由对应用例精确变红 |
+| `666600a` **M4** | **共享版面计划** `PageLayoutPlanner`：Compose 与位图都消费同一份几何，位图删掉全部手工 `cursorY` 累加；气泡圆角/插图比例魔法数进 `ReaderMetrics`；M4 同时新增第 **7** 个“计划契约”用例 | 275 全绿；装机无崩溃；M3/M4 网抓到 2 处真实回归（见下） |
 | `8e01459` **M5** | `SettingsRepository` 拆为 5 个域 Store + 组合根；`TranslationPreflight` 纯函数（+8 单测）；10 处守卫收成 `updateIfCurrent()`、4 份终态收成 `finish()` | 283 全绿；装机无崩溃；无行尾噪音 |
 | `08fea7f` **M5 补** | `DataStore.safeData`：7 处 `.catch { emit(emptyPreferences()) }` 原先静默回退默认值，现按 AGENTS.md 落日志——「设置莫名回到默认」终于可查 | 283 全绿；装机无崩溃；`check_log_convention` 疑似点 **18 → 16** |
 
@@ -79,26 +79,36 @@
 
 渲染几何用 **`roundToPx`**（与 `Modifier.padding` 一致），排版测量用 **浮点 `DP * density`**。两者刻意差 <1px：测量期少留只会让段落更早落页，反了才会出现「排版说放得下、渲染溢出」的底行被裁。这条已写入 `PageLayoutPlan.kt` 的 KDoc 与 `AGENTS.md`。
 
+### 后续审计发现与本次修复目标
+
+在继续 M6 拆分前对 M2–M5 和当前改动面做了复核，发现以下问题；它们属于本次修复范围，不能用“M1–M5 已验证”概括掉：
+
+1. **M4 / bottomJustify**：分页器后来调整了 `lineHeightExtraPx`，但共享版面计划仍可能读取调整前的 `mainLayout` 高度，导致计划块高、Compose 正文和位图正文再次分叉。目标是让 `PageUnit` 携带 bottomJustify 后的最终有效布局，并补覆盖普通段落与双语气泡底边的回归用例。
+2. **插图段距**：插图 Composable 内部使用固定 `10.dp`/布尔 spacer，绕过 `PageStyle.paragraphSpacingPx` 和版面计划；用户修改段距后，插图与后续段落的间距不一致。目标是由调用方传入实际段距，分页消费计划、滚动消费当前样式，并补插图后段距用例。
+3. **连接测试 token**：`testConnection` 复用了用户的 `maxOutputTokens`，连接测试可能产生不必要的长输出和额度消耗。目标是把连接探针固定为 `maxTokens = 10`，并以请求体测试锁定。
+4. **旧配置迁移日志**：`LlmLegacyKeysStore.migrateToProfile()` 的 `store.data.first()` 失败路径未落 `AppLog`，不在普通 `safeData` 回退覆盖范围内。目标是保留协程取消语义，其余异常记录后继续抛出，并补测试。
+5. **Settings 注入**：M2 虽建立了 `VibeReadingApp.llmApiService` 组合根，但 `SettingsViewModel` 的连接测试仍自行创建服务，组合根没有完全收口。目标是经 `AppNavigation`/Factory 注入共享实例，消除最后一条旁路。
+6. **章节并发翻译**：原全局单任务协调器会让“当前章翻译 + 提前翻译下一章”互相替换，也会让 App/Web 不同章节互相取消。**异章并行是明确的产品需求，不是本轮重构引入的回归**。目标是按 `bookId + chapterId` 管理任务：同章互斥幂等、异章并行；取消/重试定向到章节；删除书籍和修正原文语言前 `cancelBook`；翻译前台服务按活动任务集合管理。
+
 ## 8. 明确不做的（附理由，非遗漏）
 
 - **`AppDatabase` 迁移链的样板提取**：13 个迁移中 9 个同构单列 `ALTER`、`4_5`/`5_6` 是双子。迁移 SQL 是**历史 schema 快照**，改错对已装机用户不可挽回，而 helper 只省约 30 行。收益远小于风险，保持逐条显式可审计。
 - **`DictEntry` 与 `WordExplanation` 合并**：`pos` 的 nullability 差异是**语义正确**的（ECDICT 可能缺音标/词性，LLM prompt 强制所有字段返回）；`word`（精确查得的词形）与 `lemma`（规范化词条）也不同义。已写入 `CONTEXT.md` 术语表。
 - **插图适配的两套算法统一**：分页是「整图缩进给定盒子」，滚动是「按声明比例的自然高度」，是不同问题；只把魔法数（4:3 兜底、宽高比夹取 0.2~5）命名进 `ReaderMetrics`。
 
-## 9. 未完成：M6（拆巨型文件与参数打包）
+## 9. M6 已完成：拆巨型文件与参数打包
 
-计划内容与依据见下。**本轮未实施**，因为它是唯一没有等价安全网的改动面：
+M6 按“先补策略安全网，再逐段搬移”的顺序完成，未改变分页内容模型、位置口径和五种翻页语义。
 
-1. `ReaderScreen.kt`（1305 行单函数）按职责拆分——`ReaderGestures`（三分区点按/拖动，两套分支合并为一套参数化逻辑）、`ReaderCurlController`（4 个卷页动画局部函数）、`ReaderOverlays`（6 个浮层挂载），主函数降到 300 行以内。
-2. 参数打包：`ReaderPager`/`ScrollReader`/`PageInfoOverlays`/`PageRenderer` 统一收进 `ReaderLayoutSpec`，各降到 6-7 参数；`LlmSettingsSheet` 的 19 个回调收成 1 个 UiState + 一组动作。
-3. `BookshelfScreen`/`SettingsScreen` 按同法按 Section 拆分。
+1. **Reader 容器拆分**：`ReaderScreen.kt` 从 1360 行降到 **234 行**；卷页动画、分页会话、滚动会话、手势、内容体、浮层、系统栏/生命周期和顶层 action adapter 分别进入 `ReaderCurlController.kt`、`ReaderPagerSession.kt`、`ReaderScrollSession.kt`、`ReaderGestures.kt`、`ReaderContentSurface.kt`、`ReaderOverlays.kt`、`ReaderSystemUiEffects.kt`、`ReaderScreenSupport.kt`。`remember`/`LaunchedEffect` 的所有权与 key 保持在固定调用层，手势 MOVE 继续委托原 `PageCurl` 算法。
+2. **参数打包**：新增 `ReaderLayoutSpec` 与 `ReaderContentInteractions`。`ReaderPager` 降为 **7** 个顶层参数，`PageRenderer` **4** 个，`ScrollReader` **6** 个，`PageInfoOverlays` **5** 个；`ScrollReader` 删除两个未使用参数。`LlmSettingsSheet` 从 26 个平铺参数（16 回调）收成 `UiState + Actions + accentColor`。
+3. **其余巨型页面**：`BookshelfScreen.kt` 从 758 行降到 **198 行**，内容/卡片/菜单/对话框拆到 `BookshelfComponents.kt`、`BookshelfDialogs.kt`；`SettingsScreen.kt` 从 464 行降到 **166 行**，六个 Section 拆到 `SettingsSections.kt`。Activity Result launcher、权限申请和瞬时对话框状态仍由顶层页面持有。
+4. **手势安全网**：三分区点按成为纯 `resolveReaderTapAction()`，覆盖左右/中间边界、滚动模式、单手模式、浮层/弹窗/选区优先级，以及仿真动画打断后不二次翻页。
+5. **并发翻译语义**：协调器按 `bookId + chapterId` 管理任务，同章幂等、异章并行；Reader 只投影当前章的实时状态，切回旧章继续显示进度；Web 与 App 共用任务集合，重试/取消定向到章节，破坏性书籍操作先 `cancelBook`，前台服务按活动 run 集合持有。
 
-**为什么需要格外小心**：`ReaderScreen` 内有 15 个 `LaunchedEffect` 与 20+ 个 `remember` 局部状态，搬移会改变重组与闭包捕获语义；手势与浮层行为没有单测覆盖（M3 的网只覆盖排版几何），因此只能逐段搬移 + 每段装机手验。这与 M4 不同——M4 有判定标准（测试网保持全绿），M6 没有。
+**代价与修复（审查轮）**：两轴代码审查发现并已修掉 3 处真实问题：底部对齐把 slack 像素换算成 sp 时漏掉 `fontScale`（系统字体缩放 ≠1 时计划高度比渲染需要更高，已加 `fontScale` 透传 + 变异验证过的回归用例）；任务状态表只增不减（改为只留活动任务与失败提示，取消/完成后清理）；自动预译对 FAILED 下一章会形成无上限重试循环（预译只自动启动 PENDING，失败必须用户显式重试，同时让未写库的失败原因在状态面板可见）。
 
-**建议的起步顺序**（低风险在前）：
-1. 先把 `launchCurlAnim`/`startSimFlip`/`simFlipAnimStart`/`curlBitmaps` 搬进 `ReaderCurlController`（自包含，只依赖 `pagerState`/`simFlip`/`window`）；
-2. 再把 6 个浮层的挂载搬进 `ReaderOverlays`（纯搬运，不改参数）；
-3. 手势块最后动，且动之前先按 `ReaderGesturePolicyTest` 的口径把三分区判定抽成可测的纯函数。
+**最终验证**：单测全绿——**283 个用例 / 305 次执行**（`BubbleTapGestureTest`、`TextSelectionHitTest`、`CjkJustifyTest` 带多 SDK 变体，各跑 2 遍，故执行数比用例数多 22）；`:app:assembleDebug` 成功；按 `output-metadata.json` 选择 `app-x86_64-debug.apk` 安装到 `emulator-5554` 并启动 `com.vibereading.app` 成功，近期日志无 `FATAL EXCEPTION`；`git diff --check` 通过；`check_log_convention.py` 仍为历史基线 **16** 个需人工甄别点，本轮未新增。
 
 ## 10. 本轮触达的验收方式
 

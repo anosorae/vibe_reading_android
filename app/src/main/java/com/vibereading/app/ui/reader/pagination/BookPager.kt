@@ -25,14 +25,15 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.log.AppLog
+import com.vibereading.app.ui.reader.ReaderContentInteractions
+import com.vibereading.app.ui.reader.ReaderLayoutSpec
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.ReaderPageGeometry
+import com.vibereading.app.ui.reader.readerPagerScrollEnabled
 import com.vibereading.app.ui.reader.components.BilingualParagraph
 import com.vibereading.app.ui.reader.components.ParagraphKey
 import com.vibereading.app.ui.reader.components.ReadingChapterTitle
@@ -42,14 +43,6 @@ import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.ui.theme.VibeColors
 import java.util.Locale
-
-/** 普通 HorizontalPager 的滑动开关；浮层不改变翻页手势本身。 */
-fun readerPagerScrollEnabled(flipMode: String): Boolean =
-    flipMode != ReadingSettings.FLIP_NO_ANIM &&
-        flipMode != ReadingSettings.FLIP_SIMULATION
-
-/** 手势开始时若有浮层，先关闭浮层，再继续处理本次手势。 */
-fun readerShouldDismissOverlayOnGestureStart(overlayVisible: Boolean): Boolean = overlayVisible
 
 /** 卷页位图延迟回收时长：两帧（60fps），确保渲染线程重放完最后一帧。 */
 private const val SIM_FLIP_BITMAP_RECYCLE_DELAY_MS = 34L
@@ -227,18 +220,10 @@ fun ReaderPager(
     pagerState: PagerState,
     window: BookWindow,
     flipMode: String,
-    palette: ReaderPalette,
     mode: String,
-    pageStyle: PageStyle,
-    paddingH: Int,
-    paddingV: Int,
-    statusBarPx: Int,
-    navBarPx: Int,
-    simFlip: SimFlipState,
-    selectionState: TextSelectionState? = null,
-    onIllustrationClick: ((String) -> Unit)? = null,
-    contentWidthPx: Int = 0,
-    bubbleEnabled: Boolean = true
+    layout: ReaderLayoutSpec,
+    interactions: ReaderContentInteractions,
+    simFlip: SimFlipState
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -258,16 +243,8 @@ fun ReaderPager(
                 PageRenderer(
                     units = units,
                     mode = mode,
-                    palette = palette,
-                    pageStyle = pageStyle,
-                    paddingH = paddingH,
-                    paddingV = paddingV,
-                    statusBarPx = statusBarPx,
-                    navBarPx = navBarPx,
-                    selectionState = selectionState,
-                    onIllustrationClick = onIllustrationClick,
-                    contentWidthPx = contentWidthPx,
-                    bubbleEnabled = bubbleEnabled
+                    layout = layout,
+                    interactions = interactions
                 )
             }
         }
@@ -331,28 +308,23 @@ private fun CurlOverlay(simFlip: SimFlipState) {
 fun PageRenderer(
     units: List<PageUnit>,
     mode: String,
-    palette: ReaderPalette,
-    pageStyle: PageStyle,
-    paddingH: Int,
-    paddingV: Int,
-    statusBarPx: Int,
-    navBarPx: Int,
-    selectionState: TextSelectionState? = null,
-    onIllustrationClick: ((String) -> Unit)? = null,
-    contentWidthPx: Int = 0,
-    bubbleEnabled: Boolean = true
+    layout: ReaderLayoutSpec,
+    interactions: ReaderContentInteractions
 ) {
     val density = LocalDensity.current
+    val pageStyle = layout.pageStyle
+    val palette = layout.palette
+    val contentWidthPx = layout.geometry.contentWidthPx.toInt()
 
     // 页内留白（与排版内容区尺寸一致；原 contentPadding 移入页面内部，避免分页间露边）
     // 系统栏用缓存 px 值（不随沉浸式切换变化），与排版几何保持一致，防止切换菜单时重排
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = paddingH.dp)
-            .padding(top = with(density) { statusBarPx.toDp() })
-            .padding(bottom = with(density) { navBarPx.toDp() })
-            .padding(vertical = paddingV.dp),
+            .padding(horizontal = layout.paddingH.dp)
+            .padding(top = with(density) { layout.geometry.statusBarPx.toDp() })
+            .padding(bottom = with(density) { layout.geometry.navBarPx.toDp() })
+            .padding(vertical = layout.paddingV.dp),
         contentAlignment = Alignment.TopStart
     ) {
         // 版面计划：与卷页位图 renderPageBitmap 共用同一个 PageLayoutPlanner，段距与块序一致。
@@ -373,7 +345,6 @@ fun PageRenderer(
             content = {
                 units.forEachIndexed { idx, unit ->
                     val block = blocks[idx]
-                    val showSpacer = block.spacingBelowPx > 0f
                     when (unit) {
                         is PageUnit.Title -> ReadingChapterTitle(
                             section = unit.section,
@@ -388,9 +359,9 @@ fun PageRenderer(
                                     widthPx = unit.displayWidthPx.toInt().coerceAtLeast(1),
                                     heightPx = unit.displayHeightPx.toInt().coerceAtLeast(1)
                                 ),
-                                showSpacer = showSpacer,
+                                bottomSpacing = with(density) { block.spacingBelowPx.toDp() },
                                 fixedDisplayHeightPx = unit.displayHeightPx,
-                                onClick = onIllustrationClick?.let { cb -> { cb(unit.path) } }
+                                onClick = interactions.onIllustrationClick?.let { cb -> { cb(unit.path) } }
                             )
                         }
                         is PageUnit.Para -> {
@@ -412,7 +383,7 @@ fun PageRenderer(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(bottom = with(density) { block.spacingBelowPx.toDp() }),
-                                    selectionState = selectionState,
+                                    selectionState = interactions.selectionState,
                                     paragraphKey = key,
                                     locale = Locale.CHINESE,
                                     highlightColor = palette.selectionHighlight,
@@ -431,13 +402,13 @@ fun PageRenderer(
                                         pageStyle = pageStyle,
                                         palette = palette,
                                         lineHeightExtraPx = unit.lineHeightExtraPx,
-                                        showSpacer = showSpacer,
-                                        selectionState = selectionState,
+                                        showSpacer = block.spacingBelowPx > 0f,
+                                        selectionState = interactions.selectionState,
                                         paragraphKey = key,
                                         // 气泡触控区右向延伸到屏幕右缘（与滚动模式同口径）
-                                        bubbleEdgeExtendDp = (paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat(),
+                                        bubbleEdgeExtendDp = (layout.paddingH + ReaderMetrics.BUBBLE_END_DP).toFloat(),
                                         contentWidthPx = contentWidthPx,
-                                        bubbleEnabled = bubbleEnabled,
+                                        bubbleEnabled = interactions.bubbleEnabled,
                                         // 段落在下一页延续时本片段末行仍需拉伸（与分页测量/仿真位图同口径）
                                         justifyLastLine = unit.paragraphContinues
                                     )
@@ -456,7 +427,7 @@ fun PageRenderer(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(bottom = with(density) { block.spacingBelowPx.toDp() }),
-                                        selectionState = selectionState,
+                                        selectionState = interactions.selectionState,
                                         paragraphKey = key,
                                         locale = Locale.CHINESE,
                                         highlightColor = palette.selectionHighlight,
@@ -602,38 +573,9 @@ fun renderPageBitmap(
                 }
 
                 is PageUnit.Para -> {
-                    // lineHeightExtraPx > 0 时用调整后的 lineHeight 重新测量，
-                    // 与 PageRenderer 的 Text(style=bodyStyle) 排版一致，避免卷页时行距跳变；
-                    // 约束含 minWidth（对齐 Compose Text 的 Modifier.fillMaxWidth()），
-                    // 保证 TextAlign.Justify 等对齐方式结果一致
-                    val layout = if (unit.lineHeightExtraPx > 0f && measurer != null) {
-                        // 续段顶格与 PageRenderer 的 Text(style=bodyStyle) 口径一致
-                        val baseStyle = if (unit.continuation) pageStyle.body.copy(textIndent = null) else pageStyle.body
-                        val adjustedStyle = baseStyle.copy(
-                            lineHeight = (pageStyle.body.lineHeight.value +
-                                with(density) { unit.lineHeightExtraPx.toSp().value }).sp
-                        )
-                        val text = if (mode == "zh") unit.cnText.ifBlank { unit.enText.orEmpty() }
-                            else (unit.enText ?: unit.cnText)
-                        val cw = contentWidthPx.coerceAtLeast(1)
-                        // 与渲染端 SelectableParagraphText 同口径：span 接管时以 Start 测量
-                        // （避免平台 justify 二次拉伸空格），未接管时回退平台 justify（无 CJK
-                        // 文本剥离非零字间距，Android 15 平台回归），位图与真实页排版逐像素一致
-                        val justified = CjkJustifier.annotateDetailed(
-                            text, adjustedStyle, cw, measurer, unit.paragraphContinues
-                        )
-                        val effectiveStyle = if (justified.tookOver) {
-                            adjustedStyle.copy(textAlign = TextAlign.Start)
-                        } else {
-                            CjkJustifier.adjustLatinTextStyle(text, adjustedStyle)
-                        }
-                        measurer.measure(
-                            text = justified.annotated,
-                            style = effectiveStyle,
-                            constraints = Constraints(minWidth = cw, maxWidth = cw)
-                        )
-                    } else unit.mainLayout
-                    layout?.let { drawLayout(canvas, it, bodyPaint, block.contentTopPx) }
+                    // 分页器已生成包含 bottomJustify、续段顶格与 CjkJustifier 的最终布局；
+                    // 位图只消费该布局，不在渲染期重新测量，避免计划块高仍是自然高度而后续块错位。
+                    unit.mainLayout?.let { drawLayout(canvas, it, bodyPaint, block.contentTopPx) }
                     // 气泡指示器（18×6dp 小矩形，圆角 3dp）：每个带译文的片段段尾都显示
                     // （ADR-004），几何来自计划，与 Compose 页同一组常量
                     block.bubble?.let { bubble ->

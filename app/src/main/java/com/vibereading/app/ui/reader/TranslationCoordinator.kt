@@ -1,30 +1,30 @@
 package com.vibereading.app.ui.reader
 
+import android.content.Context
 import com.vibereading.app.VibeReadingApp
-import com.vibereading.app.data.remote.LlmApiService
 import com.vibereading.app.data.remote.TranslationEvent
 import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.LlmSettings
-import com.vibereading.app.domain.parser.IllustrationLink
-import com.vibereading.app.domain.parser.ReadingContentParser
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.domain.translation.TranslationGate
 import com.vibereading.app.domain.translation.TranslationPreflight
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.TranslationForegroundService
 import com.vibereading.app.web.WebCompanionService
-import android.content.Context
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class TranslationPhase {
     IDLE,
@@ -36,256 +36,401 @@ enum class TranslationPhase {
     CANCELLED
 }
 
-/** 翻译任务的实时状态；chapterId 标记状态归属章节（供 UI 决定是否应用）。 */
+data class TranslationTaskKey(
+    val bookId: Long,
+    val chapterId: Long
+)
+
+/** 单个章节翻译任务的运行期状态；持久化终态仍以 Room 章节记录为准。 */
 data class TranslationUiState(
-    val chapterId: Long? = null,
+    val key: TranslationTaskKey,
+    val runId: Long,
     val streamingText: String = "",
     val thinkingText: String = "",
     val streamingCharCount: Int = 0,
     val isStreaming: Boolean = false,
-    val phase: TranslationPhase = TranslationPhase.IDLE,
+    val phase: TranslationPhase = TranslationPhase.PREPARING,
     val errorMessage: String? = null
 )
 
+sealed interface TranslationLaunchResult {
+    data class Started(val key: TranslationTaskKey, val runId: Long) : TranslationLaunchResult
+    data class AlreadyRunning(val key: TranslationTaskKey, val runId: Long) : TranslationLaunchResult
+    data class Rejected(val reason: String) : TranslationLaunchResult
+    data object NotFound : TranslationLaunchResult
+}
+
 /**
- * 翻译状态机：单任务运行 + 数据库级 stale 防护。
+ * 多章节翻译协调器：同章互斥、异章并行，数据库以章节级 runId 防止迟到写入。
  *
- * 每个任务持有自增 runId：开始翻译时写入 chapters.translationRunId，
- * 完成/失败/取消必须带同一 runId 才生效（见 ChapterDao 的 *TranslationRun）。
- * 即使内存代际判断被绕过，旧任务也无法把译文/错误写进新任务的章节状态。
- * 切换阅读章节不会取消正在运行的任务（后台任务合法完成），开启新任务才替换旧任务。
- *
- * 进程级单例（[TranslationCoordinatorProvider]）：ReaderViewModel 与 Web 伴读服务
- * 共用同一实例，App 内发起与 Web 发起天然互斥（ADR-005）。
+ * 阅读焦点只决定 UI 展示 [states] 中哪个任务，不决定任务生命周期。切换章节、退出阅读器
+ * 或 App/Web 从不同入口启动其他章节时，已有任务继续运行；同章重复开始幂等，重译只替换该章。
  */
 class TranslationCoordinator(
     private val chapterRepo: ChapterRepository,
     private val translationService: TranslationService,
     private val scope: CoroutineScope,
-    private val appContext: Context
+    appContext: Context,
+    private val keepAlive: TranslationKeepAlive = TranslationKeepAlive(appContext)
 ) {
-    private val _state = MutableStateFlow(TranslationUiState())
-    val state: StateFlow<TranslationUiState> = _state.asStateFlow()
+    private data class TaskHandle(
+        val runId: Long,
+        val job: Job
+    )
 
-    private var translateJob: Job? = null
-    private var runId = 0L
-    private var runningBookId: Long? = null
-    private var runningChapterId: Long? = null
-    // 本任务是否启动了翻译前台服务（伴读服务活跃时不启动，也不代为停止）
-    private var fgServiceStarted = false
+    private val taskLock = Any()
+    private val operationMutex = Mutex()
+    private val nextRunId = AtomicLong(0L)
+    private val handles = mutableMapOf<TranslationTaskKey, TaskHandle>()
+    // 运行期状态同样是 Map：改一处只替换一个条目。只保留「有活任务」与「FAILED 提示」
+    // 两类条目：IDLE/CANCELLED 的终态在 Room 里（DONE / PENDING），留着只会让状态表
+    // 随阅读过的章节数无界增长。
+    private val stateMap = mutableMapOf<TranslationTaskKey, TranslationUiState>()
+    private val _states = MutableStateFlow<Map<TranslationTaskKey, TranslationUiState>>(emptyMap())
+    val states: StateFlow<Map<TranslationTaskKey, TranslationUiState>> = _states.asStateFlow()
 
-    /** 当前正在翻译的章节 ID（可能在后台运行，UI 不在前台展示）。 */
-    val currentRunningChapterId: Long? get() = runningChapterId
+    fun stateOf(key: TranslationTaskKey): TranslationUiState? = states.value[key]
 
-    /** 是否有翻译任务在运行（App 内与 Web 共用同一状态，ADR-005）。 */
-    fun isBusy(): Boolean = translateJob?.isActive == true
+    fun isRunning(key: TranslationTaskKey): Boolean = synchronized(taskLock) {
+        handles[key]?.job?.isActive == true
+    }
 
-    /**
-     * 仅当本任务仍是当前任务时更新 UI 状态：旧任务（已被替换/取消）不得污染新任务的界面。
-     * 此前这条 `if (run == runId)` 在五个事件分支 + 三处收尾里各写一遍。
-     */
-    private inline fun updateIfCurrent(run: Long, update: (TranslationUiState) -> TranslationUiState) {
-        if (run == runId) _state.update(update)
+    fun runningKeys(): Set<TranslationTaskKey> = synchronized(taskLock) {
+        handles.filterValues { it.job.isActive }.keys.toSet()
     }
 
     /**
-     * 终态收尾：停流 + 清空流式临时字段（thinkingText / streamingCharCount）。
-     *
-     * 此前四处终态各自 copy 不同的字段子集（有的漏清 thinkingText），
-     * 统一为「任何终态都清空流式临时字段」，避免残留上一次任务的思考文本/字数。
+     * 开始指定章节任务。相同 key 已有活动任务时幂等返回；不同 key 不互相阻塞。
+     * Chapter 在协调器内部重新读取，避免 App/Web 调用方传入过期状态。
      */
-    private fun finish(run: Long, phase: TranslationPhase, errorMessage: String? = null) {
-        updateIfCurrent(run) {
+    suspend fun start(
+        bookId: Long,
+        chapterId: Long,
+        settings: LlmSettings,
+        sourceLanguage: String = SourceLanguageDetector.ZH
+    ): TranslationLaunchResult = operationMutex.withLock {
+        startLocked(bookId, chapterId, settings, sourceLanguage)
+    }
+
+    /** 取消指定章节任务并恢复 PENDING；其他章节不受影响。 */
+    suspend fun cancel(key: TranslationTaskKey): Boolean = operationMutex.withLock {
+        cancelLocked(key)
+    }
+
+    /** 重译指定章节：只替换该章任务，清除旧译文/错误后以新 run 启动。 */
+    suspend fun retry(
+        bookId: Long,
+        chapterId: Long,
+        settings: LlmSettings,
+        sourceLanguage: String = SourceLanguageDetector.ZH
+    ): TranslationLaunchResult = operationMutex.withLock {
+        val key = TranslationTaskKey(bookId, chapterId)
+        cancelLocked(key)
+        if (chapterRepo.resetChapter(bookId, chapterId) <= 0) return@withLock TranslationLaunchResult.NotFound
+        startLocked(bookId, chapterId, settings, sourceLanguage)
+    }
+
+    /** 删除书籍/修正原文语言前取消该书全部任务并等待资源释放，同时清掉该书残留的失败提示。 */
+    suspend fun cancelBook(bookId: Long) = operationMutex.withLock {
+        val keys = synchronized(taskLock) {
+            (handles.keys + stateMap.keys).filter { it.bookId == bookId }
+        }
+        keys.forEach { cancelLocked(it) }
+        synchronized(taskLock) {
+            // 保留的 FAILED 条目属于「这本书 + 这一章」的旧上下文：书已删/已重置，
+            // 提示不再有意义，留着只会让状态表随删书次数无界增长。
+            val stale = stateMap.keys.filter { it.bookId == bookId }
+            if (stale.isNotEmpty()) {
+                stale.forEach { stateMap.remove(it) }
+                publishStates()
+            }
+        }
+    }
+
+    private suspend fun startLocked(
+        bookId: Long,
+        chapterId: Long,
+        settings: LlmSettings,
+        sourceLanguage: String
+    ): TranslationLaunchResult {
+        val key = TranslationTaskKey(bookId, chapterId)
+        synchronized(taskLock) {
+            handles[key]?.takeIf { it.job.isActive }?.let {
+                return TranslationLaunchResult.AlreadyRunning(key, it.runId)
+            }
+        }
+        val chapter = chapterRepo.getChapterById(bookId, chapterId)
+            ?: return TranslationLaunchResult.NotFound
+        if (chapter.status == Chapter.STATUS_DONE) {
+            return TranslationLaunchResult.Rejected("该章已翻译完成")
+        }
+        val run = nextRunId.incrementAndGet()
+        lateinit var job: Job
+        job = scope.launch(start = CoroutineStart.LAZY) {
+            runTask(key, run, chapter, settings, sourceLanguage)
+        }
+        synchronized(taskLock) {
+            handles[key]?.takeIf { it.job.isActive }?.let { existing ->
+                job.cancel()
+                return TranslationLaunchResult.AlreadyRunning(key, existing.runId)
+            }
+            handles[key] = TaskHandle(run, job)
+            putState(TranslationUiState(key = key, runId = run, phase = TranslationPhase.PREPARING))
+        }
+        job.start()
+        return TranslationLaunchResult.Started(key, run)
+    }
+
+    private suspend fun cancelLocked(key: TranslationTaskKey): Boolean {
+        val handle = synchronized(taskLock) {
+            val h = handles.remove(key) ?: return false
+            // 条目随取消立刻消失：章节在 Room 里已恢复 PENDING，运行期不必再留相位
+            stateMap.remove(key)
+            publishStates()
+            h
+        }
+        handle.job.cancelAndJoin()
+        chapterRepo.cancelTranslation(key.bookId, key.chapterId, handle.runId)
+        return true
+    }
+
+    /** Web 伴读服务启停后重新计算翻译前台服务是否需要接管保活。 */
+    fun onCompanionServiceStateChanged() {
+        keepAlive.companionStateChanged()
+    }
+
+    private suspend fun runTask(
+        key: TranslationTaskKey,
+        run: Long,
+        chapter: Chapter,
+        settings: LlmSettings,
+        sourceLanguage: String
+    ) {
+        var markedInProgress = false
+        var networkActive = false
+        var terminalEvent = false
+        try {
+            updateIfCurrent(key, run) {
+                it.copy(phase = TranslationPhase.PREPARING, errorMessage = null)
+            }
+
+            when (TranslationPreflight.gate(chapter, settings)) {
+                TranslationGate.MISSING_API_KEY -> {
+                    finishIfCurrent(key, run, TranslationPhase.FAILED, "请先配置 API Key")
+                    return
+                }
+
+                TranslationGate.TOO_LONG -> {
+                    val msg = TranslationPreflight.tooLongMessage(chapter)
+                    chapterRepo.markTooLong(key.bookId, key.chapterId, msg)
+                    finishIfCurrent(key, run, TranslationPhase.FAILED, msg)
+                    return
+                }
+
+                TranslationGate.NOTHING_TO_TRANSLATE -> {
+                    if (chapterRepo.startTranslation(key.bookId, key.chapterId, run)) {
+                        chapterRepo.completeTranslation(key.bookId, key.chapterId, run, "")
+                    }
+                    finishIfCurrent(key, run, TranslationPhase.IDLE)
+                    return
+                }
+
+                TranslationGate.TRANSLATE -> Unit
+            }
+
+            if (!chapterRepo.startTranslation(key.bookId, key.chapterId, run)) {
+                finishIfCurrent(key, run, TranslationPhase.IDLE)
+                return
+            }
+            markedInProgress = true
+            keepAlive.taskStarted(run)
+            networkActive = true
+            updateIfCurrent(key, run) {
+                it.copy(
+                    isStreaming = true,
+                    phase = TranslationPhase.WAITING_FIRST_TOKEN,
+                    streamingText = "",
+                    thinkingText = "",
+                    streamingCharCount = 0,
+                    errorMessage = null
+                )
+            }
+
+            translationService.translateStream(
+                settings = settings,
+                chapterTitle = chapter.title,
+                chapterContent = chapter.content,
+                sourceLanguage = sourceLanguage
+            ).batchForDisplay().collect { event ->
+                when (event) {
+                    TranslationEvent.Started -> updateIfCurrent(key, run) {
+                        it.copy(phase = TranslationPhase.WAITING_FIRST_TOKEN)
+                    }
+                    is TranslationEvent.Thinking -> updateIfCurrent(key, run) {
+                        it.copy(
+                            phase = TranslationPhase.THINKING,
+                            thinkingText = it.thinkingText + event.text
+                        )
+                    }
+                    is TranslationEvent.Chunk -> updateIfCurrent(key, run) {
+                        it.copy(
+                            phase = TranslationPhase.STREAMING,
+                            streamingText = it.streamingText + event.text,
+                            streamingCharCount = it.streamingCharCount + event.text.length
+                        )
+                    }
+                    is TranslationEvent.Progress -> updateIfCurrent(key, run) {
+                        it.copy(streamingCharCount = maxOf(it.streamingCharCount, event.chars))
+                    }
+                    is TranslationEvent.Done -> {
+                        terminalEvent = true
+                        if (chapterRepo.completeTranslation(key.bookId, key.chapterId, run, event.text)) {
+                            finishIfCurrent(key, run, TranslationPhase.IDLE)
+                        }
+                    }
+                    is TranslationEvent.Error -> {
+                        terminalEvent = true
+                        AppLog.put("翻译流错误：书 ${key.bookId} 章 ${key.chapterId} run $run：${event.reason}")
+                        if (chapterRepo.failTranslation(key.bookId, key.chapterId, run, event.reason)) {
+                            finishIfCurrent(key, run, TranslationPhase.FAILED, event.reason)
+                        }
+                    }
+                }
+            }
+            if (!terminalEvent) {
+                val reason = "翻译流未正常结束"
+                if (chapterRepo.failTranslation(key.bookId, key.chapterId, run, reason)) {
+                    finishIfCurrent(key, run, TranslationPhase.FAILED, reason)
+                }
+            }
+        } catch (e: CancellationException) {
+            if (markedInProgress && isCurrent(key, run)) {
+                chapterRepo.cancelTranslation(key.bookId, key.chapterId, run)
+                finishIfCurrent(key, run, TranslationPhase.CANCELLED)
+            }
+            throw e
+        } catch (e: Exception) {
+            if (markedInProgress) {
+                val reason = e.message ?: "翻译失败"
+                AppLog.put("翻译失败：书 ${key.bookId} 章 ${key.chapterId} run $run", e)
+                if (chapterRepo.failTranslation(key.bookId, key.chapterId, run, reason)) {
+                    finishIfCurrent(key, run, TranslationPhase.FAILED, reason)
+                }
+            } else {
+                AppLog.put("翻译准备失败：书 ${key.bookId} 章 ${key.chapterId} run $run", e)
+                finishIfCurrent(key, run, TranslationPhase.FAILED, e.message ?: "翻译失败")
+            }
+        } finally {
+            if (networkActive) keepAlive.taskFinished(run)
+            removeHandleIfCurrent(key, run)
+        }
+    }
+
+    private fun isCurrent(key: TranslationTaskKey, run: Long): Boolean = synchronized(taskLock) {
+        handles[key]?.runId == run
+    }
+
+    private inline fun updateIfCurrent(
+        key: TranslationTaskKey,
+        run: Long,
+        update: (TranslationUiState) -> TranslationUiState
+    ) {
+        synchronized(taskLock) {
+            if (handles[key]?.runId != run) return
+            val current = stateMap[key] ?: TranslationUiState(key = key, runId = run)
+            putState(update(current))
+        }
+    }
+
+    /** 必须在 [taskLock] 内调用：只替换一个条目并发布不可变快照。 */
+    private fun putState(state: TranslationUiState) {
+        stateMap[state.key] = state
+        publishStates()
+    }
+
+    private fun publishStates() {
+        _states.value = stateMap.toMap()
+    }
+
+    private fun finishIfCurrent(
+        key: TranslationTaskKey,
+        run: Long,
+        phase: TranslationPhase,
+        errorMessage: String? = null
+    ) {
+        updateIfCurrent(key, run) {
             it.copy(
-                isStreaming = false,
-                phase = phase,
+                streamingText = "",
                 thinkingText = "",
                 streamingCharCount = 0,
+                isStreaming = false,
+                phase = phase,
                 errorMessage = errorMessage
             )
         }
     }
 
-    /** 启动翻译；同一章已有活动任务则忽略。[sourceLanguage] 为书籍原文语言（ADR-003），决定翻译方向。 */
-    fun translate(
-        bookId: Long,
-        chapter: Chapter,
-        settings: LlmSettings,
-        sourceLanguage: String = SourceLanguageDetector.ZH
-    ) {
-        if (runningChapterId == chapter.id && translateJob?.isActive == true) return
-        val run = ++runId
-        val chapterId = chapter.id
-        runningBookId = bookId
-        runningChapterId = chapterId
-        _state.value = TranslationUiState(chapterId = chapterId)
-        translateJob = scope.launch {
-            var markedInProgress = false
-            var terminalEvent = false
-            try {
-                _state.update { it.copy(phase = TranslationPhase.PREPARING, errorMessage = null) }
-
-                // 前置判定走纯函数（TranslationPreflight）：规则单点、可单测，
-                // 本处只负责「按判定结果做副作用（落库/起服务/放流）」。
-                when (TranslationPreflight.gate(chapter, settings)) {
-                    TranslationGate.MISSING_API_KEY -> {
-                        finish(run, TranslationPhase.FAILED, "请先配置 API Key")
-                        return@launch
-                    }
-
-                    TranslationGate.TOO_LONG -> {
-                        val msg = TranslationPreflight.tooLongMessage(chapter)
-                        chapterRepo.markTooLong(bookId, chapterId, msg)
-                        finish(run, TranslationPhase.FAILED, msg)
-                        return@launch
-                    }
-
-                    TranslationGate.NOTHING_TO_TRANSLATE -> {
-                        // 纯插图/空章节（ADR-002）：没有可翻译的文本段（全部是空白或插图链接）
-                        // 时不调 API——空 prompt 会让模型输出「请提供文本」之类的无意义寒暄。
-                        // 直接走 start→complete 落 DONE，空译文读取侧回退原文（插图照常渲染）。
-                        if (chapterRepo.startTranslation(bookId, chapterId, run)) {
-                            chapterRepo.completeTranslation(bookId, chapterId, run, "")
-                        }
-                        finish(run, TranslationPhase.IDLE)
-                        return@launch
-                    }
-
-                    TranslationGate.TRANSLATE -> Unit
-                }
-
-                if (!chapterRepo.startTranslation(bookId, chapterId, run)) {
-                    // 章节不存在：无处写状态，直接结束
-                    return@launch
-                }
-                markedInProgress = true
-                // 启动前台服务：保持进程前台状态，避免按 Home 挂起时系统销毁 socket。
-                // Web 伴读服务活跃时其 WifiLock/WakeLock 已覆盖保活（ADR-005），跳过。
-                if (WebCompanionService.isRunning) {
-                    fgServiceStarted = false
-                } else {
-                    TranslationForegroundService.start(appContext)
-                    fgServiceStarted = true
-                }
-                _state.update {
-                    it.copy(
-                        isStreaming = true,
-                        phase = TranslationPhase.WAITING_FIRST_TOKEN,
-                        streamingText = "",
-                        thinkingText = "",
-                        streamingCharCount = 0,
-                        errorMessage = null
-                    )
-                }
-
-                translationService.translateStream(
-                    settings = settings,
-                    chapterTitle = chapter.title,
-                    chapterContent = chapter.content,
-                    sourceLanguage = sourceLanguage
-                ).batchForDisplay().collect { event ->
-                    when (event) {
-                        TranslationEvent.Started -> {
-                            updateIfCurrent(run) { it.copy(phase = TranslationPhase.WAITING_FIRST_TOKEN) }
-                        }
-                        is TranslationEvent.Thinking -> {
-                            updateIfCurrent(run) {
-                                it.copy(
-                                    phase = TranslationPhase.THINKING,
-                                    thinkingText = it.thinkingText + event.text
-                                )
-                            }
-                        }
-                        is TranslationEvent.Chunk -> {
-                            updateIfCurrent(run) {
-                                it.copy(
-                                    phase = TranslationPhase.STREAMING,
-                                    streamingText = it.streamingText + event.text,
-                                    streamingCharCount = it.streamingCharCount + event.text.length
-                                )
-                            }
-                        }
-                        is TranslationEvent.Progress -> {
-                            updateIfCurrent(run) {
-                                it.copy(streamingCharCount = maxOf(it.streamingCharCount, event.chars))
-                            }
-                        }
-                        is TranslationEvent.Done -> {
-                            terminalEvent = true
-                            if (chapterRepo.completeTranslation(bookId, chapterId, run, event.text)) {
-                                // 仅当本任务仍是当前任务时清空流式状态；取消/替换后由新状态接管。
-                                // 旧任务仍完成写库（completeTranslation），但不写 UI 状态。
-                                finish(run, TranslationPhase.IDLE)
-                            }
-                        }
-                        is TranslationEvent.Error -> {
-                            terminalEvent = true
-                            AppLog.put("翻译流错误：书 $bookId 章 $chapterId run $run：${event.reason}")
-                            if (chapterRepo.failTranslation(bookId, chapterId, run, event.reason)) {
-                                finish(run, TranslationPhase.FAILED, event.reason)
-                            }
-                        }
-                    }
-                }
-                if (!terminalEvent) {
-                    val reason = "翻译流未正常结束"
-                    if (chapterRepo.failTranslation(bookId, chapterId, run, reason)) {
-                        finish(run, TranslationPhase.FAILED, reason)
-                    }
-                }
-            } catch (e: CancellationException) {
-                if (run == runId && markedInProgress) {
-                    chapterRepo.cancelTranslation(bookId, chapterId, run)
-                    finish(run, TranslationPhase.CANCELLED)
-                }
-                throw e
-            } catch (e: Exception) {
-                if (markedInProgress) {
-                    val reason = e.message ?: "翻译失败"
-                    AppLog.put("翻译失败：书 $bookId 章 $chapterId run $run", e)
-                    if (chapterRepo.failTranslation(bookId, chapterId, run, reason)) {
-                        finish(run, TranslationPhase.FAILED, reason)
-                    }
-                }
-            } finally {
-                if (run == runId) {
-                    runningBookId = null
-                    runningChapterId = null
-                    if (!terminalEvent) _state.update { it.copy(isStreaming = false) }
-                    // 本任务仍是当前任务且已终止（完成/失败/取消）：停止前台服务。
-                    // 若已被新任务替换（run != runId），服务由新任务接管，此处不停止。
-                    if (markedInProgress && fgServiceStarted) TranslationForegroundService.stop(appContext)
-                    fgServiceStarted = false
-                }
+    /**
+     * 任务收尾：摘除句柄，并清理运行期状态。
+     *
+     * FAILED 条目保留：`请先配置 API Key` 这类失败没有写库，删掉条目后 UI 就再也
+     * 看不到原因。IDLE（已完成，译文在 Room）与取消（Room 已恢复 PENDING）不留条目，
+     * 否则 Map 会随读过的章节数无界增长。
+     */
+    private fun removeHandleIfCurrent(key: TranslationTaskKey, run: Long) {
+        synchronized(taskLock) {
+            if (handles[key]?.runId != run) return
+            handles.remove(key)
+            if (stateMap[key]?.phase != TranslationPhase.FAILED) {
+                stateMap.remove(key)
+                publishStates()
             }
         }
     }
+}
 
-    /** 取消当前任务并恢复旧章节 PENDING（重译前调用）；等待旧任务完全结束。 */
-    suspend fun cancelAndReset() {
-        val oldBookId = runningBookId
-        val oldChapterId = runningChapterId
-        val oldJob = translateJob
-        val oldRun = runId
-        runId++
-        runningBookId = null
-        runningChapterId = null
-        translateJob = null
-        _state.value = TranslationUiState()
-        oldJob?.cancelAndJoin()
-        if (oldBookId != null && oldChapterId != null && oldRun > 0) {
-            chapterRepo.cancelTranslation(oldBookId, oldChapterId, oldRun)
+/** 所有并发翻译任务共用的前台保活所有权。 */
+class TranslationKeepAlive(
+    private val appContext: Context,
+    private val companionRunning: () -> Boolean = { WebCompanionService.isRunning },
+    private val startService: (Context) -> Unit = TranslationForegroundService::start,
+    private val stopService: (Context) -> Unit = TranslationForegroundService::stop
+) {
+    private val lock = Any()
+    private val activeRuns = mutableSetOf<Long>()
+    private var serviceOwned = false
+
+    fun taskStarted(runId: Long) = synchronized(lock) {
+        activeRuns += runId
+        reconcile()
+    }
+
+    fun taskFinished(runId: Long) = synchronized(lock) {
+        activeRuns -= runId
+        reconcile()
+    }
+
+    fun companionStateChanged() = synchronized(lock) {
+        reconcile()
+    }
+
+    private fun reconcile() {
+        val shouldOwn = activeRuns.isNotEmpty() && !companionRunning()
+        when {
+            shouldOwn && !serviceOwned -> {
+                startService(appContext)
+                serviceOwned = true
+            }
+            !shouldOwn && serviceOwned -> {
+                stopService(appContext)
+                serviceOwned = false
+            }
         }
-        // 显式取消：停止前台服务。若紧接着重译，translate() 会重新启动。
-        // 伴读活跃期间未持有翻译前台服务（fgServiceStarted=false），不误停伴读服务。
-        if (fgServiceStarted) TranslationForegroundService.stop(appContext)
-        fgServiceStarted = false
     }
 }
 
 /**
- * 翻译协调器的进程级单一实例（ADR-005）：ReaderViewModel 与 Web 伴读服务共用，
- * 单任务状态机全局生效。惰性构造，依赖 [VibeReadingApp] 的数据库与 appScope。
+ * 进程级协调器：ReaderViewModel 与 Web 伴读共用任务集合，同章互斥、异章并行。
  */
 object TranslationCoordinatorProvider {
     @Volatile
@@ -299,9 +444,12 @@ object TranslationCoordinatorProvider {
         }
     }
 
+    fun notifyCompanionServiceStateChanged() {
+        instance?.onCompanionServiceStateChanged()
+    }
+
     private fun create(app: VibeReadingApp): TranslationCoordinator = TranslationCoordinator(
         chapterRepo = ChapterRepository(app.database.chapterDao()),
-        // 复用 App 组合根的实例，不再自建（否则连接池与超时配置在这里分叉）
         translationService = app.llmApiService,
         scope = app.appScope,
         appContext = app

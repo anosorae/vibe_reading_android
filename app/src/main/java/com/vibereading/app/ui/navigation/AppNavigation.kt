@@ -28,6 +28,7 @@ import com.vibereading.app.ui.bookshelf.BookshelfViewModel
 import com.vibereading.app.ui.log.LogViewerScreen
 import com.vibereading.app.ui.reader.ReaderScreen
 import com.vibereading.app.ui.reader.ReaderViewModel
+import com.vibereading.app.ui.reader.TranslationCoordinatorProvider
 import com.vibereading.app.ui.settings.SettingsScreen
 import com.vibereading.app.ui.settings.SettingsViewModel
 import com.vibereading.app.web.WebCompanionService
@@ -74,6 +75,7 @@ fun AppNavigation() {
     val llmProfileRepo = remember { LlmProfileRepository(db.llmProfileDao(), settingsRepo) }
     // 进程级共享的 LLM 服务实例（翻译 + 单词解释由同一个对象承担）
     val llmService = application.llmApiService
+    val translationCoordinator = remember { TranslationCoordinatorProvider.get(application) }
     // 内嵌 ECDICT 词典（惰性打开：首次查词才拷贝 asset + SQLite 打开）
     val dictDatabase = remember { DictDatabase.open(application) }
 
@@ -110,7 +112,9 @@ fun AppNavigation() {
                 }
             ) {
                 val vm: BookshelfViewModel = viewModel(
-                    factory = BookshelfViewModel.Factory(bookRepo, chapterRepo, settingsRepo)
+                    factory = BookshelfViewModel.Factory(
+                        bookRepo, chapterRepo, settingsRepo, translationCoordinator
+                    )
                 )
                 BookshelfScreen(
                     vm = vm,
@@ -142,7 +146,8 @@ fun AppNavigation() {
                     factory = ReaderViewModel.Factory(
                         bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, llmService, dictDatabase,
                         wordExplainService = llmService,
-                        appContext = application
+                        appContext = application,
+                        coordinator = translationCoordinator
                     )
                 )
                 Box(Modifier.fillMaxSize().then(
@@ -154,7 +159,9 @@ fun AppNavigation() {
 
             composable(Routes.SETTINGS) {
                 val vm: SettingsViewModel = viewModel(
-                    factory = SettingsViewModel.Factory(settingsRepo, llmProfileRepo, application)
+                    factory = SettingsViewModel.Factory(
+                        settingsRepo, llmProfileRepo, llmService, application
+                    )
                 )
                 SettingsScreen(
                     vm = vm,

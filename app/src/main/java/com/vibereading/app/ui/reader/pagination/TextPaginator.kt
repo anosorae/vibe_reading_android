@@ -163,6 +163,7 @@ sealed class PageUnit {
         val paragraphContinues: Boolean = false, // 段落在下一页延续：本片段末行仍需两端对齐（CjkJustify 用）
         val lineCount: Int = 0,            // 本单元本页实际行数（底部对齐用）
         val lineHeightExtraPx: Float = 0f, // 底部对齐分配给每行的额外高度
+        /** 分页器生成的最终有效正文布局，已含续段顶格、CjkJustifier 与 bottomJustify 行高。 */
         val mainLayout: TextLayoutResult? = null,  // zh=正文布局 / en=英文布局
         val sourceStartOffset: Int = 0,
         val sourceEndOffset: Int = sourceStartOffset + cnText.length
@@ -240,6 +241,8 @@ class ChapterPaginator(
     private val contentHeightPx: Float,
     private val measurer: TextMeasurer,
     private val density: Float = 1f,         // display density，用于 dp→px 转换
+    /** 系统字体缩放，与渲染端 `LocalDensity` 同源；底部对齐换算 sp 必须带上它（见 buildPage）。 */
+    private val fontScale: Float = 1f,
     lazyLayout: Boolean = false              // true = 不在构造期排版，由 layoutUntil 增量推进
 ) {
 
@@ -456,7 +459,13 @@ class ChapterPaginator(
         if (style.bottomJustify && typedPages.isNotEmpty() && typedPages.last().units.any { it is PageUnit.Para }) {
             val last = typedPages.last()
             val fixed = last.units.map { u ->
-                if (u is PageUnit.Para && u.lineHeightExtraPx > 0f) u.copy(lineHeightExtraPx = 0f) else u
+                if (u is PageUnit.Para && u.lineHeightExtraPx > 0f) {
+                    val naturalStyle = paragraphBaseStyle(u)
+                    u.copy(
+                        lineHeightExtraPx = 0f,
+                        mainLayout = measureLayout(paragraphDisplayText(u), naturalStyle, u.paragraphContinues)
+                    )
+                } else u
             }
             typedPages[typedPages.size - 1] = last.copy(units = fixed)
             pages = typedPages.toList()
@@ -509,11 +518,30 @@ class ChapterPaginator(
         val slack = contentHeightPx - realUsed
         if (totalLines <= 1 || slack <= 0f) return page
         val extra = slack / totalLines
+        // extra 是**像素**增量，换算成 sp 时密度必须与渲染端一致（含 fontScale）：
+        // 渲染端用 LocalDensity 的 `extraPx.toSp()`，二者不同源时系统字体缩放 ≠1 会
+        // 让重测行高被放大 fontScale 倍，页面比渲染需要的更高——计划与位图再次分叉。
+        val extraSp = with(Density(density, fontScale)) { extra.toSp().value }
         val adjusted = units.map { u ->
-            if (u is PageUnit.Para && u.lineCount > 0) u.copy(lineHeightExtraPx = extra) else u
+            if (u is PageUnit.Para && u.lineCount > 0) {
+                val baseStyle = paragraphBaseStyle(u)
+                val effectiveStyle = baseStyle.copy(
+                    lineHeight = (baseStyle.lineHeight.value + extraSp).sp
+                )
+                u.copy(
+                    lineHeightExtraPx = extra,
+                    mainLayout = measureLayout(paragraphDisplayText(u), effectiveStyle, u.paragraphContinues)
+                )
+            } else u
         }
         return page.copy(units = adjusted)
     }
+
+    private fun paragraphDisplayText(unit: PageUnit.Para): String =
+        if (mode == "zh") unit.cnText.ifBlank { unit.enText.orEmpty() } else unit.enText ?: unit.cnText
+
+    private fun paragraphBaseStyle(unit: PageUnit.Para): TextStyle =
+        if (unit.continuation) style.body.copy(textIndent = null) else style.body
 
     /** zh 长段落/en 超高超长段按行切分：返回 (本页子段, 续段, 续段首字符在 text 中的索引)。
      *  第三项供续段记录真实原文子区间（sourceBase = 段内基准 + 此索引），未切分时为 0。 */

@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.vibereading.app.BuildConfig
 import com.vibereading.app.domain.model.LlmDefaults
 import com.vibereading.app.domain.model.LlmSettings
+import com.vibereading.app.log.AppLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 
 /**
@@ -37,7 +39,14 @@ class LlmLegacyKeysStore(private val store: DataStore<Preferences>) {
      * 已迁移过（MIGRATED 标记存在）或无任何旧键时返回 null。
      */
     suspend fun migrateToProfile(): LlmSettings? {
-        val prefs = store.data.first()
+        val prefs = try {
+            store.data.first()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.put("读取旧 LLM 配置失败", e)
+            throw e
+        }
         if (prefs[Keys.MIGRATED] == true) return null
         val hasAnyKey = prefs.contains(Keys.API_KEY) ||
             prefs.contains(Keys.API_BASE) ||

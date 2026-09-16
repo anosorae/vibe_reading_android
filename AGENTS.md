@@ -28,7 +28,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
     - `reader/ReaderChrome.kt` — 顶栏/底栏/翻译状态面板/章节标签等 chrome 组件
     - `reader/ReaderViewModel.kt` — 初始化恢复、阅读位置状态、串行进度写入、翻译协调器接线、词典查词入口
-    - `reader/TranslationCoordinator.kt` — 翻译状态机：单任务运行 + `translationRunId` 数据库级 stale 防护
+    - `reader/TranslationCoordinator.kt` — 进程级多任务翻译协调器：按 `bookId + chapterId` 管理运行任务，同章互斥幂等、异章并行，章节级 `translationRunId` 提供数据库 stale 防护
     - `reader/components/ReadingContentRenderer.kt` — 分页与滚动共享的章节标题/正文/双语内容渲染
     - `reader/components/BilingualParagraph.kt` — 英文译文、原文气泡和 Popup
     - `reader/components/TextSelection.kt` — 长按选词：`TextSelectionState`、`SelectableParagraphText`、`findWordBoundary`（BreakIterator 分词）
@@ -55,7 +55,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/pagination/ReaderFonts.kt` — 字体解析单一数据源：内置开源字体目录（多镜像下载）、系统字体映射、SAF 导入 URI 解析；中英槽位按字形过滤
     - `reader/pagination/ReaderMetrics.kt` — 排版、标题、双语 padding、气泡尺寸共享常量
   - `log/` — 三层日志：`AppLog`（内存环形缓冲，最新在前上限 100）、`LogUtils`+`AsyncFileHandler`（`java.util.logging` 异步写 `<externalCacheDir>/logs/`）、`CrashHandler`（全局未捕获异常落盘 `<externalCacheDir>/crash/`，内含 `CrashMark` 标志位）、`CrashLogFiles`（崩溃文件列表/读取/删除）、`LogContext`（进程级 Context + 单线程后台执行器）、`ForegroundServiceSupport`（两个前台服务共用的「提升为前台 / 注册低打扰通知渠道 / 启动服务」样板）
-  - `log/TranslationForegroundService.kt` — 翻译前台服务：翻译期间前台通知 + partial wake lock + WiFi lock，后台保持 SSE 长连接不断（服务本身不运行翻译逻辑）
+  - `log/TranslationForegroundService.kt` — 翻译前台服务：由活动网络翻译任务集合统一持有；集合从空变非空时启动、最后一个任务结束时停止，伴读服务活跃时由其保活接管；服务提供前台通知 + partial wake lock + WiFi lock，本身不运行翻译逻辑
   - `web/` — Web 伴读服务（ADR-005，局域网网页阅读手机书库）：`CompanionServer.kt`（NanoHTTPD 内嵌服务器：路由分发、Token 校验、静态页与封面/插图二进制响应，suspend 业务经 runBlocking 桥接）、`CompanionApi.kt`（伴读业务处理：书架/章节/正文只读 + 进度回写 + languageMode 切换 + 翻译「开始/重试」触发，不提供导入删书与配置管理）、`CompanionJson.kt`（伴读 JSON DTO 与 `normalizeCompanionOffset` 规范化）、`WebCompanionService.kt`（伴读前台服务：通知栏展示含 Token 地址 + WakeLock/WifiLock + 端口 9700，Token 由 `start()` 生成经 Intent 传入；通知带「停止服务」动作；覆盖 `onTimeout` 处理 Android 15 `dataSync` 前台服务的每日时长上限，到点停服务并发一条可划掉的说明通知）
   - `app/src/main/assets/web/index.html` — 伴读单页前端（无构建原生 JS，随 APK 打包）：书架/阅读/目录抽屉，点击段落展开另一侧文本，进度定位与防抖回写，翻译状态 4s 轮询
   - `MainActivity.kt` — 唯一 Activity，`enableEdgeToEdge` + `VibeReadingTheme { AppNavigation() }`
@@ -76,8 +76,8 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - 初始恢复必须是一次性、原子、无副作用的：先读取 Book 位置快照，再等待章节列表；不要通过会写库的普通导航函数恢复默认位置。后续章节 Flow 只刷新当前章节。
 - 位置变化统一经过 ViewModel 的进度入口；分页从 `window.offsetOfPage()` 取 offset，滚动从可见 `ScrollItem` 取 offset。写入必须串行，退出前调用 `flushProgress()`。
 - 翻译走 `TranslationService` 接口（`LlmApiService` 实现，方法：`translateStream`/`testConnection`）的 `translateStream(settings, chapterTitle, chapterContent, sourceLanguage)`，返回 `Flow<TranslationEvent>`：`Started/Thinking/Chunk/Progress/Done/Error`。`Thinking` 只接收 reasoning 字段，`Chunk` 只接收正式 content，`Done` 只持久化完整正式译文；`sourceLanguage`（书原文语言，ADR-003）决定 prompt 方向。LLM 配置存于 `llm_profiles` 表（多档案，`LlmProfileRepository` 管理，`isActive` 标记当前生效档案）；`LlmSettings` 是翻译/连接测试使用的运行时子集。
-- 翻译状态机集中在 `TranslationCoordinator`（注入 `TranslationService`；经 `TranslationCoordinatorProvider` 以进程级单例提供，`ReaderViewModel` 与 Web 伴读服务共用同一实例，单任务状态机全局生效）：开始翻译时写入 `chapters.translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧任务无法污染新任务。`translate()` 的 bookId 是任务参数而非构造参数。
-- Web 伴读服务遵循 ADR-005：所有 HTTP 接口必须带 Token（`?token=`/`X-Companion-Token`/Cookie 三通道任一）；伴读端只读书籍与共享进度 + 翻译「开始/重试」，不提供导入、删书、LLM 配置管理与 Web 端取消/流式译文；进度以「视口顶部段落 startOffset」回写，服务端 `normalizeCompanionOffset` 按章节内容长度规范化（半开区间）；段落 JSON 由 `ReadingContent.fromChapter()` 派生，offset 计算不出伴读前端；伴读服务活跃时翻译跳过自身的 `TranslationForegroundService`（保活由伴读 WifiLock/WakeLock 覆盖），未开启时走原路径；开关持久化于 DataStore `web_companion_enabled`，但**不随 App 启动自动拉起**：每次启动 App 开关都归为关闭（`AppNavigation` 仅在服务未运行时清标志），由用户在设置页手动开启；开启时（Android 13+）先申请 `POST_NOTIFICATIONS` 再启服务，未授权则提示「服务照跑但通知栏不显示地址」。伴读以常驻前台通知展示含 Token 的地址（点击回 App，附「停止服务」动作，对齐 legado），Token 每次进程重新生成属预期。
+- 章节翻译任务集中在 `TranslationCoordinator`（注入 `TranslationService`；经 `TranslationCoordinatorProvider` 以进程级单例提供，`ReaderViewModel`、书架破坏性操作与 Web 伴读服务共用同一实例）。协调器以 `TranslationTaskKey(bookId, chapterId)` 保存活动任务和实时状态：同章 `start` 互斥且幂等，不同章节可并行；阅读焦点只选择展示的 key，不拥有任务生命周期。Room 保存章节耐久终态；开始翻译时写入该章 `translationRunId`，完成/失败/取消必须带同一 runId 才落库（`ChapterDao.*TranslationRun`），旧代际不能污染该章新任务。
+- Web 伴读服务遵循 ADR-005：所有 HTTP 接口必须带 Token（`?token=`/`X-Companion-Token`/Cookie 三通道任一）；伴读端只读书籍与共享进度 + 翻译「开始/重试」，不提供导入、删书、LLM 配置管理与 Web 端取消/流式译文；App/Web 共用进程级多任务协调器，同章开始幂等、异章可并行，Web 仍通过 Room 轮询耐久状态；进度以「视口顶部段落 startOffset」回写，服务端 `normalizeCompanionOffset` 按章节内容长度规范化（半开区间）；段落 JSON 由 `ReadingContent.fromChapter()` 派生，offset 计算不出伴读前端；伴读服务活跃时翻译跳过自身的 `TranslationForegroundService`（保活由伴读 WifiLock/WakeLock 覆盖），未开启时走原路径；开关持久化于 DataStore `web_companion_enabled`，但**不随 App 启动自动拉起**：每次启动 App 开关都归为关闭（`AppNavigation` 仅在服务未运行时清标志），由用户在设置页手动开启；开启时（Android 13+）先申请 `POST_NOTIFICATIONS` 再启服务，未授权则提示「服务照跑但通知栏不显示地址」。伴读以常驻前台通知展示含 Token 的地址（点击回 App，附「停止服务」动作，对齐 legado），Token 每次进程重新生成属预期。
 
 ## 阅读内容与五种翻页模式
 
@@ -99,7 +99,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 
 - 章节状态只能使用 `Chapter.STATUS_*` 常量：`PENDING=0`、`IN_PROGRESS=1`、`DONE=2`、`FAILED=-1`、`TOO_LONG=3`，禁止魔法数字。
 - 原文语言与显示模式分离（ADR-003）：`Book.sourceLanguage`（`zh`/`en`）是书的不变属性，决定翻译方向与段落插槽；`languageMode` 只是显示模式（默认=原文语言，按书持久化）。导入时按章节顺序取首个「抽样量 ≥60 字符」的章节判定（跳过「卷首」等空章节，`SourceLanguageDetector.detectFirstNonBlank`）；书架长按菜单「本书原文语言」可修正，修正会清空全部章节译文并重置显示模式。渲染的「中文侧/英文侧」由 `ReadingParagraph.chineseSide/englishSide` 插槽决定，offset 恒指原文范围。
-- 翻译方向随原文语言：`translateStream` 带 `sourceLanguage` 参数，`SYSTEM_PROMPT`/`buildUserPrompt` 按方向生成（中文→英文 / 英文→中文），`[N]` 契约与 `parseBilingualParagraphs` 不变；英文原版书两种显示模式都翻译当前章，开启「提前翻译下一章」档案开关后空闲时自动预译下一章，中文书保持仅 en 模式翻译。译文未就绪时 en 模式按单语排版（无气泡），zh 模式回退原文。
+- 翻译方向随原文语言：`translateStream` 带 `sourceLanguage` 参数，`SYSTEM_PROMPT`/`buildUserPrompt` 按方向生成（中文→英文 / 英文→中文），`[N]` 契约与 `parseBilingualParagraphs` 不变；英文原版书两种显示模式都翻译当前章，开启「提前翻译下一章」档案开关后可在当前章任务仍运行时并行预译下一章，中文书保持仅 en 模式翻译。译文未就绪时 en 模式按单语排版（无气泡），zh 模式回退原文。
 - 双语译文必须保留 `[1] [2] ...` 标记，并与原文段落一一对应。无效标记不能静默绑定到其他段落；修改 prompt/解析器时必须更新 offset 对齐测试。
 - `ReadingPosition.offset` 是非负 UTF-16 code-unit 偏移，使用半开区间语义；offset 超过章节长度时按当前章节内容长度规范化。
 - 运行时页码变化不是数据迁移事件。不要把 page index 写回 `BookEntity`、DAO 或 Room；Room 进度 SQL 只更新章节 ID、原文 offset 和时间。
@@ -111,8 +111,9 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - 目录只从底部栏中央进入；顶栏不增加目录按钮。
 - 全局主题由 `ThemeSettings` 驱动，阅读器背景/正文颜色由 `ReadingSettings`、`ReaderBgPresets`、`ReaderPalette` 独立控制。
 - SSE 必须持续拼接所有 `content` chunk 直到 `[DONE]`；`finish_reason="length"`、网络异常、解析异常、取消都不能保存为成功译文；流式状态栏正文不得设置固定 `maxLines` 或省略号。
+- 翻译前台保活按活动网络任务集合管理，不绑定“当前阅读章”：首个活动任务开始且伴读服务未运行时启动 `TranslationForegroundService`，任务增减期间保持，最后一个任务结束后停止；伴读服务启停时重新协调所有权，避免并行任务中任一任务结束就过早释放 WakeLock/WifiLock。
 - 书架「已译章节数」只能从 `chapters` 表 DONE 状态派生（`BookDao.getBooksWithProgress()` 子查询），`books.translatedChapters` 缓存列已移除，禁止恢复。
-- 翻译终态写库必须走 `ChapterRepository.startTranslation/completeTranslation/failTranslation/cancelTranslation`（内部带 `translationRunId` 匹配）；切换阅读章节不应取消合法后台任务，只有开启新任务才替换旧任务。
+- 翻译终态写库必须走 `ChapterRepository.startTranslation/completeTranslation/failTranslation/cancelTranslation`（内部按章节匹配 `translationRunId`）。`cancel(key)` 与 `retry(bookId, chapterId, ...)` 必须定向作用于指定章节，不得影响其他并行任务；切换阅读章节或退出阅读器不得取消合法后台任务。删除书籍、修正书籍原文语言等会删除或重置整书章节数据的破坏性操作，必须先 `cancelBook(bookId)` 并等待该书任务释放，再修改 Room/图片文件。
 - 长按选词是瞬时 UI 交互（`TextSelectionState`）：翻页、滚动、切章/切模式、开浮层时清除；长按后的下一次点击只清选区（或关词典弹窗）不翻页。选词用 `SelectableParagraphText`（BreakIterator 分词 + 背景 SpanStyle 高亮，背景不参与测量不触发重排），普通点击不消费事件，外层翻页手势靠 `isConsumed` 跳过。
 - EPUB 支持遵循 ADR-002：导入时一次性解包为「`
 

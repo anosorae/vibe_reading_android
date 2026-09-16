@@ -28,40 +28,48 @@ import com.vibereading.app.ui.components.LlmTranslationParams
  * - 翻译参数区：章节上限/上下文增强/思考模式，即时生效。
  * 编辑字段由外部 ViewModel 持有，面板只负责渲染与回调。
  */
+data class LlmSettingsSheetUiState(
+    val llmSettings: LlmSettings,
+    val profiles: List<LlmProfile>,
+    val activeProfileId: Long?,
+    val editingProfileId: Long?,
+    val editApiKey: String,
+    val editApiBase: String,
+    val editModel: String,
+    val testResult: String?,
+    val testSuccess: Boolean?
+)
+
+interface LlmSettingsSheetActions {
+    fun updateApiKey(value: String)
+    fun updateApiBase(value: String)
+    fun updateModel(value: String)
+    fun updateChapterMaxChars(value: Int)
+    fun updateMaxOutputTokens(value: Int)
+    fun toggleThinking(enabled: Boolean)
+    fun toggleExplainThinking(enabled: Boolean)
+    fun toggleAutoTranslateNext(enabled: Boolean)
+    fun updateTemperature(value: Float)
+    fun updateTopP(value: Float)
+    fun switchProfile(id: Long)
+    fun editProfile(id: Long)
+    fun cancelEdit()
+    fun save()
+    fun test()
+    fun dismiss()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LlmSettingsSheet(
-    llmSettings: LlmSettings,
-    profiles: List<LlmProfile>,
-    activeProfileId: Long?,
-    editingProfileId: Long?,
-    editApiKey: String,
-    editApiBase: String,
-    editModel: String,
-    accentColor: Color,
-    testResult: String?,
-    testSuccess: Boolean?,
-    onUpdateApiKey: (String) -> Unit,
-    onUpdateApiBase: (String) -> Unit,
-    onUpdateModel: (String) -> Unit,
-    onUpdateChapterMaxChars: (Int) -> Unit,
-    onUpdateMaxOutputTokens: (Int) -> Unit,
-    onToggleThinking: (Boolean) -> Unit,
-    onToggleExplainThinking: (Boolean) -> Unit,
-    onToggleAutoTranslateNext: (Boolean) -> Unit,
-    onUpdateTemperature: (Float) -> Unit,
-    onUpdateTopP: (Float) -> Unit,
-    onSwitchProfile: (Long) -> Unit,
-    onEditProfile: (Long) -> Unit,
-    onCancelEdit: () -> Unit,
-    onSave: () -> Unit,
-    onTest: () -> Unit,
-    onDismiss: () -> Unit
+    state: LlmSettingsSheetUiState,
+    actions: LlmSettingsSheetActions,
+    accentColor: Color
 ) {
     var showApiKey by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = actions::dismiss,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         containerColor = MaterialTheme.colorScheme.surface
     ) {
@@ -84,13 +92,13 @@ fun LlmSettingsSheet(
 
             Spacer(Modifier.height(10.dp))
 
-            if (editingProfileId != null) {
+            if (state.editingProfileId != null) {
                 // ── 编辑配置二级页面 ──
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { onCancelEdit() }
+                        .clickable { actions.cancelEdit() }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -112,28 +120,28 @@ fun LlmSettingsSheet(
                 Spacer(Modifier.height(8.dp))
 
                 LlmProfileEditor(
-                    editApiKey = editApiKey,
-                    editApiBase = editApiBase,
-                    editModel = editModel,
+                    editApiKey = state.editApiKey,
+                    editApiBase = state.editApiBase,
+                    editModel = state.editModel,
                     showApiKey = showApiKey,
                     accentColor = accentColor,
-                    testResult = testResult,
-                    testSuccess = testSuccess,
-                    onUpdateApiKey = onUpdateApiKey,
-                    onUpdateApiBase = onUpdateApiBase,
-                    onUpdateModel = onUpdateModel,
+                    testResult = state.testResult,
+                    testSuccess = state.testSuccess,
+                    onUpdateApiKey = actions::updateApiKey,
+                    onUpdateApiBase = actions::updateApiBase,
+                    onUpdateModel = actions::updateModel,
                     onToggleShowApiKey = { showApiKey = !showApiKey },
-                    onSave = onSave,
-                    onTest = onTest
+                    onSave = actions::save,
+                    onTest = actions::test
                 )
             } else {
                 // ── 配置列表 ──
                 LlmProfileList(
-                    profiles = profiles,
-                    activeProfileId = activeProfileId,
+                    profiles = state.profiles,
+                    activeProfileId = state.activeProfileId,
                     accentColor = accentColor,
-                    onSelect = onSwitchProfile,
-                    onEdit = onEditProfile
+                    onSelect = actions::switchProfile,
+                    onEdit = actions::editProfile
                 )
             }
 
@@ -143,15 +151,15 @@ fun LlmSettingsSheet(
             LlmSectionTitle("翻译参数", accentColor)
 
             LlmTranslationParams(
-                llmSettings = llmSettings,
+                llmSettings = state.llmSettings,
                 accentColor = accentColor,
-                onUpdateChapterMaxChars = onUpdateChapterMaxChars,
-                onUpdateMaxOutputTokens = onUpdateMaxOutputTokens,
-                onToggleThinking = onToggleThinking,
-                onToggleExplainThinking = onToggleExplainThinking,
-                onUpdateTemperature = onUpdateTemperature,
-                onUpdateTopP = onUpdateTopP,
-                onToggleAutoTranslateNext = onToggleAutoTranslateNext
+                onUpdateChapterMaxChars = actions::updateChapterMaxChars,
+                onUpdateMaxOutputTokens = actions::updateMaxOutputTokens,
+                onToggleThinking = actions::toggleThinking,
+                onToggleExplainThinking = actions::toggleExplainThinking,
+                onUpdateTemperature = actions::updateTemperature,
+                onUpdateTopP = actions::updateTopP,
+                onToggleAutoTranslateNext = actions::toggleAutoTranslateNext
             )
         }
     }

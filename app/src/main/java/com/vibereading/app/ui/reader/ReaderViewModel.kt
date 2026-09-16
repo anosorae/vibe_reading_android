@@ -79,7 +79,8 @@ class ReaderViewModel(
     private val translationService: TranslationService,
     private val dictDatabase: DictDatabase? = null,
     private val wordExplainService: WordExplainService? = null,
-    appContext: Context
+    appContext: Context,
+    coordinator: TranslationCoordinator? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -89,9 +90,9 @@ class ReaderViewModel(
      *  避免 navigateTo 改 activeChapterId 但协调器 _state 未变时桥接不重评估。 */
     private val activeChapterIdFlow = MutableStateFlow<Long?>(null)
 
-    // 翻译协调器是进程级单例（ADR-005）：与 Web 伴读服务共用，
-    // 单任务状态机全局生效；任务在 appScope 运行，按 Home 挂起或退出阅读器后仍可继续。
-    private val translationCoordinator = TranslationCoordinatorProvider.get(appContext)
+    // 生产环境与 Web 伴读共用进程级协调器；测试可注入独立实例。
+    // 同章互斥、异章并行，阅读焦点只决定展示哪个任务状态。
+    private val translationCoordinator = coordinator ?: TranslationCoordinatorProvider.get(appContext)
     private var llmEditDirty = false
     private val progressMutex = Mutex()
     private var pendingPosition: ReadingPosition? = null
@@ -140,41 +141,32 @@ class ReaderViewModel(
             }
         }
 
-        // 翻译协调器状态 → UI 状态。
-        // 用 combine 而非独立 collect：当 activeChapterId 变化（用户切回正在后台翻译的章节）
-        // 但协调器 _state 未变时，桥接也会重新评估并重新应用该章节的流式状态，
-        // 避免切回运行中章节时 UI 卡在 isStreaming=false 显示“翻译中…”。
+        // 当前阅读章节 + 按章节任务 Map → UI 实时状态。目标章没有任务时完整归零，
+        // 不保留上一章的思考文本/字数；切回仍在运行的章节会立即恢复其独立快照。
         viewModelScope.launch {
-            combine(activeChapterIdFlow, translationCoordinator.state) { activeId, ts ->
-                activeId to ts
-            }.collect { (activeId, ts) ->
-                val isActive = ts.chapterId == activeId && activeId != null
+            combine(activeChapterIdFlow, translationCoordinator.states) { activeId, taskStates ->
+                activeId?.let { taskStates[TranslationTaskKey(bookId, it)] }
+            }.collect { task ->
                 _uiState.update { ui ->
                     ui.copy(
-                        streamingText = if (isActive) ts.streamingText else ui.streamingText,
-                        thinkingText = if (isActive) ts.thinkingText else ui.thinkingText,
-                        streamingCharCount = if (isActive) ts.streamingCharCount else ui.streamingCharCount,
-                        // 协调器在译「非当前章」（如预译下一章）时，当前章未在放流：
-                        // 置 false，避免当前章的进度弹窗因状态合并（conflation）卡住不关闭。
-                        isStreaming = if (isActive) ts.isStreaming else false,
-                        translationPhase = if (isActive) ts.phase else ui.translationPhase,
-                        errorMessage = if (isActive) ts.errorMessage else ui.errorMessage
+                        streamingText = task?.streamingText.orEmpty(),
+                        thinkingText = task?.thinkingText.orEmpty(),
+                        streamingCharCount = task?.streamingCharCount ?: 0,
+                        isStreaming = task?.isStreaming == true,
+                        translationPhase = task?.phase ?: TranslationPhase.IDLE,
+                        errorMessage = task?.errorMessage
                     )
                 }
             }
         }
 
-        // 任一翻译任务结束后（完成/失败/取消），尝试预译下一章：
-        // 若当前章翻译在忙被跳过，等它结束后在这里补上预译。
+        // 活动章节变化是自动翻译的唯一触发点，覆盖目录/按钮、分页跨章、滚动跨章和恢复。
         viewModelScope.launch {
             firstContentReady.first { it }
-            translationCoordinator.state
-                .drop(1) // 跳过初始 IDLE 态
-                .collect { ts ->
-                    if (!ts.isStreaming && ts.phase != TranslationPhase.PREPARING) {
-                        prefetchNextChapterIfNeeded()
-                    }
-                }
+            activeChapterIdFlow.filterNotNull().distinctUntilChanged().collect { chapterId ->
+                if (needsTranslation()) maybeTranslateChapter(chapterId)
+                prefetchNextChapterIfNeeded()
+            }
         }
 
         // Load settings：持久化值一次性载入，此后 UI 状态是唯一事实源。
@@ -259,37 +251,22 @@ class ReaderViewModel(
     fun navigateTo(chapterId: Long, offset: Int = 0, persist: Boolean = true) {
         viewModelScope.launch {
             val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return@launch
+            // 切到别的章：由 flow 收集器统一触发；留在同一章（目录点当前章）时再试一次，
+            // 保留「重进失败章节会自动重试」的原行为（flow 的 distinctUntilChanged 不重发同值）。
+            val reenteringSameChapter = _uiState.value.activeChapterId == chapterId
             val position = ReadingPosition(chapterId, offset.coerceIn(0, chapter.content.length))
-            // 若目标章节已有后台翻译在运行，不重置流式状态，让 combine 桥接重新应用协调器状态；
-            // 否则清空，准备开始新翻译或展示已完成译文
-            val running = translationCoordinator.currentRunningChapterId == chapterId &&
-                translationCoordinator.state.value.isStreaming
             _uiState.update {
-                if (running) {
-                    it.copy(
-                        activeChapterId = chapterId,
-                        activeChapter = chapter,
-                        position = position,
-                        restoreReady = true
-                    )
-                } else {
-                    it.copy(
-                        activeChapterId = chapterId,
-                        activeChapter = chapter,
-                        position = position,
-                        restoreReady = true,
-                        streamingText = "",
-                        thinkingText = "",
-                        isStreaming = false,
-                        translationPhase = TranslationPhase.IDLE,
-                        errorMessage = null
-                    )
-                }
+                it.copy(
+                    activeChapterId = chapterId,
+                    activeChapter = chapter,
+                    position = position,
+                    restoreReady = true
+                )
             }
+            // 切章与滚动跨章的自动翻译统一由 activeChapterIdFlow 收集器触发，避免多个入口各写一份。
             activeChapterIdFlow.value = chapterId
             if (persist) enqueueProgress(position)
-            if (needsTranslation()) maybeTranslateChapter(chapterId)
-            prefetchNextChapterIfNeeded()
+            if (reenteringSameChapter && needsTranslation()) maybeTranslateChapter(chapterId)
         }
     }
 
@@ -569,9 +546,15 @@ class ReaderViewModel(
         val chapter = _uiState.value.chapters.find { it.id == chapterId } ?: return
         val settings = _uiState.value.llmSettings
         if (settings.apiKey.isBlank()) return
-        when (chapter.status) {
-            Chapter.STATUS_PENDING, Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG ->
-                translationCoordinator.translate(bookId, chapter, settings, _uiState.value.sourceLanguage)
+        if (chapter.status !in setOf(
+                Chapter.STATUS_PENDING,
+                Chapter.STATUS_IN_PROGRESS,
+                Chapter.STATUS_FAILED,
+                Chapter.STATUS_TOO_LONG
+            )
+        ) return
+        viewModelScope.launch {
+            translationCoordinator.start(bookId, chapterId, settings, _uiState.value.sourceLanguage)
         }
     }
 
@@ -582,29 +565,31 @@ class ReaderViewModel(
     }
 
     /**
-     * 提前翻译下一章（英文阅读时，空闲则后台预译未译的下一章）。
-     * 仅协调器空闲时才启动，避免打断当前阅读章的翻译；成功后用户翻到下一章即已就绪。
+     * 提前翻译紧邻下一章；与当前章任务可并行，同章启动由协调器幂等去重。
+     *
+     * 只自动启动 PENDING：FAILED/TOO_LONG 是真实失败，自动重试会形成
+     * 「失败 → 章节表发射 → 再预译 → 再失败」的无上限 API 循环，必须由用户显式重试。
      */
     private fun prefetchNextChapterIfNeeded() {
-        val s = _uiState.value
-        if (!s.llmSettings.autoTranslateNext) return
-        if (!needsTranslation()) return
-        if (translationCoordinator.currentRunningChapterId != null) return
-        val current = s.activeChapter ?: return
-        val idx = s.chapters.indexOfFirst { it.id == current.id }
-        if (idx < 0) return
-        val next = s.chapters.getOrNull(idx + 1) ?: return
-        if (next.status == Chapter.STATUS_PENDING || next.status == Chapter.STATUS_FAILED) {
+        val state = _uiState.value
+        if (!state.llmSettings.autoTranslateNext || !needsTranslation()) return
+        val current = state.activeChapter ?: return
+        val index = state.chapters.indexOfFirst { it.id == current.id }
+        val next = state.chapters.getOrNull(index + 1) ?: return
+        if (next.status == Chapter.STATUS_PENDING) {
             maybeTranslateChapter(next.id)
         }
     }
 
-    /** 用户重译：取消当前任务并恢复旧章节 PENDING 后重新开始。 */
+    /** 用户重译：只替换指定章节任务，其他章节继续运行。 */
     fun retryTranslation(chapterId: Long) {
-        val chapter = _uiState.value.chapters.find { it.id == chapterId } ?: return
         viewModelScope.launch {
-            translationCoordinator.cancelAndReset()
-            translationCoordinator.translate(bookId, chapter, _uiState.value.llmSettings, _uiState.value.sourceLanguage)
+            translationCoordinator.retry(
+                bookId = bookId,
+                chapterId = chapterId,
+                settings = _uiState.value.llmSettings,
+                sourceLanguage = _uiState.value.sourceLanguage
+            )
         }
     }
 
@@ -673,7 +658,7 @@ class ReaderViewModel(
 
     override fun onCleared() {
         // 翻译运行在 appScope，退出阅读器后继续在后台完成，不在此取消；
-        // 仅 flush 阅读进度。重译/换章取消走 cancelAndReset，由用户动作触发。
+        // 重译只替换指定章节，切换阅读章节不影响任何后台任务。
         super.onCleared()
     }
 
@@ -686,12 +671,22 @@ class ReaderViewModel(
         private val translationService: TranslationService,
         private val dictDatabase: DictDatabase? = null,
         private val wordExplainService: WordExplainService? = null,
-        private val appContext: Context
+        private val appContext: Context,
+        private val coordinator: TranslationCoordinator? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return ReaderViewModel(
-                bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, translationService, dictDatabase, wordExplainService, appContext
+                bookId,
+                bookRepo,
+                chapterRepo,
+                settingsRepo,
+                llmProfileRepo,
+                translationService,
+                dictDatabase,
+                wordExplainService,
+                appContext,
+                coordinator
             ) as T
         }
     }

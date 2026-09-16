@@ -9,6 +9,8 @@ import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingPosition
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.ui.reader.TranslationCoordinator
+import com.vibereading.app.ui.reader.TranslationLaunchResult
+import com.vibereading.app.ui.reader.TranslationTaskKey
 import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.flow.first
@@ -86,35 +88,46 @@ class CompanionApi(
     // ── 翻译联动（仅开始/重试，ADR-005） ──
 
     /**
-     * 对章节发起翻译，仅限 PENDING / FAILED / TOO_LONG（ADR-005：仅「开始/重试」）。
-     * FAILED / TOO_LONG 先重置（重试 = reset + 重新开始）；同章已有活动任务时幂等忽略。
+     * 对章节发起翻译（ADR-005：Web 只提供开始/重试）。同章活动任务幂等，
+     * 不同章节可并行；数据库遗留 IN_PROGRESS 但内存无任务时按重试恢复。
      */
     suspend fun startTranslation(bookId: Long, chapterId: Long): TranslationStartResult {
         val book = bookRepo.getBookByIdOnce(bookId) ?: return TranslationStartResult(error = "书籍不存在")
-        val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return TranslationStartResult(error = "章节不存在")
-        when (chapter.status) {
-            Chapter.STATUS_IN_PROGRESS ->
-                // 已在进行中：幂等返回，不重复开任务
-                return TranslationStartResult(started = false, alreadyRunning = true)
-            Chapter.STATUS_DONE ->
-                return TranslationStartResult(error = "该章已翻译完成，重译请在手机 App 内操作")
-            Chapter.STATUS_FAILED, Chapter.STATUS_TOO_LONG -> {
-                chapterRepo.resetChapter(bookId, chapterId)
-            }
+        val chapter = chapterRepo.getChapterById(bookId, chapterId)
+            ?: return TranslationStartResult(error = "章节不存在")
+        if (chapter.status == Chapter.STATUS_DONE) {
+            return TranslationStartResult(error = "该章已翻译完成，重译请在手机 App 内操作")
         }
         val settings = llmProfileRepo.activeLlmSettings.first()
         if (settings.apiKey.isBlank()) {
             return TranslationStartResult(error = "请先在手机 App 内配置 API Key")
         }
+
         val coordinator = coordinatorProvider()
-        coordinator.translate(
-            bookId = bookId,
-            chapter = chapter.copy(translatedContent = null, status = Chapter.STATUS_PENDING),
-            settings = settings,
-            sourceLanguage = book.sourceLanguage
-        )
-        AppLog.put("Web 伴读触发翻译：书 $bookId 章 $chapterId")
-        return TranslationStartResult(started = true)
+        val key = TranslationTaskKey(bookId, chapterId)
+        val launch = when {
+            coordinator.isRunning(key) ->
+                TranslationLaunchResult.AlreadyRunning(
+                    key,
+                    coordinator.stateOf(key)?.runId ?: 0L
+                )
+            chapter.status == Chapter.STATUS_PENDING ->
+                coordinator.start(bookId, chapterId, settings, book.sourceLanguage)
+            else ->
+                coordinator.retry(bookId, chapterId, settings, book.sourceLanguage)
+        }
+        return when (launch) {
+            is TranslationLaunchResult.Started -> {
+                AppLog.put("Web 伴读触发翻译：书 $bookId 章 $chapterId")
+                TranslationStartResult(started = true)
+            }
+            is TranslationLaunchResult.AlreadyRunning ->
+                TranslationStartResult(alreadyRunning = true)
+            is TranslationLaunchResult.Rejected ->
+                TranslationStartResult(error = launch.reason)
+            TranslationLaunchResult.NotFound ->
+                TranslationStartResult(error = "章节不存在")
+        }
     }
 }
 

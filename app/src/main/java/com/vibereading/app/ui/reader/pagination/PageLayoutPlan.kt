@@ -55,8 +55,9 @@ data class PageBlockSpec(
 object PageLayoutPlanner {
 
     /**
-     * 计划一页的版面。纯函数：只读 [PageUnit] 自带的布局结果与 [style]/[density]，
-     * 不做测量、不碰 Compose 运行时，可脱离渲染单测。
+     * 计划一页的版面。纯函数：只读 [PageUnit] 自带的最终有效布局与 [style]/[density]，
+     * 不做测量、不碰 Compose 运行时，可脱离渲染单测。bottomJustify 的行高已由分页器
+     * 写入 [PageUnit.Para.mainLayout]，因此块高不会与 Compose/位图实际正文高度分叉。
      *
      * [mode] 决定双语插槽是否成立（en 模式下带译文的片段才有气泡与额外 padding）。
      */

@@ -30,7 +30,8 @@ class TranslationForegroundService : Service() {
         startForegroundCompat()
         acquireWakeLock()
         acquireWifiLock()
-        return START_STICKY
+        // 服务本身不持有可恢复的翻译任务；进程被杀后空壳重启只会留下无任务通知与锁。
+        return START_NOT_STICKY
     }
 
     private fun startForegroundCompat() {

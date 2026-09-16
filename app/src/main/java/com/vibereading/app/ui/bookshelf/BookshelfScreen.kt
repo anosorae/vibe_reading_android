@@ -4,62 +4,35 @@ import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.HideImage
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material.icons.filled.ViewList
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.BookShelfItem
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.WereadColors
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun BookshelfScreen(
     vm: BookshelfViewModel,
@@ -71,19 +44,13 @@ fun BookshelfScreen(
     val context = LocalContext.current
     val accentColor = if (state.accent == AppAccent.WEREAD) WereadColors.Accent else VibeColors.Sienna
 
-    // 长按书籍 → 操作菜单（删除 / 开始阅读）
     var menuBook by remember { mutableStateOf<BookShelfItem?>(null) }
-    // 待删除确认的书籍
     var confirmDeleteBook by remember { mutableStateOf<BookShelfItem?>(null) }
-    // 原版语言选择对话框的书籍（ADR-003 误判修正）
     var sourceLangPickerBook by remember { mutableStateOf<BookShelfItem?>(null) }
-    // 修正原文语言前的破坏性确认：(书籍, 目标语言)
     var confirmSourceLang by remember { mutableStateOf<Pair<BookShelfItem, String>?>(null) }
-    // 搜索框展开状态
     var searchExpanded by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
 
-    // File picker
     val fileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -101,7 +68,6 @@ fun BookshelfScreen(
         if (uri != null && bookId != null) vm.setCover(context, bookId, uri)
     }
 
-    // Upload message auto-dismiss
     val message = state.shelfMessage
     LaunchedEffect(message) {
         if (message != null) {
@@ -127,632 +93,106 @@ fun BookshelfScreen(
     Scaffold(
         contentWindowInsets = stableInsets,
         topBar = {
-            TopAppBar(
-                windowInsets = stableInsets,
-                title = {
-                    if (searchExpanded) {
-                        OutlinedTextField(
-                            value = searchText,
-                            onValueChange = {
-                                searchText = it
-                                vm.setSearchQuery(it)
-                            },
-                            placeholder = { Text("搜索书名") },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
-                        Text(
-                            "译读",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+            BookshelfTopBar(
+                stableInsets = stableInsets,
+                searchExpanded = searchExpanded,
+                searchText = searchText,
+                layout = state.layout,
+                accentColor = accentColor,
+                onSearchTextChange = {
+                    searchText = it
+                    vm.setSearchQuery(it)
+                },
+                onToggleSearch = {
+                    searchExpanded = !searchExpanded
+                    if (!searchExpanded) {
+                        searchText = ""
+                        vm.setSearchQuery("")
                     }
                 },
-                actions = {
-                    // 搜索切换
-                    IconButton(onClick = {
-                        searchExpanded = !searchExpanded
-                        if (!searchExpanded) {
-                            searchText = ""
-                            vm.setSearchQuery("")
-                        }
-                    }) {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = "搜索",
-                            tint = if (searchExpanded) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // 布局切换 列表/网格
-                    IconButton(onClick = { vm.switchLayout(if (state.layout == "grid") "list" else "grid") }) {
-                        Icon(
-                            if (state.layout == "grid") Icons.Filled.ViewList else Icons.Filled.GridView,
-                            contentDescription = if (state.layout == "grid") "切换列表" else "切换网格",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // 设置
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            Icons.Filled.Settings,
-                            contentDescription = "设置",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                onToggleLayout = {
+                    vm.switchLayout(if (state.layout == "grid") "list" else "grid")
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
+                onOpenSettings = onOpenSettings
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { // TXT 与 EPUB 一起可选（ADR-002）；部分文件管理器对 epub 上报的 MIME 不规范，
-        // 同时给出具体类型与通配扩展名兜底
-        fileLauncher.launch(arrayOf("text/plain", "application/epub+zip", "*/*")) },
+                // TXT 与 EPUB 一起可选（ADR-002）；部分文件管理器对 epub 上报的 MIME 不规范，
+                // 同时给出具体类型与通配扩展名兜底
+                onClick = { fileLauncher.launch(arrayOf("text/plain", "application/epub+zip", "*/*")) },
                 containerColor = accentColor,
-                contentColor = androidx.compose.ui.graphics.Color.White
+                contentColor = Color.White
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "上传书籍")
             }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (state.isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center),
-                    color = accentColor
-                )
-            } else if (state.items.isEmpty()) {
-                // Empty state
-                Column(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Filled.MenuBook,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.outlineVariant
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "书架空空如也",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "点击右下角 + 上传 TXT / EPUB 书籍",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-            } else {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // 排序条
-                    SortBar(
-                        sort = state.sort,
-                        sortOrder = state.sortOrder,
-                        accentColor = accentColor,
-                        onSort = vm::switchSort,
-                        onToggleOrder = vm::switchSortOrder
-                    )
-
-                    // 无搜索结果
-                    if (state.filteredItems.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                "没有匹配「${searchText}」的书籍",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else if (state.layout == "grid") {
-                        val gridHorizontalPadding = 16.dp
-                        val gridVerticalPadding = 6.dp
-                        val horizontalSpacing = 14.dp
-                        val textAreaHeight = 34.dp
-                        val rows = 3
-
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            val availH = maxHeight - gridVerticalPadding * 2
-                            val verticalSpacing = 20.dp
-                            val cardHeight = (availH - verticalSpacing * (rows - 1)) / rows
-                            val coverHeight = cardHeight - textAreaHeight
-
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(3),
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(
-                                    horizontal = gridHorizontalPadding,
-                                    vertical = gridVerticalPadding
-                                ),
-                                horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
-                                verticalArrangement = Arrangement.spacedBy(verticalSpacing)
-                            ) {
-                                items(state.filteredItems, key = { it.book.id }) { item ->
-                                    BookGridCard(
-                                        item = item,
-                                        accentColor = accentColor,
-                                        onClick = { onOpenBook(item.book.id) },
-                                        onLongClick = { menuBook = item },
-                                        coverHeight = coverHeight,
-                                        coverModifier = coverTransition(item.book.id)
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(vertical = 4.dp)
-                        ) {
-                            items(state.filteredItems, key = { it.book.id }) { item ->
-                                BookRow(
-                                    item = item,
-                                    accentColor = accentColor,
-                                    onClick = { onOpenBook(item.book.id) },
-                                    onLongClick = { menuBook = item },
-                                    coverModifier = coverTransition(item.book.id)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 书架操作提示横幅（导入结果 / 封面设置结果），4s 后自动消失
-            AnimatedVisibility(
-                visible = message != null,
-                enter = fadeIn() + slideInVertically { -it },
-                exit = fadeOut() + slideOutVertically { -it },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(16.dp)
-            ) {
-                if (message != null) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (message.contains("失败")) VibeColors.RedMuted else VibeColors.Sage,
-                        tonalElevation = 4.dp
-                    ) {
-                        Text(
-                            message,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                            color = androidx.compose.ui.graphics.Color.White,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-            }
+            BookshelfContent(
+                state = state,
+                searchText = searchText,
+                accentColor = accentColor,
+                coverTransition = coverTransition,
+                onOpenBook = onOpenBook,
+                onLongClickBook = { menuBook = it },
+                onSort = vm::switchSort,
+                onToggleOrder = vm::switchSortOrder
+            )
+            ShelfMessageBanner(message = message)
         }
     }
 
-    // Long-press action menu
     menuBook?.let { item ->
-        // 内嵌封面备份是否存在：决定菜单显示「恢复原封面」还是「移除封面」（与 VM 用同一判据）。
-        // 磁盘 stat 放 IO，菜单打开时只查一次
-        val canRestoreCover by produceState(
-            initialValue = false,
-            key1 = item.book.id,
-            key2 = item.book.coverPath
-        ) {
-            value = withContext(Dispatchers.IO) {
-                BookImageStore.canRestoreEmbeddedCover(item.book.id, item.book.coverPath)
-            }
-        }
-        ModalBottomSheet(onDismissRequest = { menuBook = null }) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    item.book.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-                )
-                Text(
-                    "${item.book.totalChapters}章 · 已译${item.translatedCount}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 20.dp)
-                )
-                Spacer(Modifier.height(8.dp))
-                ListItem(
-                    headlineContent = { Text("开始阅读") },
-                    leadingContent = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        val id = menuBook?.book?.id
-                        menuBook = null
-                        if (id != null) onOpenBook(id)
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text("本书原文语言") },
-                    supportingContent = {
-                        Text(if (item.book.sourceLanguage == "en") "英文原版" else "中文原版")
-                    },
-                    leadingContent = { Icon(Icons.Filled.Translate, contentDescription = null) },
-                    trailingContent = { Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        sourceLangPickerBook = item
-                        menuBook = null
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text(if (item.book.coverPath == null) "设置封面" else "更换封面") },
-                    supportingContent = { Text("从相册或文件中选择图片") },
-                    leadingContent = { Icon(Icons.Filled.Image, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        pendingCoverBookId = item.book.id
-                        menuBook = null
-                        coverLauncher.launch(arrayOf("image/*"))
-                    }
-                )
-                if (item.book.coverPath != null) {
-                    ListItem(
-                        headlineContent = { Text(if (canRestoreCover) "恢复原封面" else "移除封面") },
-                        supportingContent = {
-                            Text(if (canRestoreCover) "回到 EPUB 内置封面" else "回到默认渐变封面")
-                        },
-                        leadingContent = {
-                            Icon(
-                                if (canRestoreCover) Icons.Filled.Restore else Icons.Filled.HideImage,
-                                contentDescription = null
-                            )
-                        },
-                        modifier = Modifier.clickable {
-                            val id = menuBook?.book?.id
-                            menuBook = null
-                            if (id != null) vm.removeCover(id)
-                        }
-                    )
-                }
-                ListItem(
-                    headlineContent = { Text("删除", color = VibeColors.RedMuted) },
-                    leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null, tint = VibeColors.RedMuted) },
-                    modifier = Modifier.clickable {
-                        menuBook = null
-                        confirmDeleteBook = item
-                    }
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-        }
-    }
-
-    // Delete confirmation dialog
-    confirmDeleteBook?.let { item ->
-        AlertDialog(
-            onDismissRequest = { confirmDeleteBook = null },
-            title = { Text("删除书籍") },
-            text = { Text("确定要删除《${item.book.title}》吗？此操作不可恢复。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.deleteBook(item.book.id)
-                    confirmDeleteBook = null
-                }) {
-                    Text("删除", color = VibeColors.RedMuted)
-                }
+        BookActionsSheet(
+            item = item,
+            onDismiss = { menuBook = null },
+            onOpenBook = {
+                menuBook = null
+                onOpenBook(item.book.id)
             },
-            dismissButton = {
-                TextButton(onClick = { confirmDeleteBook = null }) {
-                    Text("取消")
-                }
+            onSelectSourceLanguage = {
+                sourceLangPickerBook = item
+                menuBook = null
+            },
+            onSelectCover = {
+                pendingCoverBookId = item.book.id
+                menuBook = null
+                coverLauncher.launch(arrayOf("image/*"))
+            },
+            onRemoveCover = {
+                menuBook = null
+                vm.removeCover(item.book.id)
+            },
+            onDelete = {
+                menuBook = null
+                confirmDeleteBook = item
             }
         )
     }
 
-    // 原文语言选择对话框（ADR-003 误判修正；与当前一致时直接关闭，不弹确认）
-    sourceLangPickerBook?.let { item ->
-        var picked by remember(item.book.id) {
-            mutableStateOf(item.book.sourceLanguage)
+    DeleteBookDialog(
+        item = confirmDeleteBook,
+        onDismiss = { confirmDeleteBook = null },
+        onConfirm = { item ->
+            vm.deleteBook(item.book.id)
+            confirmDeleteBook = null
         }
-        AlertDialog(
-            onDismissRequest = { sourceLangPickerBook = null },
-            title = { Text("本书原文语言") },
-            text = {
-                Column {
-                    listOf("zh" to "中文原版", "en" to "英文原版").forEach { (lang, label) ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { picked = lang }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            RadioButton(
-                                selected = picked == lang,
-                                onClick = { picked = lang }
-                            )
-                            Text(label, modifier = Modifier.padding(start = 8.dp))
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    sourceLangPickerBook = null
-                    if (picked != item.book.sourceLanguage) {
-                        confirmSourceLang = item to picked
-                    }
-                }) {
-                    Text("确定")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { sourceLangPickerBook = null }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-
-    // 修正原文语言破坏性确认：方向变了，旧译文全部作废
-    confirmSourceLang?.let { (item, targetLang) ->
-        AlertDialog(
-            onDismissRequest = { confirmSourceLang = null },
-            title = { Text("修正原文语言") },
-            text = {
-                Text("将《${item.book.title}》的原文语言改为「${if (targetLang == "en") "英文原版" else "中文原版"}」？\n\n此操作会清空本书已生成的章节译文，并重置阅读模式为对应原文。")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.correctSourceLanguage(item.book.id, targetLang)
-                    confirmSourceLang = null
-                }) {
-                    Text("确认", color = VibeColors.RedMuted)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmSourceLang = null }) {
-                    Text("取消")
-                }
-            }
-        )
-    }
-}
-
-// ── 排序条：排序方式 + 升序/降序切换 ──
-@Composable
-private fun SortBar(
-    sort: String,
-    sortOrder: String,
-    accentColor: androidx.compose.ui.graphics.Color,
-    onSort: (String) -> Unit,
-    onToggleOrder: (String) -> Unit
-) {
-    val options = listOf(
-        ShelfSort.RECENT to "最近阅读",
-        ShelfSort.TITLE to "书名",
-        ShelfSort.CREATED to "上传时间"
     )
-    var menuExpanded by remember { mutableStateOf(false) }
-    val currentLabel = options.firstOrNull { it.first == sort }?.second ?: "最近阅读"
-    val isDesc = sortOrder == SortOrder.DESC
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("排序", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(4.dp))
-        Box {
-            TextButton(onClick = { menuExpanded = true }) {
-                Text(currentLabel, color = accentColor, fontSize = 13.sp)
-                Icon(
-                    Icons.Filled.ArrowDropDown,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                options.forEach { (key, label) ->
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        onClick = {
-                            menuExpanded = false
-                            onSort(key)
-                        }
-                    )
-                }
-            }
+    SourceLanguagePickerDialog(
+        item = sourceLangPickerBook,
+        onDismiss = { sourceLangPickerBook = null },
+        onConfirm = { item, picked ->
+            sourceLangPickerBook = null
+            if (picked != item.book.sourceLanguage) confirmSourceLang = item to picked
         }
-        Spacer(Modifier.weight(1f))
-        // 升序/降序切换按钮
-        IconButton(
-            onClick = { onToggleOrder(if (isDesc) SortOrder.ASC else SortOrder.DESC) },
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                if (isDesc) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
-                contentDescription = if (isDesc) "降序" else "升序",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
+    )
+    ConfirmSourceLanguageDialog(
+        selection = confirmSourceLang,
+        onDismiss = { confirmSourceLang = null },
+        onConfirm = { item, targetLang ->
+            vm.correctSourceLanguage(item.book.id, targetLang)
+            confirmSourceLang = null
         }
-    }
-}
-
-// ── 列表行：封面 + 书名 + 阅读进度（仿 Legado 三行列表） ──
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun BookRow(
-    item: BookShelfItem,
-    accentColor: androidx.compose.ui.graphics.Color,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    coverModifier: Modifier = Modifier
-) {
-    val book = item.book
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            // 封面在共享图层中翻转，行级 ripple 会留在书架上形成矩形灰块。
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        BookCover(
-            title = book.title,
-            coverPath = book.coverPath,
-            modifier = Modifier.width(56.dp).height(76.dp).then(coverModifier)
-        )
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            // 第 1 行：书名
-            Text(
-                book.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            // 第 2 行：阅读进度章节标题
-            Spacer(Modifier.height(4.dp))
-            if (item.lastReadChapterTitle != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.MenuBook,
-                        contentDescription = null,
-                        modifier = Modifier.size(13.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(3.dp))
-                    Text(
-                        item.lastReadChapterTitle,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                Text(
-                    "未开始阅读",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-
-            // 第 3 行：章数 + 已译
-            Spacer(Modifier.height(3.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "共 ${book.totalChapters} 章",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (item.translatedCount > 0) {
-                    Text(" · ", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        "已译 ${item.translatedCount}",
-                        fontSize = 12.sp,
-                        color = VibeColors.Sage
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ── 网格卡片：封面 + 右上角角标 + 封面下方书名和进度 ──
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun BookGridCard(
-    item: BookShelfItem,
-    accentColor: androidx.compose.ui.graphics.Color,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    coverHeight: Dp = 160.dp,
-    coverModifier: Modifier = Modifier
-) {
-    val book = item.book
-
-    Column(
-        modifier = Modifier
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
-    ) {
-        // 封面区域：封面 + 右上角翻译角标
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(coverHeight)
-                .then(coverModifier)
-                .clip(RoundedCornerShape(8.dp))
-        ) {
-            BookCover(
-                title = book.title,
-                coverPath = book.coverPath,
-                modifier = Modifier.fillMaxSize()
-            )
-
-            // 右上角：已译/总章 角标
-            if (item.translatedCount > 0) {
-                Surface(
-                    shape = RoundedCornerShape(topEnd = 8.dp, bottomStart = 8.dp),
-                    color = VibeColors.Sage.copy(alpha = 0.85f),
-                    modifier = Modifier.align(Alignment.TopEnd)
-                ) {
-                    Text(
-                        "${item.translatedCount}/${book.totalChapters}",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                    )
-                }
-            }
-        }
-
-        // 封面下方：书名 + 阅读进度（水平 padding 补偿封面阴影的视觉偏移）
-        Column(
-            modifier = Modifier.padding(start = 2.dp, top = 4.dp, end = 2.dp)
-        ) {
-            Text(
-                book.title,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            val readChapters = if (book.totalChapters > 0 && item.progress > 0f) {
-                (item.progress * book.totalChapters).toInt()
-            } else 0
-            if (readChapters > 0) {
-                Text(
-                    "已读${readChapters}/${book.totalChapters}章",
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
+    )
 }

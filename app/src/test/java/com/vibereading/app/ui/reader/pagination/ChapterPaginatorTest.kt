@@ -6,6 +6,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -410,6 +411,46 @@ class ChapterPaginatorTest {
         val lastExtra = p.pages.last().units.filterIsInstance<PageUnit.Para>()
             .all { it.lineHeightExtraPx == 0f }
         assertTrue("末页不应底部对齐", lastExtra)
+    }
+
+    /**
+     * 系统字体缩放（fontScale ≠ 1）时，底部对齐把 slack 像素换算成 sp 必须用与渲染端
+     * 同源的 `LocalDensity`（含 fontScale）。漏掉 fontScale 会让重测行高每行多出
+     * `extra × (fontScale − 1)` 像素，页面比渲染实际需要更高 → 计划/位图再次分叉。
+     * 断言方式沿用「计划总高不得溢出内容区」，与渲染口径无关。
+     */
+    @Test
+    fun bottomJustify_respectsFontScaleWhenConvertingSlackToSp() {
+        val density = 2.625f
+        val fontScale = 2f
+        val scaledDensity = Density(density, fontScale)
+        val paras = (0 until 20).map {
+            "字体缩放底部对齐段落 $it：这是一段足够长的中文内容，确保排版时占据多行高度，" +
+                "使中间满页出现 slack 触发底部对齐拉伸。"
+        }
+        val p = ChapterPaginator(
+            1L, items(paras), style(bottomJustify = true), "zh",
+            contentWidthPx = 400f, contentHeightPx = 600f, measurer = newTextMeasurer(scaledDensity),
+            density = density, fontScale = fontScale
+        )
+        assertTrue("应跨 3+ 页", p.pages.size >= 3)
+        val justifiedPages = p.pages.dropLast(1).filter { page ->
+            page.units.any { (it as? PageUnit.Para)?.lineHeightExtraPx?.let { e -> e > 0f } == true }
+        }
+        assertTrue("应有底部对齐的满页", justifiedPages.isNotEmpty())
+        justifiedPages.forEachIndexed { index, page ->
+            val blocks = PageLayoutPlanner.plan(
+                units = page.units,
+                style = style(bottomJustify = true),
+                density = scaledDensity,
+                contentWidthPx = 400f,
+                mode = "zh"
+            )
+            assertTrue(
+                "第 $index 页计划总高 ${blocks.last().bottomPx} 不得溢出内容区 600（fontScale=$fontScale）",
+                blocks.last().bottomPx <= 600f + 2f
+            )
+        }
     }
 
     @Test

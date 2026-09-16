@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import android.content.Context
-import com.vibereading.app.data.remote.LlmApiService
+import com.vibereading.app.data.remote.TranslationService
 import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.AppAccent
@@ -44,13 +44,12 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val settingsRepo: SettingsRepository,
     private val llmProfileRepo: LlmProfileRepository,
+    private val translationService: TranslationService,
     private val appContext: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
-
-    private val llmService = LlmApiService()
 
     // 编辑字段（apiKey/apiBase/model 需要独立缓冲区，避免 DataStore Flow 覆盖输入）
     private val _editApiKey = MutableStateFlow("")
@@ -258,7 +257,7 @@ class SettingsViewModel(
                     if (isActive) _uiState.update { it.copy(llmSettings = settings) }
                 }
                 editDirty = false
-                val result = llmService.testConnection(settings)
+                val result = translationService.testConnection(settings)
                 _uiState.update {
                     it.copy(
                         isTesting = false,
@@ -383,11 +382,12 @@ class SettingsViewModel(
     class Factory(
         private val settingsRepo: SettingsRepository,
         private val llmProfileRepo: LlmProfileRepository,
+        private val translationService: TranslationService,
         private val appContext: Context
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return SettingsViewModel(settingsRepo, llmProfileRepo, appContext) as T
+            return SettingsViewModel(settingsRepo, llmProfileRepo, translationService, appContext) as T
         }
     }
 }

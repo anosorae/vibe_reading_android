@@ -16,10 +16,8 @@ import com.vibereading.app.ui.reader.components.ReadingChapterTitle
 import com.vibereading.app.ui.reader.components.ReadingIllustrationBlock
 import com.vibereading.app.ui.reader.components.ReadingParagraphItem
 import com.vibereading.app.ui.reader.components.ParagraphKey
-import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.ui.reader.content.ReadingContent
 import com.vibereading.app.ui.reader.content.ReadingParagraph
-import com.vibereading.app.ui.reader.pagination.PageStyle
 
 // ── 滚动模式：与分页共用 ReadingContent 的扁平内容项 ──
 sealed interface ScrollItem {
@@ -78,34 +76,27 @@ fun List<ScrollItem>.indexInChunks(chapterId: Long?, offset: Int = 0): Int? {
 
 @Composable
 fun ScrollReader(
-    chapters: List<Chapter>,
     chunks: List<ScrollItem>,
     scrollState: LazyListState,
-    state: ReaderUiState,
-    pageStyle: PageStyle,
-    palette: ReaderPalette,
-    paddingH: Int,
-    paddingV: Int,
-    statusBarPx: Int,
-    navBarPx: Int,
-    onJumpChapter: (Long) -> Unit,
-    selectionState: TextSelectionState? = null,
-    onIllustrationClick: ((String) -> Unit)? = null,
-    contentWidthPx: Int = 0,
-    bubbleEnabled: Boolean = true
+    mode: String,
+    sourceLanguage: String,
+    layout: ReaderLayoutSpec,
+    interactions: ReaderContentInteractions
 ) {
     val density = LocalDensity.current
+    val pageStyle = layout.pageStyle
+    val palette = layout.palette
     // 内容区顶部/底部扣除系统栏高度（用缓存值，沉浸式切换不触发滚动内容跳动）
-    val insetTopDp = with(density) { statusBarPx.toDp() }
-    val insetBottomDp = with(density) { navBarPx.toDp() }
+    val insetTopDp = with(density) { layout.geometry.statusBarPx.toDp() }
+    val insetBottomDp = with(density) { layout.geometry.navBarPx.toDp() }
     LazyColumn(
         state = scrollState,
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = paddingH.dp),
+            .padding(horizontal = layout.paddingH.dp),
         contentPadding = PaddingValues(
-            top = insetTopDp + paddingV.dp,
-            bottom = insetBottomDp + paddingV.dp
+            top = insetTopDp + layout.paddingV.dp,
+            bottom = insetBottomDp + layout.paddingV.dp
         )
     ) {
         itemsIndexed(chunks, key = { _, item ->
@@ -125,23 +116,23 @@ fun ScrollReader(
                 item is ScrollItem.Paragraph && item.paragraph.illustration != null ->
                     ReadingIllustrationBlock(
                         link = item.paragraph.illustration!!,
-                        showSpacer = true,
-                        onClick = if (onIllustrationClick != null) {
-                            { onIllustrationClick(item.paragraph.illustration!!.path) }
-                        } else null
+                        bottomSpacing = with(density) { pageStyle.paragraphSpacingPx.toDp() },
+                        onClick = interactions.onIllustrationClick?.let { callback ->
+                            { callback(item.paragraph.illustration!!.path) }
+                        }
                     )
                 item is ScrollItem.Paragraph -> ReadingParagraphItem(
                     paragraph = item.paragraph,
-                    mode = state.mode,
-                    sourceLanguage = state.sourceLanguage,
+                    mode = mode,
+                    sourceLanguage = sourceLanguage,
                     pageStyle = pageStyle,
                     palette = palette,
-                    selectionState = selectionState,
+                    selectionState = interactions.selectionState,
                     paragraphKey = ParagraphKey(item.chapterId, item.paragraph.index),
-                    paddingH = paddingH,
+                    paddingH = layout.paddingH,
                     // 中文两端对齐：滚动内容区宽度（与 LazyColumn 水平 padding 后的约束一致）
-                    contentWidthPx = contentWidthPx,
-                    bubbleEnabled = bubbleEnabled
+                    contentWidthPx = layout.geometry.contentWidthPx.toInt(),
+                    bubbleEnabled = interactions.bubbleEnabled
                 )
             }
         }

@@ -466,11 +466,14 @@ fun BoxScope.TranslationStatusPanel(
         } else if (activeChapter != null) {
             // ── 非流式章节状态提示 ──
             val status = activeChapter.status
-            val reason = state.errorMessage ?: activeChapter.errorMessage
+            // 运行期失败（如「请先配置 API Key」）不写库，章节仍是 PENDING：
+            // 这类原因必须显示，否则用户只看到「待翻译」而不知道卡在哪。
+            val runtimeReason = state.errorMessage
+            val reason = runtimeReason ?: activeChapter.errorMessage
             val (hintText, hintColor) = chapterStatusHint(status)
             Column(modifier = Modifier.padding(12.dp)) {
                 Text(hintText, fontSize = 12.sp, color = hintColor)
-                if (reason != null && chapterStatusHasReason(status)) {
+                if (reason != null && (runtimeReason != null || chapterStatusHasReason(status))) {
                     Text(
                         reason,
                         fontSize = 11.sp,

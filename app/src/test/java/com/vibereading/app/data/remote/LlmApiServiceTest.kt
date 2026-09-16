@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import com.google.gson.JsonParser
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -177,6 +178,22 @@ class LlmApiServiceTest {
     fun `invalid api base becomes an error event`() = runTest {
         val events = service.translateStream(settings(apiBase = "not a url"), "Title", "Paragraph").toList()
         assertTrue(events.last() is TranslationEvent.Error)
+    }
+
+    @Test
+    fun `test connection always limits response to ten tokens`() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"choices":[{"message":{"role":"assistant","content":"hi"}}]}""")
+        )
+
+        val result = service.testConnection(settings().copy(maxOutputTokens = 8192))
+
+        assertEquals("hi", result.getOrThrow())
+        val requestJson = JsonParser.parseString(server.takeRequest().body.readUtf8()).asJsonObject
+        assertEquals(10, requestJson.get("max_tokens").asInt)
+        assertEquals(false, requestJson.get("stream").asBoolean)
     }
 
     @Test

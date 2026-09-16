@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.data.image.BookImageStore
@@ -47,18 +48,18 @@ import kotlinx.coroutines.withContext
  * - 滚动模式：按内容宽等比缩放取自然高度；
  * - 分页模式：排版期已把整图适配到单页（[fixedDisplayHeightPx]），渲染按该高度铺排，
  *   与 ChapterPaginator.fitImage 的口径严格一致；
+ * - [bottomSpacing] 由调用方传入实际段距：分页消费版面计划，滚动消费 PageStyle；
  * - 加载失败/文件缺失显示占位框；[onClick] 非空时点击进入全屏预览。
  */
 @Composable
 fun ReadingIllustrationBlock(
     link: IllustrationLink,
     modifier: Modifier = Modifier,
-    showSpacer: Boolean = true,
+    bottomSpacing: Dp = 0.dp,
     fixedDisplayHeightPx: Float? = null,
     onClick: (() -> Unit)? = null
 ) {
     val density = LocalDensity.current
-    val spacerBottom = if (showSpacer) 10.dp else 0.dp
 
     // 正文宽内降采样解码（约 1080px 宽足够屏显），预览层再取全尺寸；
     // Pair(已加载?, 位图)：null=加载中，(true,null)=文件缺失/解码失败
@@ -79,7 +80,7 @@ fun ReadingIllustrationBlock(
     val baseModifier = modifier
         .fillMaxWidth()
         .then(clickModifier)
-        .padding(bottom = spacerBottom)
+        .padding(bottom = bottomSpacing)
         .clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
 
     if (fixedDisplayHeightPx != null) {

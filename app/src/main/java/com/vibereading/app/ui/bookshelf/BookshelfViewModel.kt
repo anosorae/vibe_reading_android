@@ -19,6 +19,7 @@ import com.vibereading.app.domain.parser.EpubParser
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.domain.parser.TxtParser
 import com.vibereading.app.log.AppLog
+import com.vibereading.app.ui.reader.TranslationCoordinator
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -53,7 +54,8 @@ data class BookshelfUiState(
 class BookshelfViewModel(
     private val bookRepo: BookRepository,
     private val chapterRepo: ChapterRepository,
-    private val settingsRepo: SettingsRepository
+    private val settingsRepo: SettingsRepository,
+    private val translationCoordinator: TranslationCoordinator
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BookshelfUiState())
@@ -207,6 +209,7 @@ class BookshelfViewModel(
 
     fun deleteBook(bookId: Long) {
         viewModelScope.launch {
+            translationCoordinator.cancelBook(bookId)
             // 先清插图/封面磁盘文件再删库记录（ADR-002 D3）
             try {
                 BookImageStore.deleteBookFiles(bookId)
@@ -287,6 +290,7 @@ class BookshelfViewModel(
     fun correctSourceLanguage(bookId: Long, sourceLanguage: String) {
         viewModelScope.launch {
             try {
+                translationCoordinator.cancelBook(bookId)
                 chapterRepo.resetAllChapters(bookId)
                 bookRepo.updateSourceLanguage(bookId, sourceLanguage)
                 bookRepo.updateLanguageMode(bookId, sourceLanguage) // 显示模式重置为新的原文语言
@@ -303,11 +307,12 @@ class BookshelfViewModel(
     class Factory(
         private val bookRepo: BookRepository,
         private val chapterRepo: ChapterRepository,
-        private val settingsRepo: SettingsRepository
+        private val settingsRepo: SettingsRepository,
+        private val translationCoordinator: TranslationCoordinator
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return BookshelfViewModel(bookRepo, chapterRepo, settingsRepo) as T
+            return BookshelfViewModel(bookRepo, chapterRepo, settingsRepo, translationCoordinator) as T
         }
     }
 }

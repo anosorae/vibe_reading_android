@@ -31,7 +31,8 @@ class BookWindow(
     private var contentHeightPx: Float,
     private val measurer: TextMeasurer,           // 主线程测量
     private val backgroundMeasurer: () -> TextMeasurer, // 后台预载测量（每章独立实例）
-    private val displayDensity: Float = 1f        // 用于 dp→px 转换
+    private val displayDensity: Float = 1f,       // 用于 dp→px 转换
+    private val displayFontScale: Float = 1f      // 系统字体缩放，底部对齐换算 sp 与渲染端同源
 ) {
     @Volatile
     var chapters: List<Chapter> = chapters
@@ -235,7 +236,8 @@ class BookWindow(
                         contentWidthPx = newContentWidthPx,
                         contentHeightPx = newContentHeightPx,
                         measurer = m,
-                        density = displayDensity
+                        density = displayDensity,
+                        fontScale = displayFontScale
                     )
                 }
             }
@@ -313,6 +315,7 @@ class BookWindow(
             contentHeightPx = contentHeightPx,
             measurer = m,
             density = displayDensity,
+            fontScale = displayFontScale,
             lazyLayout = true
         )
     }

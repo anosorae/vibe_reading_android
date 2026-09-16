@@ -61,6 +61,8 @@ class LlmApiService(
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     companion object {
+        private const val CONNECTION_TEST_MAX_TOKENS = 10
+
         /** 进程级共享的 OkHttpClient（超时配置一处生效）。 */
         val defaultClient: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -354,7 +356,7 @@ class LlmApiService(
         messages = listOf(mapOf("role" to "user", "content" to "Say hi in one word.")),
         temperature = settings.temperature,
         topP = settings.topP,
-        maxTokens = settings.maxOutputTokens,
+        maxTokens = CONNECTION_TEST_MAX_TOKENS,
         enableThinking = settings.enableThinking,
         tag = "连接测试",
         fallbackMessage = "请求配置无效"

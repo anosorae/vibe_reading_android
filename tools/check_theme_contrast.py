@@ -7,10 +7,16 @@
 这些不常用的角色 —— 结果是「暖米色底上浮出一层淡紫弹窗」，构建和日志都看不出来。
 同理，手写的语义色很容易在「亮度」上翻车（白字压浅橙只有 2.5:1）。
 
-做法：直接从 Color.kt / Theme.kt 解析出 4 套 colorScheme 的实际取值，然后
+做法：直接从 Color.kt / Theme.kt / PaletteSchemes.kt 解析出**全部** 12 套 colorScheme 的
+实际取值，然后
 1. 检查 35 个核心 M3 角色是否都显式赋值；
 2. 按下方 CONTRACT 逐对核对 WCAG 对比度（正文 ≥4.5:1、图形/描边 ≥3:1）；
 3. 核对共用语义色在阅读器 5 档背景上仍 ≥3:1（这些色不跟随全局主题）。
+
+PaletteSchemes.kt 里的 8 套（黛蓝/苔绿/藕荷/青简 的亮暗）不是直接写 `lightColorScheme(`，
+而是调 `lightPaletteScheme(...)` / `darkPaletteScheme(...)` 构造器，所以要先把构造器体内的
+`角色 = 表达式` 取出来，再用调用点的具名参数替换进去 —— 否则这 8 套一直是**检查盲区**
+（实测：黛蓝的 `secondary` 曾长期只有 4.17:1，超过 CONTRACT 阈值却没人发现）。
 
 用法：`python tools/check_theme_contrast.py`（退出码非 0 = 有失败项）
 """
@@ -24,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 COLOR_KT = ROOT / "app/src/main/java/com/vibereading/app/ui/theme/Color.kt"
 THEME_KT = ROOT / "app/src/main/java/com/vibereading/app/ui/theme/Theme.kt"
+PALETTE_KT = ROOT / "app/src/main/java/com/vibereading/app/ui/theme/PaletteSchemes.kt"
 
 # 核心 M3 色彩角色：漏掉任何一个都会落回 Material 基线值
 REQUIRED_ROLES = [
@@ -141,6 +148,83 @@ def parse_schemes(tokens: dict[str, str]) -> dict[str, dict[str, str]]:
     return schemes
 
 
+def resolve_expr(expr: str, tokens: dict[str, str], env: dict[str, str], depth: int = 0) -> str | None:
+    """把一个角色表达式求值成 #RRGGBB：具名参数 → 调色板 token → Color 字面量。
+
+    参数名要**递归**求值：构造器体里的 `surface = background` 拿到的是调用点传进来的
+    `IndigoColors.Cream`，还要再解析一层才是 hex。
+    """
+    expr = expr.strip()
+    if depth > 8:
+        return None
+    if expr in env:
+        return resolve_expr(env[expr], tokens, env, depth + 1)
+    if expr in tokens:
+        return tokens[expr]
+    if expr == "Color.White":
+        return "#FFFFFF"
+    if expr == "Color.Black":
+        return "#000000"
+    m = re.match(r"Color\(0x([0-9A-Fa-f]{6,8})\)", expr)
+    if m:
+        raw = m.group(1)
+        return "#" + (raw[2:] if len(raw) == 8 else raw).upper()
+    return None
+
+
+def parse_palette_schemes(tokens: dict[str, str]) -> dict[str, dict[str, str]]:
+    """PaletteSchemes.kt → 由 light/darkPaletteScheme 构造的 8 套 colorScheme。
+
+    构造器体内的 `角色 = 表达式` 用调用点的具名参数代入；`fun x() = yDarkColorScheme()`
+    这种纯别名按被别名的那套复制。角色名与构造器形参名恰好同名，所以代入是直接的。
+    """
+    text = PALETTE_KT.read_text(encoding="utf-8")
+    builders: dict[str, dict[str, str]] = {}
+    for m in re.finditer(
+        r"private fun (\w+)\((.*?)\)\s*:\s*ColorScheme\s*=\s*(?:light|dark)ColorScheme\((.*?)\n\)",
+        text,
+        re.S,
+    ):
+        builders[m.group(1)] = {
+            rm.group(1): rm.group(2).strip()
+            for rm in re.finditer(r"(\w+)\s*=\s*([^,\n]+)", m.group(3))
+        }
+
+    schemes: dict[str, dict[str, str]] = {}
+    for m in re.finditer(r"fun (\w+)\(\)\s*=\s*(\w+)\(", text):
+        name, callee = m.group(1), m.group(2)
+        if callee not in builders:
+            continue
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += (text[i] == "(") - (text[i] == ")")
+            i += 1
+        env = {
+            rm.group(1): rm.group(2).strip()
+            for rm in re.finditer(r"(\w+)\s*=\s*([^,]+)", text[m.end():i - 1])
+        }
+        roles = {}
+        for role, expr in builders[callee].items():
+            value = resolve_expr(expr, tokens, env)
+            if value:
+                roles[role] = value
+        schemes[name] = roles
+
+    # `fun mossDarkColorScheme() = indigoDarkColorScheme()` 这类纯别名：整份复制
+    for m in re.finditer(r"fun (\w+)\(\)\s*=\s*(\w+)\(\)", text):
+        name, target = m.group(1), m.group(2)
+        seen: set[str] = set()
+        while target not in schemes and target not in seen:
+            seen.add(target)
+            nxt = re.search(rf"fun {target}\(\)\s*=\s*(\w+)\(\)", text)
+            if not nxt:
+                break
+            target = nxt.group(1)
+        if target in schemes:
+            schemes[name] = dict(schemes[target])
+    return schemes
+
+
 def parse_reader_presets(tokens: dict[str, str]) -> dict[str, str]:
     text = COLOR_KT.read_text(encoding="utf-8")
     block = re.search(r"object ReaderBgPresets\s*\{(.*?)\n\}", text, re.S)
@@ -155,12 +239,15 @@ def parse_reader_presets(tokens: dict[str, str]) -> dict[str, str]:
 def main() -> int:
     tokens = parse_tokens()
     schemes = parse_schemes(tokens)
+    palette_schemes = parse_palette_schemes(tokens)
     presets = parse_reader_presets(tokens)
     failures: list[str] = []
 
-    if not schemes:
-        print("无法从 Theme.kt 解析出任何 colorScheme，请检查写法是否仍是 `private fun xxx() = lightColorScheme(...)`")
+    if not schemes or not palette_schemes:
+        print("解析 colorScheme 失败：Theme.kt 应仍是 `private fun xxxColorScheme() = lightColorScheme(...)`，")
+        print("PaletteSchemes.kt 应仍是 `private fun xxxPaletteScheme(参数) : ColorScheme = lightColorScheme(...)` + 具名参数调用。")
         return 1
+    schemes.update(palette_schemes)
 
     print("=" * 74)
     print("1) M3 色彩角色完整性")

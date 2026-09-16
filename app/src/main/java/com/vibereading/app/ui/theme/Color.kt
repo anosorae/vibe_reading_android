@@ -66,22 +66,29 @@ object VibeColors {
 // 冷调米底 + 松青主色。次色与提醒色是青简自有的：原先直接借用原木的苔绿/琥珀，
 // 在薄荷青主色旁边几乎读不出差异。
 
+// 黛蓝 (Indigo) 浅色 —— 默认档。
+//
+// 取值对齐书架视觉基线（docs/ADR-006-bookshelf-visual-baseline.md）：
+// `Cream`/`ContainerLow`/`ContainerHigh`/`Charcoal` 直接取自设计稿实测值。
+// 唯一偏离设计稿的是 `Accent`：设计稿的 #1091D2 当文字只有 3.3:1，过不了本文件的
+// 4.5:1 门槛，所以取 #08759F（在 #EEF6FE 上 4.63:1）—— 比原 #0879AD 只深 4%，
+// 肉眼与设计稿的蓝几乎同色，但当 `primary` 被当正文文字用时仍然达标。
 object IndigoColors {
     val White = Color(0xFFFFFFFF)
-    val Cream = Color(0xFFF4F8FC)
+    val Cream = Color(0xFFEEF6FE)       // background / surface：设计稿页面底色
     val SurfaceVariant = Color(0xFFE7F0F7)
-    val ContainerLow = Color(0xFFF8FBFE)
-    val ContainerHigh = Color(0xFFEAF3F9)
+    val ContainerLow = Color(0xFFF6FAFE)     // 书架卡片 / 悬浮底栏
+    val ContainerHigh = Color(0xFFE4EEF8)    // 圆钮 / 进度槽 / 状态徽标底
     val ContainerHighest = Color(0xFFDDEAF3)
     val Sand = Color(0xFFC8D8E5)
     val Outline = Color(0xFF647B8C)
-    val Charcoal = Color(0xFF142B3A)
+    val Charcoal = Color(0xFF0A1E33)         // 主文字墨色：设计稿是深藏青，不是暖黑
     val WarmGray = Color(0xFF536D7E)
-    val Accent = Color(0xFF0879AD)
+    val Accent = Color(0xFF08759F)
     val AccentLight = Color(0xFF7CC8E8)
-    val AccentContainer = Color(0xFFD8F0FA)
+    val AccentContainer = Color(0xFFE6F4FE)  // 底栏选中胶囊底
     val OnAccentContainer = Color(0xFF063A52)
-    val Secondary = Color(0xFF547B91)
+    val Secondary = Color(0xFF4A6F85)        // 当文字用在浅底上：原 #547B91 只有 4.17:1，不达标
     val SecondaryContainer = Color(0xFFDDEBF3)
     val OnSecondaryContainer = Color(0xFF183B4C)
     val Tertiary = Color(0xFF4E6E83)

@@ -59,7 +59,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
   - `MainActivity.kt` — 唯一 Activity，`enableEdgeToEdge` + `VibeReadingTheme { AppNavigation() }`
   - `ui/log/LogViewerScreen.kt` — 日志查看器：运行日志/崩溃日志双 Tab，清除与复制
   - `VibeReadingApp.kt` — Application，持有 Room 单例；`onCreate` 中先装 `CrashHandler` 再 `AppLog.init`/`LogUtils.init`/`logDeviceInfo`，并注册翻译/伴读两个通知渠道
-- `app/src/test/java/` — LLM/SSE、迁移、DAO、设置仓库、解析器、阅读位置、分页窗口、仿真/手势、位图渲染、选词分词、词典查询、翻译状态机与伴读 JSON 层单测。共用夹具集中在 `TestFixtures.kt`（`newTextMeasurer`/`testPageStyle`/`newInMemoryDb`/`seedBookAndChapters`/`newPreferenceStore`/`inMemoryPreferenceStore`），`FakeTranslationService.kt` 独立成文件；新增测试不要再手写这些样板
+- `app/src/test/java/` — LLM/SSE、迁移、DAO、设置仓库、解析器、阅读位置、分页窗口、仿真/手势、位图渲染、选词分词、词典查询、翻译状态机与伴读 JSON 层单测；`PageGeometryConsistencyTest` 是「Compose 渲染 vs 卷页位图」几何一致性的安全网（改动排版/渲染前先跑它）。共用夹具集中在 `TestFixtures.kt`（`newTextMeasurer`/`testPageStyle`/`newInMemoryDb`/`seedBookAndChapters`/`newPreferenceStore`/`inMemoryPreferenceStore`），`FakeTranslationService.kt` 独立成文件；新增测试不要再手写这些样板
 - `docs/` — ADR 文档
 - `reference_code/legado-E/` — Legado 开源阅读器参考源码，**只读，禁止修改**。
 - `tools/build_dict_db.py` — 词典库构建脚本（CSV → 四列 SQLite → gzip 资产）

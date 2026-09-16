@@ -68,6 +68,7 @@
 | `a308e5b` **M3** | **几何一致性测试网** `PageGeometryConsistencyTest`（7 用例：PageRenderer 落点、标题块高、页高/段距、气泡矩形、插图尺寸、跨页续段、计划契约）。断言「两侧一致」而非固定数值 | 274 全绿；**有效性已验**：故意改坏位图气泡/排版器段距/PageRenderer 边距/计划器段距，四次都由对应用例精确变红 |
 | `666600a` **M4** | **共享版面计划** `PageLayoutPlanner`：Compose 与位图都消费同一份几何，位图删掉全部手工 `cursorY` 累加；气泡圆角/插图比例魔法数进 `ReaderMetrics` | 275 全绿；装机无崩溃；M3 网抓到 2 处真实回归（见下） |
 | `8e01459` **M5** | `SettingsRepository` 拆为 5 个域 Store + 组合根；`TranslationPreflight` 纯函数（+8 单测）；10 处守卫收成 `updateIfCurrent()`、4 份终态收成 `finish()` | 283 全绿；装机无崩溃；无行尾噪音 |
+| `08fea7f` **M5 补** | `DataStore.safeData`：7 处 `.catch { emit(emptyPreferences()) }` 原先静默回退默认值，现按 AGENTS.md 落日志——「设置莫名回到默认」终于可查 | 283 全绿；装机无崩溃；`check_log_convention` 疑似点 **18 → 16** |
 
 ### M4 过程中被安全网抓到的两处真实回归（说明安全网有效）
 

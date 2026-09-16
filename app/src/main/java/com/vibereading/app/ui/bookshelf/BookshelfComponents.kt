@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -39,9 +40,15 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -84,57 +91,69 @@ internal fun BookshelfTopBar(
     onToggleLayout: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    TopAppBar(
-        windowInsets = stableInsets,
-        title = {
-            if (searchExpanded) {
-                // 收起态用 TopAppBar 的浅色容器 + 实心圆角输入框：原先是 OutlinedTextField
-                // 且容器色与背景同色，靠描边区分，而未聚焦描边在浅色档只有 1.15:1 —— 看不到输入框
-                TextField(
-                    value = searchText,
-                    onValueChange = onSearchTextChange,
-                    placeholder = { Text("搜索书名", style = MaterialTheme.typography.bodyMedium) },
-                    singleLine = true,
-                    shape = CircleShape,
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(stableInsets)
+            .padding(horizontal = 24.dp, vertical = 18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "译读",
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
                 )
-            } else {
-                Text("译读", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-            }
-        },
-        actions = {
-            IconButton(onClick = onToggleSearch) {
-                Icon(
-                    Icons.Filled.Search,
-                    contentDescription = "搜索",
-                    tint = if (searchExpanded) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    "用双语，阅读更大的世界",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(onClick = onToggleLayout) {
-                Icon(
-                    if (layout == "grid") Icons.Filled.ViewList else Icons.Filled.GridView,
-                    contentDescription = if (layout == "grid") "切换列表" else "切换网格",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(
-                    Icons.Filled.Settings,
-                    contentDescription = "设置",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-    )
+            HeaderCircleButton(Icons.Filled.Search, "搜索", onToggleSearch)
+            Spacer(Modifier.width(8.dp))
+            HeaderCircleButton(
+                if (layout == "grid") Icons.Filled.ViewList else Icons.Filled.GridView,
+                if (layout == "grid") "切换列表" else "切换网格",
+                onToggleLayout
+            )
+            Spacer(Modifier.width(8.dp))
+            HeaderCircleButton(Icons.Filled.Settings, "设置", onOpenSettings)
+        }
+        if (searchExpanded) {
+            Spacer(Modifier.height(14.dp))
+            TextField(
+                value = searchText,
+                onValueChange = onSearchTextChange,
+                placeholder = { Text("搜索书名") },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeaderCircleButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.size(48.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @Composable
@@ -155,6 +174,7 @@ internal fun BoxScope.BookshelfContent(
 
         state.items.isEmpty() -> EmptyShelf()
         else -> Column(modifier = Modifier.fillMaxSize()) {
+            ReadingBanner()
             SortBar(
                 sort = state.sort,
                 sortOrder = state.sortOrder,
@@ -211,6 +231,41 @@ private fun EmptyShelf() {
                 "点击右下角 + 上传 TXT / EPUB 书籍",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReadingBanner() {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.primaryContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "阅读，让平凡的日子\n也有了光。",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Good Books, A Brighter You.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                Icons.Filled.AutoStories,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
             )
         }
     }
@@ -323,52 +378,37 @@ private fun SortBar(
     var menuExpanded by remember { mutableStateOf(false) }
     val currentLabel = options.firstOrNull { it.first == sort }?.second ?: "最近阅读"
     val isDesc = sortOrder == SortOrder.DESC
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface
     ) {
-        Text(
-            "排序",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.width(4.dp))
-        Box {
-            TextButton(onClick = { menuExpanded = true }) {
-                Text(
-                    currentLabel,
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Icon(
-                    Icons.Filled.ArrowDropDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { onToggleOrder(if (isDesc) SortOrder.ASC else SortOrder.DESC) }) {
+                Icon(Icons.Filled.SwapVert, contentDescription = "切换排序方向", tint = MaterialTheme.colorScheme.primary)
             }
-            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                options.forEach { (key, label) ->
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        onClick = {
-                            menuExpanded = false
-                            onSort(key)
-                        }
-                    )
+            Box {
+                TextButton(onClick = { menuExpanded = true }) {
+                    Text("排序  $currentLabel", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyLarge)
+                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    options.forEach { (key, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = { menuExpanded = false; onSort(key) }
+                        )
+                    }
                 }
             }
-        }
-        Spacer(Modifier.weight(1f))
-        // 不要给 IconButton 传 size(32.dp)：会把点击目标压到 32dp，
-        // 低于 M3 的 48dp 最小触摸目标（图标本身用 20dp 就够）
-        IconButton(onClick = { onToggleOrder(if (isDesc) SortOrder.ASC else SortOrder.DESC) }) {
-            Icon(
-                if (isDesc) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowUp,
-                contentDescription = if (isDesc) "降序" else "升序",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
+            Spacer(Modifier.weight(1f))
+            Icon(Icons.Filled.GridView, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text("全部书籍", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Filled.ChevronRight, contentDescription = "全部书籍", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -468,61 +508,71 @@ internal fun BookGridCard(
     coverModifier: Modifier = Modifier
 ) {
     val book = item.book
-    Column(
+    val readChapters = if (book.totalChapters > 0 && item.progress > 0f) {
+        (item.progress * book.totalChapters).toInt().coerceAtLeast(1)
+    } else 0
+    Surface(
         modifier = Modifier.combinedClickable(
             interactionSource = remember { MutableInteractionSource() },
             indication = null,
             onClick = onClick,
             onLongClick = onLongClick
-        )
+        ),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(coverHeight)
-                .then(coverModifier)
-                .clip(MaterialTheme.shapes.small)
-        ) {
-            BookCover(title = book.title, coverPath = book.coverPath, modifier = Modifier.fillMaxSize())
-            if (item.translatedCount > 0) {
-                // 徽标压在不透明的容器色上：放在封面图上还带透明度的话，
-                // 对比度会随封面本身的明暗漂移
+        Column(modifier = Modifier.padding(bottom = 14.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(coverHeight)
+                    .then(coverModifier)
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            ) {
+                BookCover(title = book.title, coverPath = book.coverPath, modifier = Modifier.fillMaxSize())
                 Surface(
-                    shape = RoundedCornerShape(topEnd = 8.dp, bottomStart = 8.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(bottomStart = 16.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                     modifier = Modifier.align(Alignment.TopEnd)
                 ) {
                     Text(
-                        "${item.translatedCount}/${book.totalChapters}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        "${readChapters}/${book.totalChapters}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                     )
                 }
             }
-        }
-        Column(modifier = Modifier.padding(start = 2.dp, top = 4.dp, end = 2.dp)) {
-            Text(
-                book.title,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            val readChapters = if (book.totalChapters > 0 && item.progress > 0f) {
-                (item.progress * book.totalChapters).toInt()
-            } else 0
-            if (readChapters > 0) {
-                Text(
-                    "已读${readChapters}/${book.totalChapters}章",
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                modifier = Modifier.padding(start = 14.dp, top = 12.dp, end = 8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        book.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        if (readChapters > 0) "已读 $readChapters / ${book.totalChapters} 章" else "尚未开始阅读",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
+                Icon(Icons.Filled.MoreVert, contentDescription = "更多操作", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            LinearProgressIndicator(
+                progress = { item.progress.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
         }
     }
 }

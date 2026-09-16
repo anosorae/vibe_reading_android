@@ -6,7 +6,11 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -15,6 +19,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 
@@ -42,7 +51,8 @@ import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 fun SettingsScreen(
     vm: SettingsViewModel,
     onBack: () -> Unit,
-    onOpenLogs: () -> Unit = {}
+    onOpenLogs: () -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     val state by vm.uiState.collectAsState()
     val editApiKey by vm.editApiKey.collectAsState()
@@ -72,6 +82,7 @@ fun SettingsScreen(
     val stableInsets = LocalStableSystemBarInsets.current
 
     Scaffold(
+        modifier = modifier,
         contentWindowInsets = stableInsets,
         topBar = {
             TopAppBar(
@@ -94,6 +105,7 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
+            SettingsIdentityCard()
             ThemeSettingsSection(
                 theme = state.theme,
                 onThemeModeChange = vm::updateThemeMode,

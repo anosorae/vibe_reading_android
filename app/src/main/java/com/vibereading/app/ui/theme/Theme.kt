@@ -79,6 +79,10 @@ fun VibeReadingTheme(
     val colorScheme = when (settings.accent) {
         AppAccent.VIBE -> if (dark) vibeDarkColorScheme() else vibeColorScheme()
         AppAccent.WEREAD -> if (dark) wereadDarkColorScheme() else wereadColorScheme()
+        AppAccent.INDIGO -> if (dark) indigoDarkColorScheme() else indigoColorScheme()
+        AppAccent.MOSS -> if (dark) mossDarkColorScheme() else mossColorScheme()
+        AppAccent.LOTUS -> if (dark) lotusDarkColorScheme() else lotusColorScheme()
+        AppAccent.INK -> if (dark) inkDarkColorScheme() else inkColorScheme()
     }
 
     // 状态栏/导航栏的明暗图标跟随主题（阅读器 SideEffect 执行顺序在 Theme 之后，可覆盖）。

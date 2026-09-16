@@ -31,10 +31,7 @@ class ThemeSettingsStore(private val store: DataStore<Preferences>) {
                 "dark" -> ThemeMode.DARK
                 else -> ThemeMode.SYSTEM
             }
-            val accent = when (prefs[Keys.ACCENT] ?: prefs[Keys.LEGACY_THEME]) {
-                "weread" -> AppAccent.WEREAD
-                else -> AppAccent.VIBE
-            }
+            val accent = AppAccent.fromKey(prefs[Keys.ACCENT] ?: prefs[Keys.LEGACY_THEME])
             ThemeSettings(themeMode = themeMode, accent = accent)
         }
 
@@ -45,10 +42,7 @@ class ThemeSettingsStore(private val store: DataStore<Preferences>) {
                 ThemeMode.LIGHT -> "light"
                 ThemeMode.DARK -> "dark"
             }
-            prefs[Keys.ACCENT] = when (settings.accent) {
-                AppAccent.VIBE -> "vibe"
-                AppAccent.WEREAD -> "weread"
-            }
+            prefs[Keys.ACCENT] = settings.accent.key
             prefs.remove(Keys.LEGACY_THEME)
         }
     }

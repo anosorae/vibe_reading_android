@@ -17,7 +17,7 @@ class BookshelfPrefsStore(private val store: DataStore<Preferences>) {
     }
 
     val layout: Flow<String> = store.safeData("读取书架布局失败，回退默认值")
-        .map { prefs -> prefs[Keys.LAYOUT] ?: "list" }
+        .map { prefs -> prefs[Keys.LAYOUT] ?: "grid" }
 
     suspend fun saveLayout(layout: String) {
         store.edit { prefs -> prefs[Keys.LAYOUT] = layout }

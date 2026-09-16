@@ -35,7 +35,8 @@ fun BookshelfScreen(
     vm: BookshelfViewModel,
     onOpenBook: (Long) -> Unit,
     onOpenSettings: () -> Unit,
-    coverTransition: @Composable (Long) -> Modifier = { Modifier }
+    coverTransition: @Composable (Long) -> Modifier = { Modifier },
+    modifier: Modifier = Modifier
 ) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
@@ -87,6 +88,7 @@ fun BookshelfScreen(
     val stableInsets = LocalStableSystemBarInsets.current
 
     Scaffold(
+        modifier = modifier,
         contentWindowInsets = stableInsets,
         topBar = {
             BookshelfTopBar(

@@ -50,6 +50,10 @@ import com.vibereading.app.domain.model.ThemeSettings
 import com.vibereading.app.ui.components.LlmProfileEditor
 import com.vibereading.app.ui.components.LlmProfileList
 import com.vibereading.app.ui.components.LlmTranslationParams
+import com.vibereading.app.ui.theme.IndigoColors
+import com.vibereading.app.ui.theme.InkColors
+import com.vibereading.app.ui.theme.LotusColors
+import com.vibereading.app.ui.theme.MossColors
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.WereadColors
 
@@ -59,7 +63,7 @@ internal fun ThemeSettingsSection(
     onThemeModeChange: (ThemeMode) -> Unit,
     onAccentChange: (AppAccent) -> Unit
 ) {
-    SectionHeader("主题设置")
+    SectionHeader("外观")
     SectionCard {
         Text("主题模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
         val modes = listOf(
@@ -72,40 +76,42 @@ internal fun ThemeSettingsSection(
                 val selected = theme.themeMode == mode
                 OutlinedButton(
                     onClick = { onThemeModeChange(mode) },
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent
+                        containerColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        label,
-                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp
-                    )
+                    Text(label, fontSize = 13.sp)
                 }
             }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-        Text("配色", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AccentPreview(
-                label = "原木",
-                // 色板预览必须画**该套色板自己**的取值，不能取当前主题的 primary ——
-                // 否则切到青简后两个色块会变成同一个颜色
-                primary = VibeColors.Sienna,
-                bg = VibeColors.Cream,
-                selected = theme.accent == AppAccent.VIBE,
-                onClick = { onAccentChange(AppAccent.VIBE) }
+        HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+        Text("主题色", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 10.dp)
+        ) {
+            val palettes = listOf(
+                Triple(AppAccent.INDIGO, "黛蓝", IndigoColors.Accent),
+                Triple(AppAccent.MOSS, "苔绿", MossColors.Accent),
+                Triple(AppAccent.VIBE, "原木", VibeColors.Sienna),
+                Triple(AppAccent.LOTUS, "藕荷", LotusColors.Accent),
+                Triple(AppAccent.WEREAD, "青简", WereadColors.Accent),
+                Triple(AppAccent.INK, "墨白", InkColors.Accent)
             )
-            AccentPreview(
-                label = "青简",
-                primary = WereadColors.Accent,
-                bg = WereadColors.Cream,
-                selected = theme.accent == AppAccent.WEREAD,
-                onClick = { onAccentChange(AppAccent.WEREAD) }
-            )
+            palettes.forEach { (accent, label, color) ->
+                AccentDot(
+                    label = label,
+                    color = color,
+                    selected = theme.accent == accent,
+                    onClick = { onAccentChange(accent) }
+                )
+            }
         }
     }
 }
@@ -132,7 +138,7 @@ internal fun LlmProfilesSection(
     onSave: () -> Unit,
     onTest: () -> Unit
 ) {
-    SectionHeader("翻译设置")
+    SectionHeader("翻译与 AI")
     SectionCard {
         Row(
             modifier = Modifier.fillMaxWidth().clickable { onExpandedChange(!expanded) },
@@ -241,7 +247,7 @@ internal fun WebCompanionSection(
     onToggle: (Boolean) -> Unit,
     onCopyUrl: (String) -> Unit
 ) {
-    SectionHeader("Web 伴读服务")
+    SectionHeader("阅读体验")
     SectionCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -300,7 +306,7 @@ internal fun WebCompanionSection(
 
 @Composable
 internal fun DebugSection(onOpenLogs: () -> Unit) {
-    SectionHeader("调试")
+    SectionHeader("其他")
     SectionCard {
         Row(
             modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLogs).padding(vertical = 4.dp),
@@ -363,44 +369,37 @@ private fun SectionCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun AccentPreview(
+private fun AccentDot(
     label: String,
-    primary: Color,
-    bg: Color,
+    color: Color,
     selected: Boolean,
     onClick: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .width(48.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
-                RoundedCornerShape(10.dp)
-            )
-            .then(
-                if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
-                else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-            )
-            .padding(14.dp)
+            .padding(vertical = 4.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(bg)
-                .border(1.dp, primary.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-        ) {
-            Box(
-                modifier = Modifier.align(Alignment.Center).size(18.dp).clip(CircleShape).background(primary)
-            )
-        }
-        Spacer(Modifier.height(6.dp))
+                .size(if (selected) 38.dp else 32.dp)
+                .border(
+                    width = if (selected) 2.dp else 0.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = CircleShape
+                )
+                .padding(if (selected) 4.dp else 0.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(Modifier.height(4.dp))
         Text(
             label,
-            fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            fontSize = 10.sp,
+            maxLines = 1,
             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }

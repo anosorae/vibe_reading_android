@@ -116,13 +116,19 @@ fun AppNavigation() {
                         bookRepo, chapterRepo, settingsRepo, translationCoordinator
                     )
                 )
-                BookshelfScreen(
-                    vm = vm,
+                val settingsVm: SettingsViewModel = viewModel(
+                    factory = SettingsViewModel.Factory(
+                        settingsRepo, llmProfileRepo, llmService, application
+                    )
+                )
+                AppShell(
+                    bookshelfVm = vm,
+                    settingsVm = settingsVm,
                     onOpenBook = { bookId ->
-
                         navController.navigate(Routes.reader(bookId)) { launchSingleTop = true }
                     },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onOpenLogs = { navController.navigate(Routes.LOGS) },
+                    onExitProfile = {},
                     coverTransition = { bookId ->
                         with(bookTransitionScope) { bookContainerBounds(bookId, this@composable) }
                     }

@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -34,7 +35,6 @@ import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 fun BookshelfScreen(
     vm: BookshelfViewModel,
     onOpenBook: (Long) -> Unit,
-    onOpenSettings: () -> Unit,
     coverTransition: @Composable (Long) -> Modifier = { Modifier },
     modifier: Modifier = Modifier
 ) {
@@ -109,8 +109,7 @@ fun BookshelfScreen(
                 },
                 onToggleLayout = {
                     vm.switchLayout(if (state.layout == "grid") "list" else "grid")
-                },
-                onOpenSettings = onOpenSettings
+                }
             )
         },
         floatingActionButton = {
@@ -125,17 +124,24 @@ fun BookshelfScreen(
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            BookshelfContent(
-                state = state,
-                searchText = searchText,
-                coverTransition = coverTransition,
-                onOpenBook = onOpenBook,
-                onLongClickBook = { menuBook = it },
-                onSort = vm::switchSort,
-                onToggleOrder = vm::switchSortOrder
-            )
-            ShelfMessageBanner(message = message)
+        // 背景插画是 Scaffold 内容的**第一个子节点**：它压在 Scaffold 的 containerColor 之上、
+        // 又在外层 AppShell 的悬浮底栏之下 —— 所以底栏正好落在插画上（和设计稿一致）。
+        // 放在 padding 之外，是为了让它能一路贴到屏幕底边。
+        Box(modifier = Modifier.fillMaxSize()) {
+            ShelfBackdrop(modifier = Modifier.align(Alignment.BottomCenter))
+            Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                BookshelfContent(
+                    state = state,
+                    searchText = searchText,
+                    coverTransition = coverTransition,
+                    onOpenBook = onOpenBook,
+                    onLongClickBook = { menuBook = it },
+                    onMoreClickBook = { menuBook = it },
+                    onSort = vm::switchSort,
+                    onToggleOrder = vm::switchSortOrder
+                )
+                ShelfMessageBanner(message = message)
+            }
         }
     }
 

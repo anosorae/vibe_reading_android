@@ -46,7 +46,8 @@ data class BookshelfUiState(
     /** 书架操作提示（导入结果 / 封面设置结果）；文案含「失败」时横幅显示红色。 */
     val shelfMessage: String? = null,
     val accent: AppAccent = AppAccent.VIBE,
-    val layout: String = "list",     // "list" | "grid"
+    /** "list" | "grid" —— 默认值与 [BookshelfPrefsStore] 的持久化默认值保持一致（都是 grid） */
+    val layout: String = "grid",
     val sort: String = ShelfSort.RECENT,
     val sortOrder: String = SortOrder.DESC
 )

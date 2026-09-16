@@ -3,6 +3,7 @@ package com.vibereading.app.ui.navigation
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.MaterialTheme
 import org.junit.Rule
 import org.junit.Test
@@ -30,7 +31,11 @@ class AppShellTest {
     fun `bottom navigation exposes three tabs`() {
         compose.setContent {
             MaterialTheme {
-                AppBottomBar(selectedTab = AppTab.BOOKSHELF, onSelect = {})
+                AppBottomBar(
+                    stableInsets = WindowInsets(0),
+                    selectedTab = AppTab.BOOKSHELF,
+                    onSelect = {}
+                )
             }
         }
         compose.onNodeWithText("书架").assertIsDisplayed()

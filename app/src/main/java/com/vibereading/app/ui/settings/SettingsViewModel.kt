@@ -87,22 +87,22 @@ class SettingsViewModel(
             }
         }
         viewModelScope.launch {
-            settingsRepo.readingSettings.collect { rs ->
+            settingsRepo.reading.settings.collect { rs ->
                 _uiState.update { it.copy(readingSettings = rs) }
             }
         }
         viewModelScope.launch {
-            settingsRepo.themeSettings.collect { t ->
+            settingsRepo.theme.settings.collect { t ->
                 _uiState.update { it.copy(theme = t) }
             }
         }
         viewModelScope.launch {
-            settingsRepo.bookshelfLayout.collect { l ->
+            settingsRepo.bookshelf.layout.collect { l ->
                 _uiState.update { it.copy(bookshelfLayout = l) }
             }
         }
         viewModelScope.launch {
-            settingsRepo.bookshelfSort.collect { s ->
+            settingsRepo.bookshelf.sort.collect { s ->
                 _uiState.update { it.copy(bookshelfSort = s) }
             }
         }
@@ -110,7 +110,7 @@ class SettingsViewModel(
         // 刷新（legado 式 NetworkCallback，无轮询）；combine 使订阅开始时立即取到当前值。
         viewModelScope.launch {
             combine(
-                settingsRepo.webCompanionEnabled,
+                settingsRepo.companion.enabled,
                 WebCompanionService.urlFlow
             ) { enabled, url -> enabled to url }
                 .collect { (enabled, url) ->
@@ -136,7 +136,7 @@ class SettingsViewModel(
     /** 切换 Web 伴读服务：启停前台服务并持久化期望状态。 */
     fun toggleWebCompanion(enabled: Boolean) {
         viewModelScope.launch {
-            settingsRepo.saveWebCompanionEnabled(enabled)
+            settingsRepo.companion.saveEnabled(enabled)
             if (enabled) {
                 // 锁屏后会被 Doze 冻结导致网页无法切换章节，先在设置前台请求电池优化豁免
                 WebCompanionService.requestBatteryOptimizationExemption(appContext)
@@ -357,20 +357,20 @@ class SettingsViewModel(
     fun updateThemeMode(mode: ThemeMode) {
         val next = _uiState.value.theme.copy(themeMode = mode)
         _uiState.update { it.copy(theme = next) }
-        viewModelScope.launch { settingsRepo.saveThemeSettings(next) }
+        viewModelScope.launch { settingsRepo.theme.saveSettings(next) }
     }
 
     fun updateAccent(accent: AppAccent) {
         val next = _uiState.value.theme.copy(accent = accent)
         _uiState.update { it.copy(theme = next) }
-        viewModelScope.launch { settingsRepo.saveThemeSettings(next) }
+        viewModelScope.launch { settingsRepo.theme.saveSettings(next) }
     }
 
     // ── 阅读设置 ──
 
     fun saveReadingSettings() {
         viewModelScope.launch {
-            settingsRepo.saveReadingSettings(_uiState.value.readingSettings)
+            settingsRepo.reading.saveSettings(_uiState.value.readingSettings)
             _uiState.update { it.copy(saved = true) }
         }
     }

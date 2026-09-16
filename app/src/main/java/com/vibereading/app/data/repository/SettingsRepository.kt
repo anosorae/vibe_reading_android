@@ -2,269 +2,36 @@ package com.vibereading.app.data.repository
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
-import com.vibereading.app.BuildConfig
-import com.vibereading.app.domain.model.AppAccent
-import com.vibereading.app.domain.model.LlmDefaults
-import com.vibereading.app.domain.model.LlmSettings
-import com.vibereading.app.domain.model.ReadingSettings
-import com.vibereading.app.domain.model.ThemeMode
-import com.vibereading.app.domain.model.ThemeSettings
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
+/**
+ * App 偏好的组合根：把五个互不相关的偏好域装配在同一个 DataStore 上。
+ *
+ * 此前本类自身承担了全部五个域的读写（约 270 行、16 个公开成员），
+ * 改一处设置得在一个大类里找；现在各域各有自己的类，本类只负责装配，
+ * 调用方按域访问（`settingsRepo.reading.settings`、`settingsRepo.bookshelf.sort`…）。
+ *
+ * 构造签名保持不变：`AppNavigation` / 各 ViewModel / 测试的接线无需改动。
+ */
 class SettingsRepository(
-    private val context: Context,
-    private val store: DataStore<Preferences> = context.dataStore
+    context: Context,
+    store: DataStore<Preferences> = context.dataStore
 ) {
+    /** 阅读设置（字号/边距/翻页/排版）与夜间模式。 */
+    val reading = ReadingSettingsStore(store)
 
-    // ── LLM 迁移辅助 ──
-    // LLM 配置已迁移到 Room llm_profiles 表。
-    // 以下仅用于首次启动时读取旧 DataStore 键并创建默认 profile。
+    /** 全局主题（亮暗模式 + 强调色）。 */
+    val theme = ThemeSettingsStore(store)
 
-    private object LlmKeys {
-        val API_KEY = stringPreferencesKey("api_key")
-        val API_BASE = stringPreferencesKey("api_base")
-        val MODEL = stringPreferencesKey("model")
-        val CHAPTER_MAX_CHARS = intPreferencesKey("chapter_max_chars")
-        val ENABLE_THINKING = booleanPreferencesKey("enable_thinking")
-        val MIGRATED = booleanPreferencesKey("llm_migrated_to_room")
-    }
+    /** 书架偏好（布局/排序/顺序）。 */
+    val bookshelf = BookshelfPrefsStore(store)
 
-    private val defaultApiBase: String
-        get() = BuildConfig.DEBUG_LLM_API_BASE.trim().trimEnd('/').ifEmpty { LlmDefaults.API_BASE }
+    /** Web 伴读服务开关（ADR-005）。 */
+    val companion = CompanionPrefsStore(store)
 
-    /**
-     * 读取 DataStore 中的旧 LLM 键，返回 [LlmSettings] 用于创建默认 profile。
-     * 如果已经迁移过（MIGRATED 标记存在）则返回 null。
-     */
-    suspend fun migrateLlmKeysToProfile(): LlmSettings? {
-        val prefs = store.data.first()
-        if (prefs[LlmKeys.MIGRATED] == true) return null
-        val hasAnyKey = prefs.contains(LlmKeys.API_KEY) || prefs.contains(LlmKeys.API_BASE) || prefs.contains(LlmKeys.MODEL)
-        if (!hasAnyKey) return null
-        return LlmSettings(
-            apiKey = prefs[LlmKeys.API_KEY]?.trim() ?: BuildConfig.DEBUG_LLM_API_KEY.ifEmpty { "" },
-            apiBase = prefs[LlmKeys.API_BASE]?.trim()?.trimEnd('/')?.ifEmpty { defaultApiBase } ?: defaultApiBase,
-            model = prefs[LlmKeys.MODEL]?.trim() ?: BuildConfig.DEBUG_LLM_MODEL.ifEmpty { LlmDefaults.MODEL },
-chapterMaxChars = prefs[LlmKeys.CHAPTER_MAX_CHARS] ?: LlmDefaults.CHAPTER_MAX_CHARS,
-                    enableThinking = prefs[LlmKeys.ENABLE_THINKING] ?: LlmDefaults.ENABLE_THINKING
-        )
-    }
-
-    /** 标记迁移完成，清除旧 DataStore LLM 键 */
-    suspend fun clearMigratedLlmKeys() {
-        store.edit { prefs ->
-            prefs.remove(LlmKeys.API_KEY)
-            prefs.remove(LlmKeys.API_BASE)
-            prefs.remove(LlmKeys.MODEL)
-            prefs.remove(LlmKeys.CHAPTER_MAX_CHARS)
-            prefs.remove(LlmKeys.ENABLE_THINKING)
-            prefs[LlmKeys.MIGRATED] = true
-        }
-    }
-
-    // ── Reading Settings ──
-
-    private object ReadingKeys {
-        val FONT_SIZE = intPreferencesKey("font_size")
-        val FONT_FAMILY = stringPreferencesKey("font_family")
-        val BG_COLOR_INDEX = intPreferencesKey("bg_color_index")
-        val LINE_SPACING = intPreferencesKey("line_spacing")
-        val PARAGRAPH_SPACING = intPreferencesKey("paragraph_spacing")
-        val PAGE_FLIP_MODE = stringPreferencesKey("page_flip_mode")
-        val PADDING_H = intPreferencesKey("padding_h")
-        val PADDING_V = intPreferencesKey("padding_v")
-        val OVERLAY_CONTENT_GAP = intPreferencesKey("overlay_content_gap")  // 旧版兼容
-        val HEADER_CONTENT_GAP = intPreferencesKey("header_content_gap")
-        val FOOTER_CONTENT_GAP = intPreferencesKey("footer_content_gap")
-        val LETTER_SPACING = floatPreferencesKey("letter_spacing")
-        val JUSTIFY = booleanPreferencesKey("justify")
-        val INDENT_EM = floatPreferencesKey("indent_em")
-        val TITLE_MODE = intPreferencesKey("title_mode")
-        val BOTTOM_JUSTIFY = booleanPreferencesKey("bottom_justify")
-        val ONE_HAND_MODE = booleanPreferencesKey("one_hand_mode")
-        val CUSTOM_FONT_URI = stringPreferencesKey("custom_font_uri")
-        val EN_CUSTOM_FONT_URI = stringPreferencesKey("en_custom_font_uri")
-        val FONT_ID = stringPreferencesKey("font_id")
-        val EN_FONT_ID = stringPreferencesKey("en_font_id")
-        val HIDE_STATUS_BAR = booleanPreferencesKey("hide_status_bar")
-        val HIDE_NAVIGATION_BAR = booleanPreferencesKey("hide_navigation_bar")
-        val NIGHT_MODE = booleanPreferencesKey("night_mode")
-    }
-
-    val readingSettings: Flow<ReadingSettings> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            ReadingSettings(
-                fontSize = prefs[ReadingKeys.FONT_SIZE] ?: 17,
-                // 旧版默认 serif 为遗留值，UI 已无该选项，读取时规范为系统字体
-                fontFamily = prefs[ReadingKeys.FONT_FAMILY]?.takeUnless { it == "serif" } ?: "default",
-                bgColorIndex = prefs[ReadingKeys.BG_COLOR_INDEX] ?: 0,
-                lineSpacing = prefs[ReadingKeys.LINE_SPACING] ?: 8,
-                paragraphSpacing = prefs[ReadingKeys.PARAGRAPH_SPACING] ?: 16,
-                pageFlipMode = prefs[ReadingKeys.PAGE_FLIP_MODE] ?: ReadingSettings.FLIP_PAGER,
-                paddingH = prefs[ReadingKeys.PADDING_H] ?: 22,
-                paddingV = prefs[ReadingKeys.PADDING_V] ?: 20,
-                headerContentGap = prefs[ReadingKeys.HEADER_CONTENT_GAP] ?: prefs[ReadingKeys.OVERLAY_CONTENT_GAP] ?: 20,
-                footerContentGap = prefs[ReadingKeys.FOOTER_CONTENT_GAP] ?: prefs[ReadingKeys.OVERLAY_CONTENT_GAP] ?: 20,
-                letterSpacing = prefs[ReadingKeys.LETTER_SPACING] ?: 0f,
-                justify = prefs[ReadingKeys.JUSTIFY] ?: true,
-                indentEm = prefs[ReadingKeys.INDENT_EM] ?: 2f,
-                titleMode = prefs[ReadingKeys.TITLE_MODE] ?: 0,
-                bottomJustify = prefs[ReadingKeys.BOTTOM_JUSTIFY] ?: true,
-                oneHandMode = prefs[ReadingKeys.ONE_HAND_MODE] ?: false,
-                customFontUri = prefs[ReadingKeys.CUSTOM_FONT_URI],
-                fontId = prefs[ReadingKeys.FONT_ID],
-                enCustomFontUri = prefs[ReadingKeys.EN_CUSTOM_FONT_URI],
-                enFontId = prefs[ReadingKeys.EN_FONT_ID],
-                hideStatusBar = prefs[ReadingKeys.HIDE_STATUS_BAR] ?: true,
-                hideNavigationBar = prefs[ReadingKeys.HIDE_NAVIGATION_BAR] ?: true
-            )
-        }
-
-    suspend fun saveReadingSettings(settings: ReadingSettings) {
-        store.edit { prefs ->
-            prefs[ReadingKeys.FONT_SIZE] = settings.fontSize
-            prefs[ReadingKeys.FONT_FAMILY] = settings.fontFamily
-            prefs[ReadingKeys.BG_COLOR_INDEX] = settings.bgColorIndex
-            prefs[ReadingKeys.LINE_SPACING] = settings.lineSpacing
-            prefs[ReadingKeys.PARAGRAPH_SPACING] = settings.paragraphSpacing
-            prefs[ReadingKeys.PAGE_FLIP_MODE] = settings.pageFlipMode
-            prefs[ReadingKeys.PADDING_H] = settings.paddingH
-            prefs[ReadingKeys.PADDING_V] = settings.paddingV
-            prefs[ReadingKeys.HEADER_CONTENT_GAP] = settings.headerContentGap
-            prefs[ReadingKeys.FOOTER_CONTENT_GAP] = settings.footerContentGap
-            prefs[ReadingKeys.LETTER_SPACING] = settings.letterSpacing
-            prefs[ReadingKeys.JUSTIFY] = settings.justify
-            prefs[ReadingKeys.INDENT_EM] = settings.indentEm
-            prefs[ReadingKeys.TITLE_MODE] = settings.titleMode
-            prefs[ReadingKeys.BOTTOM_JUSTIFY] = settings.bottomJustify
-            prefs[ReadingKeys.ONE_HAND_MODE] = settings.oneHandMode
-            prefs[ReadingKeys.HIDE_STATUS_BAR] = settings.hideStatusBar
-            prefs[ReadingKeys.HIDE_NAVIGATION_BAR] = settings.hideNavigationBar
-            if (settings.customFontUri != null) {
-                prefs[ReadingKeys.CUSTOM_FONT_URI] = settings.customFontUri
-            } else {
-                prefs.remove(ReadingKeys.CUSTOM_FONT_URI)
-            }
-            if (settings.enCustomFontUri != null) {
-                prefs[ReadingKeys.EN_CUSTOM_FONT_URI] = settings.enCustomFontUri
-            } else {
-                prefs.remove(ReadingKeys.EN_CUSTOM_FONT_URI)
-            }
-            if (settings.fontId != null) {
-                prefs[ReadingKeys.FONT_ID] = settings.fontId
-            } else {
-                prefs.remove(ReadingKeys.FONT_ID)
-            }
-            if (settings.enFontId != null) {
-                prefs[ReadingKeys.EN_FONT_ID] = settings.enFontId
-            } else {
-                prefs.remove(ReadingKeys.EN_FONT_ID)
-            }
-        }
-    }
-
-    val nightMode: Flow<Boolean> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[ReadingKeys.NIGHT_MODE] ?: false }
-
-    suspend fun saveNightMode(enabled: Boolean) {
-        store.edit { prefs ->
-            prefs[ReadingKeys.NIGHT_MODE] = enabled
-        }
-    }
-
-    // ── Theme Settings ──
-    // 旧版只有 accent（"theme" 键存 "vibe"/"weread"）；新版拆为 themeMode + accent，
-    // 读取旧键自动迁移为对应 accent，themeMode 默认 SYSTEM。
-
-    private object ThemeKeys {
-        val THEME_MODE = stringPreferencesKey("theme_mode")
-        val ACCENT = stringPreferencesKey("accent")
-        val LEGACY_THEME = stringPreferencesKey("theme")
-    }
-
-    val themeSettings: Flow<ThemeSettings> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs ->
-            val themeMode = when (prefs[ThemeKeys.THEME_MODE]) {
-                "light" -> ThemeMode.LIGHT
-                "dark" -> ThemeMode.DARK
-                else -> ThemeMode.SYSTEM
-            }
-            val accent = when (prefs[ThemeKeys.ACCENT] ?: prefs[ThemeKeys.LEGACY_THEME]) {
-                "weread" -> AppAccent.WEREAD
-                else -> AppAccent.VIBE
-            }
-            ThemeSettings(themeMode = themeMode, accent = accent)
-        }
-
-    suspend fun saveThemeSettings(settings: ThemeSettings) {
-        store.edit { prefs ->
-            prefs[ThemeKeys.THEME_MODE] = when (settings.themeMode) {
-                ThemeMode.SYSTEM -> "system"
-                ThemeMode.LIGHT -> "light"
-                ThemeMode.DARK -> "dark"
-            }
-            prefs[ThemeKeys.ACCENT] = when (settings.accent) {
-                AppAccent.VIBE -> "vibe"
-                AppAccent.WEREAD -> "weread"
-            }
-            prefs.remove(ThemeKeys.LEGACY_THEME)
-        }
-    }
-
-    // ── Bookshelf prefs ──
-
-    private object ShelfKeys {
-        val LAYOUT = stringPreferencesKey("bookshelf_layout")   // "list" | "grid"
-        val SORT = stringPreferencesKey("bookshelf_sort")       // "recent" | "title" | "created"
-        val SORT_ORDER = stringPreferencesKey("bookshelf_sort_order") // "asc" | "desc"
-    }
-
-    val bookshelfLayout: Flow<String> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[ShelfKeys.LAYOUT] ?: "list" }
-
-    suspend fun saveBookshelfLayout(layout: String) {
-        store.edit { prefs -> prefs[ShelfKeys.LAYOUT] = layout }
-    }
-
-    val bookshelfSort: Flow<String> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[ShelfKeys.SORT] ?: "recent" }
-
-    suspend fun saveBookshelfSort(sort: String) {
-        store.edit { prefs -> prefs[ShelfKeys.SORT] = sort }
-    }
-
-    val bookshelfSortOrder: Flow<String> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[ShelfKeys.SORT_ORDER] ?: "desc" }
-
-    suspend fun saveBookshelfSortOrder(order: String) {
-        store.edit { prefs -> prefs[ShelfKeys.SORT_ORDER] = order }
-    }
-
-    // ── Web 伴读服务（ADR-005） ──
-
-    private object CompanionKeys {
-        val ENABLED = booleanPreferencesKey("web_companion_enabled")
-    }
-
-    /** 伴读服务期望开启状态：App 启动时据此自动拉起前台服务（Token 每次进程重新生成）。 */
-    val webCompanionEnabled: Flow<Boolean> = store.data
-        .catch { emit(emptyPreferences()) }
-        .map { prefs -> prefs[CompanionKeys.ENABLED] ?: false }
-
-    suspend fun saveWebCompanionEnabled(enabled: Boolean) {
-        store.edit { prefs -> prefs[CompanionKeys.ENABLED] = enabled }
-    }
+    /** DataStore 旧 LLM 键 → Room 的一次性迁移。 */
+    val llmLegacy = LlmLegacyKeysStore(store)
 }

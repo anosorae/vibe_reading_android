@@ -19,9 +19,10 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 ## 目录结构
 
 - `app/src/main/java/com/vibereading/app/`
-  - `data/` — Room 本地库：`local/entity`（`BookEntity`/`ChapterEntity`/`LlmProfileEntity`）、`local/dao`（`BookDao`/`ChapterDao`/`LlmProfileDao`，含 `AppDatabase` 迁移链）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（`BookRepository`/`ChapterRepository`/`SettingsRepository`/`LlmProfileRepository`）、`dict/`（`DictDatabase` 内嵌词典只读访问）、`image/`（`BookImageStore`：EPUB 插图/封面落盘 `files/books/{id}/images` 与 `files/covers`、用户上传封面降采样 + EXIF 旋正、内存 LRU 位图缓存、删书清理）
+  - `data/` — Room 本地库：`local/entity`（`BookEntity`/`ChapterEntity`/`LlmProfileEntity`）、`local/dao`（`BookDao`/`ChapterDao`/`LlmProfileDao`，含 `AppDatabase` 迁移链）、`remote/`（`TranslationService` 接口 + `LlmApiService` SSE 实现）、`repository/`（`BookRepository`/`ChapterRepository`/`LlmProfileRepository`；`SettingsRepository` 是偏好组合根，按域拆为 `reading`/`theme`/`bookshelf`/`companion`/`llmLegacy` 五个 facet，各自一个 Store 类）、`dict/`（`DictDatabase` 内嵌词典只读访问）、`image/`（`BookImageStore`：EPUB 插图/封面落盘 `files/books/{id}/images` 与 `files/covers`、用户上传封面降采样 + EXIF 旋正、内存 LRU 位图缓存、删书清理）
   - `domain/model/` — 纯 Kotlin 领域模型：`Book`、`BookShelfItem`、`Chapter`、`ReadingPosition`、`ReadingSettings`（含 `LlmSettings`，两者同文件）、`LlmProfile`、`ThemeSettings`、`DictEntry`、`WordExplanation`
   - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`、`EpubParser`（EPUB 导入期一次性转纯文本章节，ADR-002）、`IllustrationLink`（插图链接语法唯一数据源）、`SourceLanguageDetector`（导入期原文语言判定，ADR-003）；负责保留原文段落的 UTF-16 起止 offset
+  - `domain/translation/` — `TranslationPreflight`（翻译前置判定纯函数：API Key / 章节长度 / 纯插图章节，单点可测）
   - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`（全局设置，含调试/日志入口）、`log`（日志查看器）、`navigation`、`theme`
     - `reader/ReaderScreen.kt` — 阅读器容器、五种翻页交互、生命周期 flush、滚动/分页接线（页面协调）
     - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
@@ -124,7 +125,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 
 ## 复用与内聚
 
-- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，**页面版面几何用 `PageLayoutPlanner`**，中文两端对齐用 `CjkJustifier`，章节状态颜色/提示用 `chapterStatusColor`/`chapterStatusHint`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`（offset 归一化走 `ReadingPosition.clampOffset`），书架进度用 `BookShelfItem.progressOf`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，选词弹窗定位用 `SelectionPopupPositionProvider`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，阅读背景档位用 `ReaderBgPresets.all`/`isDark`，前台服务样板用 `log/ForegroundServiceSupport`，设备信息用 `LogUtils.deviceInfoText`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
+- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，**页面版面几何用 `PageLayoutPlanner`**，中文两端对齐用 `CjkJustifier`，章节状态颜色/提示用 `chapterStatusColor`/`chapterStatusHint`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`（offset 归一化走 `ReadingPosition.clampOffset`），书架进度用 `BookShelfItem.progressOf`，翻译前置判定用 `TranslationPreflight`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，选词弹窗定位用 `SelectionPopupPositionProvider`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，阅读背景档位用 `ReaderBgPresets.all`/`isDark`，前台服务样板用 `log/ForegroundServiceSupport`，设备信息用 `LogUtils.deviceInfoText`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
 - 错误路径（`catch` / `Result.exceptionOrNull()`）除了写 UI 状态外，应调用 `AppLog.put(msg, throwable)` 落日志，便于用户在「设置 → 调试 → 日志」中定位 bug；不要散落 `android.util.Log` 或 `printStackTrace`。
 - 修改跨组件概念前先搜索其单一数据源；不要在组件内复制常量或重新解析章节文本。
 - 共享 Composable 优先复用 `ReadingChapterTitle`、`ReadingParagraphItem`、`BilingualParagraph`；新增视觉差异应通过参数表达，而不是复制组件。

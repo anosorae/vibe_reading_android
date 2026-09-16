@@ -49,7 +49,7 @@ class ReaderViewModelInitializationTest {
             )
             val books = BookRepository(db.bookDao())
             books.updateLastReadProgress(1, ids[1], 42)
-            settings.saveReadingSettings(ReadingSettings(fontSize = 23))
+            settings.reading.saveSettings(ReadingSettings(fontSize = 23))
             val reader = ReaderViewModel(1, books, ChapterRepository(db.chapterDao()), settings,
                 LlmProfileRepository(db.llmProfileDao(), settings), FakeTranslationService(), appContext = app)
             vm = reader
@@ -92,7 +92,7 @@ class ReaderViewModelInitializationTest {
         val store = inMemoryPreferenceStore(gate = ready)
         val settings = SettingsRepository(app, store)
         try {
-            settings.saveReadingSettings(ReadingSettings(fontSize = 21, paragraphSpacing = 25))
+            settings.reading.saveSettings(ReadingSettings(fontSize = 21, paragraphSpacing = 25))
             repeat(3) { index ->
                 val vm = ReaderViewModel(
                     bookId = -1,
@@ -111,7 +111,7 @@ class ReaderViewModelInitializationTest {
                     }
                     assertEquals(22 + index, vm.uiState.value.readingSettings.fontSize)
                     assertEquals(25, vm.uiState.value.readingSettings.paragraphSpacing)
-                    assertEquals(vm.uiState.value.readingSettings, settings.readingSettings.first())
+                    assertEquals(vm.uiState.value.readingSettings, settings.reading.settings.first())
                 } finally {
                     vm.viewModelScope.cancel()
                 }

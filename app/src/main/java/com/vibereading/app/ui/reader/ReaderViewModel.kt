@@ -101,7 +101,7 @@ class ReaderViewModel(
     // init 中协程使用的状态必须提前初始化，不能依赖首次读取一定会挂起。
     private val readingSettingsLoaded = MutableStateFlow(false)
     private val firstContentReady = MutableStateFlow(false)
-    private val settingsSaver = ReadingSettingsSaver(viewModelScope, settingsRepo::saveReadingSettings)
+    private val settingsSaver = ReadingSettingsSaver(viewModelScope, settingsRepo.reading::saveSettings)
 
     // ── LLM 编辑字段（必须在 init 之前声明，因为 llmSettings.collect 会写这些字段） ──
     private val _editApiKey = MutableStateFlow("")
@@ -178,16 +178,16 @@ class ReaderViewModel(
         }
 
         // Load settings：持久化值一次性载入，此后 UI 状态是唯一事实源。
-        // 不能持续 collect settingsRepo.readingSettings：saveReadingSettings 每次写库
+        // 不能持续 collect settingsRepo.reading.settings：saveReadingSettings 每次写库
         // 都会经 store.data 回流，拖动滑杆时延迟到达的旧值回声会覆盖较新的 UI 状态，
         // 造成滑杆回跳/跳变（全 app 只有本 ViewModel 写阅读设置，无外部变更需要回流）。
         viewModelScope.launch {
-            val rs = settingsRepo.readingSettings.first()
+            val rs = settingsRepo.reading.settings.first()
             _uiState.update { it.copy(readingSettings = rs) }
             readingSettingsLoaded.value = true
         }
         viewModelScope.launch {
-            settingsRepo.nightMode.collect { night ->
+            settingsRepo.reading.nightMode.collect { night ->
                 _uiState.update { it.copy(nightMode = night) }
             }
         }
@@ -408,7 +408,7 @@ class ReaderViewModel(
     fun toggleNightMode() {
         val new = !_uiState.value.nightMode
         _uiState.update { it.copy(nightMode = new) }
-        viewModelScope.launch { settingsRepo.saveNightMode(new) }
+        viewModelScope.launch { settingsRepo.reading.saveNightMode(new) }
     }
 
     // ── Profile 切换 ──

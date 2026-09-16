@@ -65,12 +65,12 @@ class LlmProfileRepository(
             applyDebugConfigIfPlaceholder()
             return
         }
-        val migrated = settingsRepo.migrateLlmKeysToProfile()
+        val migrated = settingsRepo.llmLegacy.migrateToProfile()
         val default = (migrated ?: debugLlmSettings() ?: LlmSettings()).toLlmProfile(name = "默认配置")
         val id = dao.insert(default.toEntity(isActive = true))
         if (id > 0 && !default.apiKey.isBlank()) {
             // 有效迁移，清除旧 DataStore 键
-            settingsRepo.clearMigratedLlmKeys()
+            settingsRepo.llmLegacy.clearMigratedKeys()
         }
     }
 

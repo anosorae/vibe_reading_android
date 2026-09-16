@@ -52,7 +52,7 @@ fun VibeReadingTheme(
 ) {
     val context = LocalContext.current
     val settingsRepo = remember { SettingsRepository(context) }
-    val settings by settingsRepo.themeSettings.collectAsState(initial = ThemeSettings())
+    val settings by settingsRepo.theme.settings.collectAsState(initial = ThemeSettings())
 
     val systemDark = isSystemInDarkTheme()
     val dark = when (settings.themeMode) {

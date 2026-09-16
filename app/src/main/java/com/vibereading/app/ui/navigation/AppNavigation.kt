@@ -87,8 +87,8 @@ fun AppNavigation() {
     // 自行出现。进程内 Activity 重建（如旋转）时服务仍在运行，此时不动标志，避免
     // 「开关显示关闭但服务实际在跑」的不一致。
     LaunchedEffect(Unit) {
-        if (!WebCompanionService.isRunning && settingsRepo.webCompanionEnabled.first()) {
-            settingsRepo.saveWebCompanionEnabled(false)
+        if (!WebCompanionService.isRunning && settingsRepo.companion.enabled.first()) {
+            settingsRepo.companion.saveEnabled(false)
         }
     }
 

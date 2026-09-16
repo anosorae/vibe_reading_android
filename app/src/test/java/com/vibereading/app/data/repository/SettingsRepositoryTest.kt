@@ -46,7 +46,7 @@ class SettingsRepositoryTest {
 
     @Test
     fun `migrateLlmKeysToProfile returns null when no keys exist`() = runBlocking {
-        val result = repository.migrateLlmKeysToProfile()
+        val result = repository.llmLegacy.migrateToProfile()
         assertNull(result)
     }
 
@@ -61,7 +61,7 @@ class SettingsRepositoryTest {
             mutable[booleanPreferencesKey("enable_thinking")] = true
             mutable.toPreferences()
         }
-        val result = repository.migrateLlmKeysToProfile()
+        val result = repository.llmLegacy.migrateToProfile()
         assertNotNull(result)
         val settings = result!!
         assertEquals("test-key", settings.apiKey)
@@ -78,15 +78,15 @@ class SettingsRepositoryTest {
             mutable[stringPreferencesKey("api_key")] = "key"
             mutable.toPreferences()
         }
-        repository.clearMigratedLlmKeys()
+        repository.llmLegacy.clearMigratedKeys()
         // 再次迁移应该返回 null（已标记迁移）
-        val result = repository.migrateLlmKeysToProfile()
+        val result = repository.llmLegacy.migrateToProfile()
         assertNull(result)
     }
 
     @Test
     fun `readingSettings defaults fontFamily to system default`() = runBlocking {
-        val settings = repository.readingSettings.first()
+        val settings = repository.reading.settings.first()
         assertEquals("default", settings.fontFamily)
     }
 
@@ -97,7 +97,7 @@ class SettingsRepositoryTest {
             mutable[stringPreferencesKey("font_family")] = "serif"
             mutable.toPreferences()
         }
-        val settings = repository.readingSettings.first()
+        val settings = repository.reading.settings.first()
         assertEquals("default", settings.fontFamily)
     }
 
@@ -108,7 +108,7 @@ class SettingsRepositoryTest {
             mutable[stringPreferencesKey("font_family")] = "monospace"
             mutable.toPreferences()
         }
-        val settings = repository.readingSettings.first()
+        val settings = repository.reading.settings.first()
         assertEquals("monospace", settings.fontFamily)
     }
 }

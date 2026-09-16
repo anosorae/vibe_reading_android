@@ -62,14 +62,14 @@ class BookshelfViewModel(
     private val searchQuery = MutableStateFlow("")
 
     // 排序方式 + 排序方向合成流
-    private val sortPref = combine(settingsRepo.bookshelfSort, settingsRepo.bookshelfSortOrder) { sort, order -> sort to order }
+    private val sortPref = combine(settingsRepo.bookshelf.sort, settingsRepo.bookshelf.sortOrder) { sort, order -> sort to order }
 
     init {
         viewModelScope.launch {
             combine(
                 bookRepo.getShelfItems(),
-                settingsRepo.themeSettings,
-                settingsRepo.bookshelfLayout,
+                settingsRepo.theme.settings,
+                settingsRepo.bookshelf.layout,
                 sortPref,
                 searchQuery
             ) { items, theme, layout, (sort, sortOrder), query ->
@@ -96,15 +96,15 @@ class BookshelfViewModel(
     }
 
     fun switchLayout(layout: String) {
-        viewModelScope.launch { settingsRepo.saveBookshelfLayout(layout) }
+        viewModelScope.launch { settingsRepo.bookshelf.saveLayout(layout) }
     }
 
     fun switchSort(sort: String) {
-        viewModelScope.launch { settingsRepo.saveBookshelfSort(sort) }
+        viewModelScope.launch { settingsRepo.bookshelf.saveSort(sort) }
     }
 
     fun switchSortOrder(order: String) {
-        viewModelScope.launch { settingsRepo.saveBookshelfSortOrder(order) }
+        viewModelScope.launch { settingsRepo.bookshelf.saveSortOrder(order) }
     }
 
     /** 书架排序：最近阅读 / 书名 / 上传时间，支持升序/降序。 */

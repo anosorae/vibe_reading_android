@@ -10,6 +10,8 @@ import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.parser.IllustrationLink
 import com.vibereading.app.domain.parser.ReadingContentParser
 import com.vibereading.app.domain.parser.SourceLanguageDetector
+import com.vibereading.app.domain.translation.TranslationGate
+import com.vibereading.app.domain.translation.TranslationPreflight
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.TranslationForegroundService
 import com.vibereading.app.web.WebCompanionService
@@ -78,6 +80,32 @@ class TranslationCoordinator(
     /** 是否有翻译任务在运行（App 内与 Web 共用同一状态，ADR-005）。 */
     fun isBusy(): Boolean = translateJob?.isActive == true
 
+    /**
+     * 仅当本任务仍是当前任务时更新 UI 状态：旧任务（已被替换/取消）不得污染新任务的界面。
+     * 此前这条 `if (run == runId)` 在五个事件分支 + 三处收尾里各写一遍。
+     */
+    private inline fun updateIfCurrent(run: Long, update: (TranslationUiState) -> TranslationUiState) {
+        if (run == runId) _state.update(update)
+    }
+
+    /**
+     * 终态收尾：停流 + 清空流式临时字段（thinkingText / streamingCharCount）。
+     *
+     * 此前四处终态各自 copy 不同的字段子集（有的漏清 thinkingText），
+     * 统一为「任何终态都清空流式临时字段」，避免残留上一次任务的思考文本/字数。
+     */
+    private fun finish(run: Long, phase: TranslationPhase, errorMessage: String? = null) {
+        updateIfCurrent(run) {
+            it.copy(
+                isStreaming = false,
+                phase = phase,
+                thinkingText = "",
+                streamingCharCount = 0,
+                errorMessage = errorMessage
+            )
+        }
+    }
+
     /** 启动翻译；同一章已有活动任务则忽略。[sourceLanguage] 为书籍原文语言（ADR-003），决定翻译方向。 */
     fun translate(
         bookId: Long,
@@ -97,31 +125,33 @@ class TranslationCoordinator(
             try {
                 _state.update { it.copy(phase = TranslationPhase.PREPARING, errorMessage = null) }
 
-                if (settings.apiKey.isBlank()) {
-                    _state.update { it.copy(phase = TranslationPhase.FAILED, errorMessage = "请先配置 API Key") }
-                    return@launch
-                }
-                if (chapter.content.length > settings.chapterMaxChars) {
-                    val msg = "章节过长 (${chapter.content.length} 字符)"
-                    chapterRepo.markTooLong(bookId, chapterId, msg)
-                    _state.update { it.copy(phase = TranslationPhase.FAILED, errorMessage = msg) }
-                    return@launch
-                }
+                // 前置判定走纯函数（TranslationPreflight）：规则单点、可单测，
+                // 本处只负责「按判定结果做副作用（落库/起服务/放流）」。
+                when (TranslationPreflight.gate(chapter, settings)) {
+                    TranslationGate.MISSING_API_KEY -> {
+                        finish(run, TranslationPhase.FAILED, "请先配置 API Key")
+                        return@launch
+                    }
 
-                // 纯插图/空章节（ADR-002）：没有可翻译的文本段（全部是空白或插图链接）
-                // 时不调 API——空 prompt 会让模型输出「请提供文本」之类的无意义寒暄。
-                // 直接走 start→complete 落 DONE，空译文读取侧回退原文（插图照常渲染）。
-                val hasTranslatableText = ReadingContentParser.splitParagraphs(chapter.content)
-                    .any { p ->
-                        val trimmed = p.trim()
-                        trimmed.isNotEmpty() && IllustrationLink.parse(trimmed) == null
+                    TranslationGate.TOO_LONG -> {
+                        val msg = TranslationPreflight.tooLongMessage(chapter)
+                        chapterRepo.markTooLong(bookId, chapterId, msg)
+                        finish(run, TranslationPhase.FAILED, msg)
+                        return@launch
                     }
-                if (!hasTranslatableText) {
-                    if (chapterRepo.startTranslation(bookId, chapterId, run)) {
-                        chapterRepo.completeTranslation(bookId, chapterId, run, "")
+
+                    TranslationGate.NOTHING_TO_TRANSLATE -> {
+                        // 纯插图/空章节（ADR-002）：没有可翻译的文本段（全部是空白或插图链接）
+                        // 时不调 API——空 prompt 会让模型输出「请提供文本」之类的无意义寒暄。
+                        // 直接走 start→complete 落 DONE，空译文读取侧回退原文（插图照常渲染）。
+                        if (chapterRepo.startTranslation(bookId, chapterId, run)) {
+                            chapterRepo.completeTranslation(bookId, chapterId, run, "")
+                        }
+                        finish(run, TranslationPhase.IDLE)
+                        return@launch
                     }
-                    _state.update { it.copy(isStreaming = false, phase = TranslationPhase.IDLE) }
-                    return@launch
+
+                    TranslationGate.TRANSLATE -> Unit
                 }
 
                 if (!chapterRepo.startTranslation(bookId, chapterId, run)) {
@@ -156,10 +186,10 @@ class TranslationCoordinator(
                 ).batchForDisplay().collect { event ->
                     when (event) {
                         TranslationEvent.Started -> {
-                            if (run == runId) _state.update { it.copy(phase = TranslationPhase.WAITING_FIRST_TOKEN) }
+                            updateIfCurrent(run) { it.copy(phase = TranslationPhase.WAITING_FIRST_TOKEN) }
                         }
                         is TranslationEvent.Thinking -> {
-                            if (run == runId) _state.update {
+                            updateIfCurrent(run) {
                                 it.copy(
                                     phase = TranslationPhase.THINKING,
                                     thinkingText = it.thinkingText + event.text
@@ -167,7 +197,7 @@ class TranslationCoordinator(
                             }
                         }
                         is TranslationEvent.Chunk -> {
-                            if (run == runId) _state.update {
+                            updateIfCurrent(run) {
                                 it.copy(
                                     phase = TranslationPhase.STREAMING,
                                     streamingText = it.streamingText + event.text,
@@ -176,7 +206,7 @@ class TranslationCoordinator(
                             }
                         }
                         is TranslationEvent.Progress -> {
-                            if (run == runId) _state.update {
+                            updateIfCurrent(run) {
                                 it.copy(streamingCharCount = maxOf(it.streamingCharCount, event.chars))
                             }
                         }
@@ -185,26 +215,14 @@ class TranslationCoordinator(
                             if (chapterRepo.completeTranslation(bookId, chapterId, run, event.text)) {
                                 // 仅当本任务仍是当前任务时清空流式状态；取消/替换后由新状态接管。
                                 // 旧任务仍完成写库（completeTranslation），但不写 UI 状态。
-                                if (run == runId) {
-                                    _state.update { it.copy(isStreaming = false, phase = TranslationPhase.IDLE, thinkingText = "", streamingCharCount = 0) }
-                                }
+                                finish(run, TranslationPhase.IDLE)
                             }
                         }
                         is TranslationEvent.Error -> {
                             terminalEvent = true
                             AppLog.put("翻译流错误：书 $bookId 章 $chapterId run $run：${event.reason}")
                             if (chapterRepo.failTranslation(bookId, chapterId, run, event.reason)) {
-                                if (run == runId) {
-                                    _state.update {
-                                        it.copy(
-                                            isStreaming = false,
-                                            phase = TranslationPhase.FAILED,
-                                            thinkingText = "",
-                                            streamingCharCount = 0,
-                                            errorMessage = event.reason
-                                        )
-                                    }
-                                }
+                                finish(run, TranslationPhase.FAILED, event.reason)
                             }
                         }
                     }
@@ -212,19 +230,13 @@ class TranslationCoordinator(
                 if (!terminalEvent) {
                     val reason = "翻译流未正常结束"
                     if (chapterRepo.failTranslation(bookId, chapterId, run, reason)) {
-                        if (run == runId) {
-                            _state.update {
-                                it.copy(isStreaming = false, phase = TranslationPhase.FAILED, errorMessage = reason)
-                            }
-                        }
+                        finish(run, TranslationPhase.FAILED, reason)
                     }
                 }
             } catch (e: CancellationException) {
                 if (run == runId && markedInProgress) {
                     chapterRepo.cancelTranslation(bookId, chapterId, run)
-                    _state.update {
-                        it.copy(isStreaming = false, phase = TranslationPhase.CANCELLED, thinkingText = "", streamingCharCount = 0)
-                    }
+                    finish(run, TranslationPhase.CANCELLED)
                 }
                 throw e
             } catch (e: Exception) {
@@ -232,11 +244,7 @@ class TranslationCoordinator(
                     val reason = e.message ?: "翻译失败"
                     AppLog.put("翻译失败：书 $bookId 章 $chapterId run $run", e)
                     if (chapterRepo.failTranslation(bookId, chapterId, run, reason)) {
-                        if (run == runId) {
-                            _state.update {
-                                it.copy(isStreaming = false, phase = TranslationPhase.FAILED, streamingCharCount = 0, errorMessage = reason)
-                            }
-                        }
+                        finish(run, TranslationPhase.FAILED, reason)
                     }
                 }
             } finally {

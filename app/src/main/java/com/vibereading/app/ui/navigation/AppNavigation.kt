@@ -29,8 +29,11 @@ import com.vibereading.app.ui.log.LogViewerScreen
 import com.vibereading.app.ui.reader.ReaderScreen
 import com.vibereading.app.ui.reader.ReaderViewModel
 import com.vibereading.app.ui.reader.TranslationCoordinatorProvider
+import com.vibereading.app.ui.settings.AboutScreen
+import com.vibereading.app.ui.settings.LlmSettingsDetailScreen
 import com.vibereading.app.ui.settings.SettingsScreen
 import com.vibereading.app.ui.settings.SettingsViewModel
+import com.vibereading.app.ui.settings.TranslationParamsDetailScreen
 import com.vibereading.app.web.WebCompanionService
 import com.vibereading.app.VibeReadingApp
 import kotlinx.coroutines.flow.first
@@ -39,6 +42,9 @@ object Routes {
     const val BOOKSHELF = "bookshelf"
     const val READER = "reader/{bookId}"
     const val SETTINGS = "settings"
+    const val LLM_SETTINGS = "settings/llm"
+    const val TRANSLATION_PARAMS = "settings/translation-params"
+    const val ABOUT = "settings/about"
     const val LOGS = "logs"
     fun reader(bookId: Long) = "reader/$bookId"
 }
@@ -127,7 +133,10 @@ fun AppNavigation() {
                     onOpenBook = { bookId ->
                         navController.navigate(Routes.reader(bookId)) { launchSingleTop = true }
                     },
-                    onOpenLogs = { navController.navigate(Routes.LOGS) },
+                    onOpenLogs = { navController.navigate(Routes.LOGS) { launchSingleTop = true } },
+                    onOpenLlmSettings = { navController.navigate(Routes.LLM_SETTINGS) { launchSingleTop = true } },
+                    onOpenTranslationParams = { navController.navigate(Routes.TRANSLATION_PARAMS) { launchSingleTop = true } },
+                    onOpenAbout = { navController.navigate(Routes.ABOUT) { launchSingleTop = true } },
                     onExitProfile = {},
                     coverTransition = { bookId ->
                         with(bookTransitionScope) { bookContainerBounds(bookId, this@composable) }
@@ -172,8 +181,33 @@ fun AppNavigation() {
                 SettingsScreen(
                     vm = vm,
                     onBack = { navController.popBackStack() },
-                    onOpenLogs = { navController.navigate(Routes.LOGS) }
+                    onOpenLogs = { navController.navigate(Routes.LOGS) { launchSingleTop = true } },
+                    onOpenLlmSettings = { navController.navigate(Routes.LLM_SETTINGS) { launchSingleTop = true } },
+                    onOpenTranslationParams = { navController.navigate(Routes.TRANSLATION_PARAMS) { launchSingleTop = true } },
+                    onOpenAbout = { navController.navigate(Routes.ABOUT) { launchSingleTop = true } }
                 )
+            }
+
+            composable(Routes.LLM_SETTINGS) {
+                val vm: SettingsViewModel = viewModel(
+                    factory = SettingsViewModel.Factory(
+                        settingsRepo, llmProfileRepo, llmService, application
+                    )
+                )
+                LlmSettingsDetailScreen(vm = vm, onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.TRANSLATION_PARAMS) {
+                val vm: SettingsViewModel = viewModel(
+                    factory = SettingsViewModel.Factory(
+                        settingsRepo, llmProfileRepo, llmService, application
+                    )
+                )
+                TranslationParamsDetailScreen(vm = vm, onBack = { navController.popBackStack() })
+            }
+
+            composable(Routes.ABOUT) {
+                AboutScreen(onBack = { navController.popBackStack() })
             }
 
             composable(Routes.LOGS) {

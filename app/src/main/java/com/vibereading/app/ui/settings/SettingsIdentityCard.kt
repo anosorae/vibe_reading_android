@@ -22,59 +22,99 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.BuildConfig
 
 @Composable
-internal fun SettingsIdentityCard() {
+internal fun SettingsIdentityCard(onClick: (() -> Unit)? = null) {
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
     val onPrimary = MaterialTheme.colorScheme.onPrimary
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+    val cardModifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 10.dp)
+    val cardShape = RoundedCornerShape(24.dp)
+    val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+
+    if (onClick != null) {
+        Card(
+            onClick = onClick,
+            modifier = cardModifier,
+            shape = cardShape,
+            colors = cardColors
         ) {
-            Box(
-                modifier = Modifier
-                    .size(76.dp)
-                    .clip(RoundedCornerShape(22.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
-                    drawRoundRect(
-                        brush = Brush.linearGradient(
-                            listOf(primary, secondary)
-                        ),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx())
+            IdentityCardContent(primary, secondary, onPrimary, showChevron = true)
+        }
+    } else {
+        Card(
+            modifier = cardModifier,
+            shape = cardShape,
+            colors = cardColors
+        ) {
+            IdentityCardContent(primary, secondary, onPrimary, showChevron = false)
+        }
+    }
+}
+
+@Composable
+private fun IdentityCardContent(
+    primary: androidx.compose.ui.graphics.Color,
+    secondary: androidx.compose.ui.graphics.Color,
+    onPrimary: androidx.compose.ui.graphics.Color,
+    showChevron: Boolean
+) {
+    Row(
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .clip(RoundedCornerShape(22.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                drawRoundRect(
+                    brush = Brush.linearGradient(listOf(primary, secondary)),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx())
+                )
+                val wave = Path().apply {
+                    moveTo(0f, size.height * 0.72f)
+                    cubicTo(
+                        size.width * 0.28f, size.height * 0.54f,
+                        size.width * 0.58f, size.height * 0.92f,
+                        size.width, size.height * 0.62f
                     )
+                    lineTo(size.width, size.height)
+                    lineTo(0f, size.height)
+                    close()
                 }
-                Icon(
-                    Icons.Filled.AutoStories,
-                    contentDescription = null,
-                    modifier = Modifier.size(44.dp),
-                    tint = onPrimary
-                )
+                drawPath(wave, color = onPrimary.copy(alpha = 0.22f))
             }
-            Column(modifier = Modifier.weight(1f)) {
-                Text("译读", style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    "用 AI 让阅读没有语言的边界",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.size(4.dp))
-                Text(
-                    "v${BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Icon(
+                Icons.Filled.AutoStories,
+                contentDescription = null,
+                modifier = Modifier.size(44.dp),
+                tint = onPrimary
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text("译读", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "用 AI 让阅读没有语言的边界",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                "v${BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (showChevron) {
             Icon(
                 Icons.Filled.ChevronRight,
                 contentDescription = null,

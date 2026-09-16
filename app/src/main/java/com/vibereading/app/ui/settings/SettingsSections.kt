@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,6 +22,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,11 +44,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vibereading.app.BuildConfig
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ThemeMode
@@ -55,7 +64,6 @@ import com.vibereading.app.ui.theme.InkColors
 import com.vibereading.app.ui.theme.LotusColors
 import com.vibereading.app.ui.theme.MossColors
 import com.vibereading.app.ui.theme.VibeColors
-import com.vibereading.app.ui.theme.WereadColors
 
 @Composable
 internal fun ThemeSettingsSection(
@@ -63,56 +71,172 @@ internal fun ThemeSettingsSection(
     onThemeModeChange: (ThemeMode) -> Unit,
     onAccentChange: (AppAccent) -> Unit
 ) {
-    SectionHeader("外观")
+    SettingsSectionHeader(
+        title = "外观",
+        icon = Icons.Filled.Palette,
+        iconTint = MaterialTheme.colorScheme.primary
+    )
     SectionCard {
-        Text("主题模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-        val modes = listOf(
-            ThemeMode.SYSTEM to "跟随系统",
-            ThemeMode.LIGHT to "浅色",
-            ThemeMode.DARK to "深色"
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            modes.forEach { (mode, label) ->
+        SettingsRowLabel("主题模式")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                ThemeMode.SYSTEM to "跟随系统",
+                ThemeMode.LIGHT to "浅色",
+                ThemeMode.DARK to "深色"
+            ).forEach { (mode, label) ->
                 val selected = theme.themeMode == mode
                 OutlinedButton(
                     onClick = { onThemeModeChange(mode) },
+                    modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
+                    contentPadding = ButtonDefaults.ContentPadding,
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
                         contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.weight(1f)
+                        else MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
-                    Text(label, fontSize = 13.sp)
+                    Text(label, fontSize = 13.sp, maxLines = 1)
                 }
             }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-        Text("主题色", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        SettingsRowLabel("主题色")
         Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 10.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            val palettes = listOf(
+            listOf(
                 Triple(AppAccent.INDIGO, "黛蓝", IndigoColors.Accent),
                 Triple(AppAccent.MOSS, "苔绿", MossColors.Accent),
                 Triple(AppAccent.VIBE, "原木", VibeColors.Sienna),
                 Triple(AppAccent.LOTUS, "藕荷", LotusColors.Accent),
-                Triple(AppAccent.WEREAD, "青简", WereadColors.Accent),
                 Triple(AppAccent.INK, "墨白", InkColors.Accent)
-            )
-            palettes.forEach { (accent, label, color) ->
+            ).forEach { (accent, label, color) ->
                 AccentDot(
                     label = label,
                     color = color,
-                    selected = theme.accent == accent,
-                    onClick = { onAccentChange(accent) }
+                    isSelected = theme.accent == accent,
+                    onClick = { onAccentChange(accent) },
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun LlmOverviewSection(
+    state: SettingsUiState,
+    onOpenLlmSettings: () -> Unit,
+    onOpenTranslationParams: () -> Unit,
+    onToggleExplainThinking: (Boolean) -> Unit
+) {
+    SettingsSectionHeader(
+        title = "翻译与 AI",
+        icon = Icons.Filled.Translate,
+        iconTint = MaterialTheme.colorScheme.secondary
+    )
+    SectionCard {
+        SettingsNavigationRow(
+            title = "LLM 配置",
+            value = state.profiles.firstOrNull { it.id == state.activeProfileId }?.model
+                ?: state.llmSettings.model,
+            onClick = onOpenLlmSettings
+        )
+        SectionDivider()
+        SettingsNavigationRow(
+            title = "翻译参数",
+            subtitle = "单章字符上限、最大输出 Token 等",
+            onClick = onOpenTranslationParams
+        )
+        SectionDivider()
+        SettingsSwitchRow(
+            title = "解释时思考",
+            subtitle = "选词解释时使用深度思考模式",
+            checked = state.llmSettings.enableExplainThinking,
+            onCheckedChange = onToggleExplainThinking
+        )
+        SectionDivider()
+        SettingsNavigationRow(
+            title = "采样温度",
+            subtitle = "越高输出越随机，建议 0.2 ~ 0.5",
+            value = formatParameter(state.llmSettings.temperature),
+            onClick = onOpenTranslationParams
+        )
+        SectionDivider()
+        SettingsNavigationRow(
+            title = "Top P",
+            subtitle = "仅考虑前 top_p 概率的 token",
+            value = formatParameter(state.llmSettings.topP),
+            onClick = onOpenTranslationParams
+        )
+    }
+}
+
+@Composable
+internal fun WebCompanionSection(
+    running: Boolean,
+    url: String?,
+    onToggle: (Boolean) -> Unit,
+    onCopyUrl: (String) -> Unit
+) {
+    SettingsSectionHeader(
+        title = "阅读体验",
+        icon = Icons.Filled.AutoStories,
+        iconTint = MaterialTheme.colorScheme.tertiary
+    )
+    SectionCard {
+        SettingsSwitchRow(
+            title = "局域网网页阅读",
+            subtitle = "同一 Wi-Fi 下的电脑浏览器可阅读本书库",
+            checked = running,
+            onCheckedChange = onToggle
+        )
+        if (running && url != null) {
+            Spacer(Modifier.height(10.dp))
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { onCopyUrl(url) }
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        "在电脑浏览器打开（点击复制）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        url,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DebugSection(onOpenLogs: () -> Unit) {
+    SettingsSectionHeader(
+        title = "其他",
+        icon = Icons.Filled.Settings,
+        iconTint = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    SectionCard {
+        SettingsNavigationRow(title = "日志", onClick = onOpenLogs)
     }
 }
 
@@ -136,23 +260,27 @@ internal fun LlmProfilesSection(
     onUpdateModel: (String) -> Unit,
     onToggleShowApiKey: () -> Unit,
     onSave: () -> Unit,
-    onTest: () -> Unit
+    onTest: () -> Unit,
+    showHeader: Boolean = true
 ) {
-    SectionHeader("翻译与 AI")
     SectionCard {
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable { onExpandedChange(!expanded) },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("LLM 配置", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.weight(1f))
-            val rotation by animateFloatAsState(targetValue = if (expanded) 90f else 0f, label = "chevron")
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.rotate(rotation).size(20.dp)
-            )
+        if (showHeader) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onExpandedChange(!expanded) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("LLM 配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                val rotation by animateFloatAsState(targetValue = if (expanded) 90f else 0f, label = "chevron")
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = if (expanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.rotate(rotation).size(22.dp)
+                )
+            }
         }
 
         if (expanded) {
@@ -168,7 +296,7 @@ internal fun LlmProfilesSection(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回",
+                        contentDescription = "返回配置列表",
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
@@ -225,7 +353,6 @@ internal fun TranslationParamsSection(
     onUpdateTemperature: (Float) -> Unit,
     onUpdateTopP: (Float) -> Unit
 ) {
-    SectionHeader("翻译参数")
     SectionCard {
         LlmTranslationParams(
             llmSettings = llmSettings,
@@ -241,166 +368,170 @@ internal fun TranslationParamsSection(
 }
 
 @Composable
-internal fun WebCompanionSection(
-    running: Boolean,
-    url: String?,
-    onToggle: (Boolean) -> Unit,
-    onCopyUrl: (String) -> Unit
+private fun SettingsSectionHeader(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: Color
 ) {
-    SectionHeader("阅读体验")
-    SectionCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    Row(
+        modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(iconTint.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("局域网网页阅读", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "同一 WiFi 下的电脑浏览器可阅读本书库",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = running,
-                onCheckedChange = onToggle,
-                colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
-            )
+            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(25.dp))
         }
-        if (running && url != null) {
-            Spacer(Modifier.height(8.dp))
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onCopyUrl(url) }
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        "在电脑浏览器打开（点击复制）",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        url,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "此地址已常驻通知栏，锁屏后也能查看",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
+        Spacer(Modifier.width(12.dp))
+        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
-}
-
-@Composable
-internal fun DebugSection(onOpenLogs: () -> Unit) {
-    SectionHeader("其他")
-    SectionCard {
-        Row(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLogs).padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("日志", style = MaterialTheme.typography.bodyMedium)
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-@Composable
-internal fun AboutSection() {
-    SectionHeader("关于")
-    SectionCard {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("版本", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                BuildConfig.VERSION_NAME,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "译读 —— 双语阅读器：导入 TXT 小说，逐章调用 LLM 翻译为英文，中英双模式阅读。",
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 20.sp
-        )
-    }
-}
-
-@Composable
-private fun SectionHeader(title: String) {
-    Text(
-        title,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp)
-    )
 }
 
 @Composable
 private fun SectionCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
-        Column(modifier = Modifier.padding(16.dp), content = content)
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp), content = content)
     }
+}
+
+@Composable
+private fun SettingsRowLabel(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun SettingsNavigationRow(
+    title: String,
+    subtitle: String? = null,
+    value: String? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (value != null) {
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.width(12.dp))
+        }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+        )
+    }
+}
+
+@Composable
+private fun SectionDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 5.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    )
 }
 
 @Composable
 private fun AccentDot(
     label: String,
     color: Color,
-    selected: Boolean,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(48.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp)
+    Box(
+        modifier = modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .selectable(
+                selected = isSelected,
+                role = Role.RadioButton,
+                onClick = onClick
+            )
+            .semantics { contentDescription = "主题色：$label" },
+        contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .size(if (selected) 38.dp else 32.dp)
+                .size(if (isSelected) 42.dp else 34.dp)
                 .border(
-                    width = if (selected) 2.dp else 0.dp,
+                    width = if (isSelected) 2.dp else 0.dp,
                     color = MaterialTheme.colorScheme.primary,
                     shape = CircleShape
                 )
-                .padding(if (selected) 4.dp else 0.dp)
+                .padding(if (isSelected) 4.dp else 0.dp)
                 .clip(CircleShape)
                 .background(color)
         )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            fontSize = 10.sp,
-            maxLines = 1,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
+
+private fun formatParameter(value: Float): String =
+    if (value % 1f == 0f) value.toInt().toString() else "%.1f".format(java.util.Locale.US, value)

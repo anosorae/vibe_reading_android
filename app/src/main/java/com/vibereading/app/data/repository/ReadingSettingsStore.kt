@@ -4,13 +4,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.vibereading.app.domain.model.ReadingSettings
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 /**
@@ -46,8 +44,7 @@ class ReadingSettingsStore(private val store: DataStore<Preferences>) {
         val NIGHT_MODE = booleanPreferencesKey("night_mode")
     }
 
-    val settings: Flow<ReadingSettings> = store.data
-        .catch { emit(emptyPreferences()) }
+    val settings: Flow<ReadingSettings> = store.safeData("读取阅读设置失败，回退默认值")
         .map { prefs ->
             ReadingSettings(
                 fontSize = prefs[Keys.FONT_SIZE] ?: 17,
@@ -112,8 +109,7 @@ class ReadingSettingsStore(private val store: DataStore<Preferences>) {
         if (value != null) prefs[key] = value else prefs.remove(key)
     }
 
-    val nightMode: Flow<Boolean> = store.data
-        .catch { emit(emptyPreferences()) }
+    val nightMode: Flow<Boolean> = store.safeData("读取夜间模式失败，回退默认值")
         .map { prefs -> prefs[Keys.NIGHT_MODE] ?: false }
 
     suspend fun saveNightMode(enabled: Boolean) {

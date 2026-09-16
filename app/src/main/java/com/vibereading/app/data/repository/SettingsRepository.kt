@@ -3,9 +3,26 @@ package com.vibereading.app.data.repository
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
+import com.vibereading.app.log.AppLog
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+
+/**
+ * 读取偏好，失败（文件损坏/IO 错误）时落日志并回退空偏好。
+ *
+ * 各偏好域共用：此前 6 处各自写 `.catch { emit(emptyPreferences()) }` 且不落日志，
+ * 用户「设置莫名回到默认」时在「设置 → 调试 → 日志」里查不到任何线索。
+ * 注意 [catch] 对协程取消是透明的，不会把取消当成读取失败。
+ */
+internal fun DataStore<Preferences>.safeData(logMessage: String): Flow<Preferences> =
+    data.catch { e ->
+        AppLog.put(logMessage, e)
+        emit(emptyPreferences())
+    }
 
 /**
  * App 偏好的组合根：把五个互不相关的偏好域装配在同一个 DataStore 上。

@@ -3,13 +3,11 @@ package com.vibereading.app.data.repository
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.ThemeMode
 import com.vibereading.app.domain.model.ThemeSettings
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 /**
@@ -26,8 +24,7 @@ class ThemeSettingsStore(private val store: DataStore<Preferences>) {
         val LEGACY_THEME = stringPreferencesKey("theme")
     }
 
-    val settings: Flow<ThemeSettings> = store.data
-        .catch { emit(emptyPreferences()) }
+    val settings: Flow<ThemeSettings> = store.safeData("读取主题设置失败，回退默认值")
         .map { prefs ->
             val themeMode = when (prefs[Keys.THEME_MODE]) {
                 "light" -> ThemeMode.LIGHT

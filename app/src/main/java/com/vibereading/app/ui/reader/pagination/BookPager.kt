@@ -355,9 +355,16 @@ fun PageRenderer(
             .padding(vertical = paddingV.dp),
         contentAlignment = Alignment.TopStart
     ) {
-        // 末段段距不渲染（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx），
-        // 否则渲染高度溢出内容区，底行被盒子裁剪；插图单元同样带尾距
-        val lastSpacedIdx = units.indexOfLast { it is PageUnit.Para || it is PageUnit.Image }
+        // 版面计划：与卷页位图 renderPageBitmap 共用同一个 PageLayoutPlanner，段距与块序一致。
+        // 段距为 0 的块（末个可间距块、被拆开段落的首片段）由计划统一判定，
+        // 本处不再自行推导——此前两侧各写一份，只能靠注释维持一致。
+        val blocks = PageLayoutPlanner.plan(
+            units = units,
+            style = pageStyle,
+            density = density,
+            contentWidthPx = contentWidthPx.toFloat(),
+            mode = mode
+        )
         // 自定义 Layout：以无界高度测量子元素，再从上到下放置；
         // 排版高度因 lineHeight 修改 / dp→px 舍入可能微溢 contentHeightPx 几像素，
         // 普通 Column 会以剩余高度=0 戋断末子元素；此 Layout 允许内容微溢至 Box
@@ -365,6 +372,8 @@ fun PageRenderer(
         androidx.compose.ui.layout.Layout(
             content = {
                 units.forEachIndexed { idx, unit ->
+                    val block = blocks[idx]
+                    val showSpacer = block.spacingBelowPx > 0f
                     when (unit) {
                         is PageUnit.Title -> ReadingChapterTitle(
                             section = unit.section,
@@ -373,20 +382,18 @@ fun PageRenderer(
                             pageStyle = pageStyle
                         )
                         is PageUnit.Image -> {
-                            val isLastSpaced = idx == lastSpacedIdx
                             ReadingIllustrationBlock(
                                 link = IllustrationLink(
                                     path = unit.path,
                                     widthPx = unit.displayWidthPx.toInt().coerceAtLeast(1),
                                     heightPx = unit.displayHeightPx.toInt().coerceAtLeast(1)
                                 ),
-                                showSpacer = !isLastSpaced,
+                                showSpacer = showSpacer,
                                 fixedDisplayHeightPx = unit.displayHeightPx,
                                 onClick = onIllustrationClick?.let { cb -> { cb(unit.path) } }
                             )
                         }
                         is PageUnit.Para -> {
-                            val isLastPara = idx == lastSpacedIdx
                             val key = ParagraphKey(unit.chapterId, unit.paraIndex)
                             if (mode == "zh") {
                                 // zh 模式：mainLayout 即中文侧排版，直接渲染 cnText（无气泡）；
@@ -404,10 +411,7 @@ fun PageRenderer(
                                     color = palette.bodyText,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(
-                                            bottom = if (unit.splitFirst || isLastPara) 0.dp
-                                            else with(density) { pageStyle.paragraphSpacingPx.toDp() }
-                                        ),
+                                        .padding(bottom = with(density) { block.spacingBelowPx.toDp() }),
                                     selectionState = selectionState,
                                     paragraphKey = key,
                                     locale = Locale.CHINESE,
@@ -427,7 +431,7 @@ fun PageRenderer(
                                         pageStyle = pageStyle,
                                         palette = palette,
                                         lineHeightExtraPx = unit.lineHeightExtraPx,
-                                        showSpacer = !isLastPara,
+                                        showSpacer = showSpacer,
                                         selectionState = selectionState,
                                         paragraphKey = key,
                                         // 气泡触控区右向延伸到屏幕右缘（与滚动模式同口径）
@@ -451,10 +455,7 @@ fun PageRenderer(
                                         color = palette.bodyText,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(
-                                                bottom = if (unit.splitFirst || isLastPara) 0.dp
-                                                else with(density) { pageStyle.paragraphSpacingPx.toDp() }
-                                            ),
+                                            .padding(bottom = with(density) { block.spacingBelowPx.toDp() }),
                                         selectionState = selectionState,
                                         paragraphKey = key,
                                         locale = Locale.CHINESE,
@@ -545,40 +546,30 @@ fun renderPageBitmap(
         val titlePaint = textPaint(palette.titleText)
         val sectionPaint = textPaint(Color(sectionColorArgb))
 
-        var cursorY = 0f
+        // 版面几何由共享计划决定（与 Compose 页同一个 PageLayoutPlanner）：
+        // 本函数只负责「按计划绘制」，不再自行累加间距、不再各自推导气泡矩形。
+        val blocks = PageLayoutPlanner.plan(
+            units = units,
+            style = pageStyle,
+            density = density,
+            contentWidthPx = contentWidthPx.toFloat(),
+            mode = mode
+        )
 
-        // 末段段距不渲染（对齐排版器 buildPage 的 realUsed = used - paragraphSpacingPx）
-        val lastSpacedIdx = units.indexOfLast { it is PageUnit.Para || it is PageUnit.Image }
-        // 与 Compose 布局保持同一整像素舍入口径：Modifier.padding 内部按 roundToPx(dp) 取整，
-        // 位图若用浮点 dp*density 累加，每段（双语 padding + 段距）会比真实页少 1~1.5px，
-        // 整页累积后正文逐段偏移（亚像素漂移）。间距统一先 round 成 Int 再累加。
-        val padPx = { v: Int -> with(density) { v.dp.roundToPx() } }
-        val paragraphSpacingInt = kotlin.math.round(pageStyle.paragraphSpacingPx).toInt()
-
-        units.forEachIndexed { idx, unit ->
-            when (unit) {
+        blocks.forEach { block ->
+            when (val unit = block.unit) {
                 is PageUnit.Title -> {
-                    cursorY += padPx(ReaderMetrics.TITLE_TOP_DP)
+                    val gapPx = with(density) { ReaderMetrics.SECTION_TITLE_GAP_DP.dp.roundToPx() }
+                    val topPx = with(density) { ReaderMetrics.TITLE_TOP_DP.dp.roundToPx() }.toFloat()
+                    var y = block.yPx + topPx
                     unit.sectionLayout?.let { layout ->
-                        drawLayout(canvas, layout, sectionPaint, cursorY)
-                        cursorY += layout.size.height.toFloat()
+                        drawLayout(canvas, layout, sectionPaint, y)
+                        y += layout.size.height.toFloat() + gapPx
                     }
-                    // 只有卷名非空才有「卷名 → 章节名」间距（8dp）。必须与 Compose 页
-                    // ReadingChapterTitle（section != null）和排版器 measureTitleHeight
-                    // 的判定一致：无卷名章节的首页若无条件加这一段间距，位图标题会被
-                    // 凭空顶低 ~8dp，触发仿真卷页的瞬间整页文字向下跳一下。
-                    if (unit.sectionLayout != null) {
-                        cursorY += padPx(ReaderMetrics.SECTION_TITLE_GAP_DP)
-                    }
-                    unit.titleLayout?.let { layout ->
-                        drawLayout(canvas, layout, titlePaint, cursorY)
-                        cursorY += layout.size.height.toFloat()
-                    }
-                    cursorY += padPx(ReaderMetrics.TITLE_BOTTOM_DP)
+                    unit.titleLayout?.let { layout -> drawLayout(canvas, layout, titlePaint, y) }
                 }
 
                 is PageUnit.Image -> {
-                    val isLastSpaced = idx == lastSpacedIdx
                     // 卷页位图同步解码（BookImageStore 内存缓存命中时零开销）；失败画占位框
                     val bmp = imageResolver?.invoke(
                         unit.path,
@@ -597,26 +588,22 @@ fun renderPageBitmap(
                         }
                     }
                     if (scaled != null) {
-                        canvas.drawImage(scaled, Offset(left, cursorY), Paint())
+                        canvas.drawImage(scaled, Offset(left, block.yPx), Paint())
                     } else {
                         val placeholder = Paint().apply {
                             isAntiAlias = true
                             color = palette.bodyText.copy(alpha = 0.10f)
                         }
                         canvas.drawRect(
-                            Rect(left, cursorY, left + unit.displayWidthPx, cursorY + unit.displayHeightPx),
+                            Rect(left, block.yPx, left + unit.displayWidthPx, block.yPx + unit.displayHeightPx),
                             placeholder
                         )
                     }
-                    cursorY += unit.displayHeightPx
-                    cursorY += if (isLastSpaced) 0f else paragraphSpacingInt.toFloat()
                 }
 
                 is PageUnit.Para -> {
-                    val isLastPara = idx == lastSpacedIdx
-                    val hasTranslation = mode == "en" && unit.enText?.isNotBlank() == true && unit.cnText.isNotBlank()
                     // lineHeightExtraPx > 0 时用调整后的 lineHeight 重新测量，
-                    // 与 PageRenderer 的 Text(style=bodyStyle) 排版一致，避免卷页时行距跳变
+                    // 与 PageRenderer 的 Text(style=bodyStyle) 排版一致，避免卷页时行距跳变；
                     // 约束含 minWidth（对齐 Compose Text 的 Modifier.fillMaxWidth()），
                     // 保证 TextAlign.Justify 等对齐方式结果一致
                     val layout = if (unit.lineHeightExtraPx > 0f && measurer != null) {
@@ -624,7 +611,7 @@ fun renderPageBitmap(
                         val baseStyle = if (unit.continuation) pageStyle.body.copy(textIndent = null) else pageStyle.body
                         val adjustedStyle = baseStyle.copy(
                             lineHeight = (pageStyle.body.lineHeight.value +
-                                density.run { unit.lineHeightExtraPx.toSp().value }).sp
+                                with(density) { unit.lineHeightExtraPx.toSp().value }).sp
                         )
                         val text = if (mode == "zh") unit.cnText.ifBlank { unit.enText.orEmpty() }
                             else (unit.enText ?: unit.cnText)
@@ -646,36 +633,21 @@ fun renderPageBitmap(
                             constraints = Constraints(minWidth = cw, maxWidth = cw)
                         )
                     } else unit.mainLayout
-                    // en 模式双语对：对齐 BilingualParagraph 的 4dp top/bottom padding（roundToPx）
-                    if (hasTranslation) {
-                        cursorY += padPx(ReaderMetrics.BILINGUAL_PAD_DP)
-                    }
-                    layout?.let {
-                        drawLayout(canvas, it, bodyPaint, cursorY)
-                        cursorY += it.size.height.toFloat()
-                    }
-                    if (hasTranslation) {
-                        cursorY += padPx(ReaderMetrics.BILINGUAL_PAD_DP)
-                        // 气泡指示器（对齐 BilingualParagraph 的 18×6dp 小矩形），
-                        // 每个带译文的片段段尾都显示（ADR-004），与 Compose 页一致
-                        val bubbleW = padPx(ReaderMetrics.BUBBLE_WIDTH_DP)
-                        val bubbleH = padPx(ReaderMetrics.BUBBLE_HEIGHT_DP)
-                        val bubbleX = contentWidthPx - bubbleW - padPx(ReaderMetrics.BUBBLE_END_DP)
-                        val bubbleY = (cursorY - bubbleH - padPx(ReaderMetrics.BUBBLE_BOTTOM_DP)).toInt()
+                    layout?.let { drawLayout(canvas, it, bodyPaint, block.contentTopPx) }
+                    // 气泡指示器（18×6dp 小矩形，圆角 3dp）：每个带译文的片段段尾都显示
+                    // （ADR-004），几何来自计划，与 Compose 页同一组常量
+                    block.bubble?.let { bubble ->
                         val bubblePaint = Paint().apply {
                             isAntiAlias = true
                             color = palette.bubble
                         }
-                        // 圆角半径对齐 BilingualParagraph 的 RoundedCornerShape(3.dp)
-                        val radius = padPx(3)
                         canvas.drawRoundRect(
-                            bubbleX.toFloat(), bubbleY.toFloat(),
-                            (bubbleX + bubbleW).toFloat(), (bubbleY + bubbleH).toFloat(),
-                            radius.toFloat(), radius.toFloat(),
+                            bubble.leftPx, bubble.topPx,
+                            bubble.leftPx + bubble.widthPx, bubble.topPx + bubble.heightPx,
+                            bubble.cornerRadiusPx, bubble.cornerRadiusPx,
                             bubblePaint
                         )
                     }
-                    cursorY += if (unit.splitFirst || isLastPara) 0f else paragraphSpacingInt.toFloat()
                 }
             }
         }

@@ -48,7 +48,8 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/pagination/TextPaginator.kt` — `PageStyle`、`FlowItem`、`PageUnit`、`TextPage`、`ChapterPaginator`；按当前样式排版并支持 offset→页映射
     - `reader/pagination/CjkJustify.kt` — `CjkJustifier`：两端对齐的唯一数据源（中英通用，对齐 Legado `textFullJustify`），以 Em 级 `SpanStyle.letterSpacing` 均摊行余量（无空格 CJK 行逐字、含空格行逐空格）；span 参与测量，换行/页高/选词/仿真位图全部不受影响
     - `reader/pagination/BookWindow.kt` — 当前章 ±1 的排版窗口和扁平页索引
-    - `reader/pagination/BookPager.kt` — HorizontalPager、PageRenderer、覆盖/卷页位图
+    - `reader/pagination/PageLayoutPlan.kt` — **一页版面几何的唯一实现**：`PageLayoutPlan`/`PageLayoutPlanner` 把「每块画在哪、多高、块后段距、气泡矩形」算成纯数据，Compose 的 `PageRenderer` 与卷页位图 `renderPageBitmap` 都消费它；口径是**渲染口径**（roundToPx，与 `Modifier.padding` 一致），与排版器的测量口径（浮点 `DP*density`）刻意不同
+    - `reader/pagination/BookPager.kt` — HorizontalPager、PageRenderer（按版面计划渲染）、覆盖/卷页位图（按版面计划绘制）
     - `reader/pagination/PageCurl.kt` — Legado 仿真卷页几何移植
     - `reader/pagination/ReaderFonts.kt` — 字体解析单一数据源：内置开源字体目录（多镜像下载）、系统字体映射、SAF 导入 URI 解析；中英槽位按字形过滤
     - `reader/pagination/ReaderMetrics.kt` — 排版、标题、双语 padding、气泡尺寸共享常量
@@ -123,7 +124,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 
 ## 复用与内聚
 
-- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，中文两端对齐用 `CjkJustifier`，章节状态颜色/提示用 `chapterStatusColor`/`chapterStatusHint`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`（offset 归一化走 `ReadingPosition.clampOffset`），书架进度用 `BookShelfItem.progressOf`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，选词弹窗定位用 `SelectionPopupPositionProvider`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，阅读背景档位用 `ReaderBgPresets.all`/`isDark`，前台服务样板用 `log/ForegroundServiceSupport`，设备信息用 `LogUtils.deviceInfoText`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
+- 共享概念只能有一个定义：颜色用 `ReaderPalette`，几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，**页面版面几何用 `PageLayoutPlanner`**，中文两端对齐用 `CjkJustifier`，章节状态颜色/提示用 `chapterStatusColor`/`chapterStatusHint`，内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`（offset 归一化走 `ReadingPosition.clampOffset`），书架进度用 `BookShelfItem.progressOf`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，选词弹窗定位用 `SelectionPopupPositionProvider`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，阅读背景档位用 `ReaderBgPresets.all`/`isDark`，前台服务样板用 `log/ForegroundServiceSupport`，设备信息用 `LogUtils.deviceInfoText`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
 - 错误路径（`catch` / `Result.exceptionOrNull()`）除了写 UI 状态外，应调用 `AppLog.put(msg, throwable)` 落日志，便于用户在「设置 → 调试 → 日志」中定位 bug；不要散落 `android.util.Log` 或 `printStackTrace`。
 - 修改跨组件概念前先搜索其单一数据源；不要在组件内复制常量或重新解析章节文本。
 - 共享 Composable 优先复用 `ReadingChapterTitle`、`ReadingParagraphItem`、`BilingualParagraph`；新增视觉差异应通过参数表达，而不是复制组件。

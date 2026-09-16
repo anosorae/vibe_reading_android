@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.domain.parser.IllustrationLink
+import com.vibereading.app.ui.reader.pagination.ReaderMetrics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -95,7 +96,10 @@ fun ReadingIllustrationBlock(
             baseModifier
                 .fillMaxWidth()
                 .aspectRatio(
-                    (link.widthPx.toFloat() / link.heightPx.toFloat()).coerceIn(0.2f, 5f)
+                    (link.widthPx.toFloat() / link.heightPx.toFloat()).coerceIn(
+                        ReaderMetrics.IMAGE_ASPECT_RATIO_MIN,
+                        ReaderMetrics.IMAGE_ASPECT_RATIO_MAX
+                    )
                 )
                 .background(Color.Gray.copy(alpha = 0.12f))
         ) {

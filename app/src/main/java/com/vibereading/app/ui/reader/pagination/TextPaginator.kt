@@ -562,11 +562,19 @@ class ChapterPaginator(
     }
 
     /** 标题块高度：顶部留白 + 卷名 + 章节名（与 PageTitleBlock 一致，无徽章）。 */
+    /**
+     * 标题块高度（**测量口径**：`DP * density` 浮点）。
+     *
+     * 与渲染口径（[PageLayoutPlanner.titleBlockHeightPx] 的 roundToPx）刻意不同：
+     * 测量期少留 <1px 只会让段落更早落页，不会漏排；反之若测量用 roundToPx、
+     * 渲染用浮点，累加后会出现「排版说放得下、渲染溢出」的底行被裁。渲染侧的唯一
+     * 实现是版面计划，本函数只服务分页。
+     */
     private fun measureTitleHeight(sectionLayout: TextLayoutResult?, titleLayout: TextLayoutResult?): Float {
         val sectionH = sectionLayout?.size?.height?.toFloat()
             ?.plus(ReaderMetrics.SECTION_TITLE_GAP_DP * density) ?: 0f  // section→title 间距 = 8dp
         val titleH = titleLayout?.size?.height?.toFloat() ?: 0f
-        return ReaderMetrics.TITLE_TOP_DP * density + sectionH + titleH + ReaderMetrics.TITLE_BOTTOM_DP * density  // 顶部无留白，底部间距 = 44dp
+        return ReaderMetrics.TITLE_TOP_DP * density + sectionH + titleH + ReaderMetrics.TITLE_BOTTOM_DP * density
     }
 
     companion object {
@@ -576,7 +584,10 @@ class ChapterPaginator(
          */
         fun fitImage(imageW: Int, imageH: Int, maxW: Float, maxH: Float): Pair<Float, Float> {
             if (imageW <= 0 || imageH <= 0 || maxW <= 0f || maxH <= 0f) {
-                return maxW.coerceAtLeast(1f) to (maxW.coerceAtLeast(1f) * 0.75f).coerceAtMost(maxH.coerceAtLeast(1f))
+                val fallbackW = maxW.coerceAtLeast(1f)
+                val fallbackH = (fallbackW * ReaderMetrics.IMAGE_FALLBACK_ASPECT_RATIO)
+                    .coerceAtMost(maxH.coerceAtLeast(1f))
+                return fallbackW to fallbackH
             }
             val scale = minOf(maxW / imageW, maxH / imageH)
             return (imageW * scale).coerceAtLeast(1f) to (imageH * scale).coerceAtLeast(1f)

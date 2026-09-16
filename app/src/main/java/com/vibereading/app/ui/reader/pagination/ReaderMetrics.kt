@@ -17,11 +17,27 @@ object ReaderMetrics {
     /** 双语对英文段上下 padding（单边） */
     const val BILINGUAL_PAD_DP = 4
 
+    /**
+     * 插图尺寸非法（链接里声明为 0 或负）时的兜底宽高比（4:3）。
+     * 分页适配（fitImage）用它给出一个可见的占位尺寸。
+     */
+    const val IMAGE_FALLBACK_ASPECT_RATIO = 0.75f
+
+    /**
+     * 滚动模式插图宽高比夹取区间：宽高比 = 宽/高，超出区间会让极端长图/宽图
+     * 撑爆一屏或塌缩成不可见。分页模式不适用——那里是「整图缩进给定盒子」。
+     */
+    const val IMAGE_ASPECT_RATIO_MIN = 0.2f
+    const val IMAGE_ASPECT_RATIO_MAX = 5f
+
     /** 原文气泡尺寸 / 定位 */
     const val BUBBLE_WIDTH_DP = 18
     const val BUBBLE_HEIGHT_DP = 6
     const val BUBBLE_END_DP = 4
     const val BUBBLE_BOTTOM_DP = 2
+
+    /** 原文气泡圆角（BilingualParagraph 的 RoundedCornerShape 与卷页位图 drawRoundRect 共用） */
+    const val BUBBLE_CORNER_RADIUS_DP = 3
     /** 原文气泡隐形触控区宽度（视觉气泡 18×6dp 太小，水平扩展至 44dp 保证易点按） */
     const val BUBBLE_TOUCH_TARGET_DP = 44
 

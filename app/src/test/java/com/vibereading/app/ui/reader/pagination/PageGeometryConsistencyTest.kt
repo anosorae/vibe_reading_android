@@ -4,15 +4,11 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.text.TextMeasurer
@@ -54,7 +50,7 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34])
+@Config(sdk = [34], qualifiers = "w411dp-h914dp-420dpi")
 class PageGeometryConsistencyTest {
 
     @get:Rule
@@ -120,10 +116,9 @@ class PageGeometryConsistencyTest {
         val probe = firstPara.cnText.take(6)
 
         compose.setContent {
-            CompositionLocalProvider(LocalDensity provides densityObj) {
-                // fillMaxSize 而非 requiredSize：测试窗口可能小于屏幕尺寸，
-                // requiredSize 会把内容居中（原点变负），而本用例要的是内容区原点。
-                Box(Modifier.fillMaxSize()) {
+            // 窗口尺寸来自 @Config qualifiers（≈1079×2399 px @2.625），
+            // fillMaxSize 即内容区所在屏幕；不用 requiredSize，避免超出窗口被居中。
+            Box(Modifier.fillMaxSize()) {
                     PageRenderer(
                         units = units,
                         mode = "zh",
@@ -135,7 +130,6 @@ class PageGeometryConsistencyTest {
                         navBarPx = navBarPx,
                         contentWidthPx = geometry().contentWidthPx.toInt()
                     )
-                }
             }
         }
         compose.waitForIdle()
@@ -165,23 +159,25 @@ class PageGeometryConsistencyTest {
      */
     @Test
     fun titleBlockHeight_differsOnlyBySectionGap() {
-        var withoutSection by mutableStateOf(0)
-        var withSection by mutableStateOf(0)
         val palette = ReaderPalette.of(isDark = false)
 
+        // 用语义节点尺寸读块高（px）：不在布局期写 state，避免 onSizeChanged 触发
+        // 额外布局往返——那在全量跑测试集时会退化成 Compose 空闲检测超时（AppNotIdle）。
         compose.setContent {
-            CompositionLocalProvider(LocalDensity provides densityObj) {
-                Box(Modifier.requiredSize(with(densityObj) { screenW.toDp() }, 2000.dp)) {
-                    Box(Modifier.onSizeChanged { withoutSection = it.height }) {
-                        ReadingChapterTitle(section = null, title = "第一章 测试标题", palette = palette, pageStyle = style)
-                    }
-                    Box(Modifier.onSizeChanged { withSection = it.height }) {
-                        ReadingChapterTitle(section = "第一卷", title = "第一章 测试标题", palette = palette, pageStyle = style)
-                    }
+            // 窗口宽度来自 @Config qualifiers（≈1079px）：太窄标题会折行，块高就不再是
+            // 「TOP + 单行标题 + BOTTOM」这个待验证的式子
+            Box(Modifier.fillMaxSize()) {
+                Box(Modifier.testTag(TAG_NO_SECTION)) {
+                    ReadingChapterTitle(section = null, title = "第一章 测试标题", palette = palette, pageStyle = style)
+                }
+                Box(Modifier.testTag(TAG_WITH_SECTION)) {
+                    ReadingChapterTitle(section = "第一卷", title = "第一章 测试标题", palette = palette, pageStyle = style)
                 }
             }
         }
-        compose.waitForIdle()
+
+        val withoutSection = compose.onNodeWithTag(TAG_NO_SECTION).fetchSemanticsNode().size.height
+        val withSection = compose.onNodeWithTag(TAG_WITH_SECTION).fetchSemanticsNode().size.height
 
         val gapPx = with(densityObj) { ReaderMetrics.SECTION_TITLE_GAP_DP.dp.roundToPx() }
         val topPx = with(densityObj) { ReaderMetrics.TITLE_TOP_DP.dp.roundToPx() }
@@ -261,6 +257,88 @@ class PageGeometryConsistencyTest {
                 kotlin.math.abs(page.usedHeightPx - expected) <= 1f
             )
         }
+    }
+
+    // ── 3b. 版面计划自身的契约（纯函数，逐块断言） ──
+
+    /**
+     * [PageLayoutPlanner] 的段距规则与块序契约：段距为 0 的三种情形（标题块、末个可间距块、
+     * 被拆开段落的首片段）必须精确，块顶必须紧接上一块底 + 段距。
+     *
+     * 这是「共享计划」这一新共享点的规格测试——只测渲染结果无法覆盖它：
+     * 计划若给末块多留一个段距，两套渲染器会**一致地**多留，位图/Compose 对照仍通过，
+     * 但页面底部会凭空多出间距（真实可见的回归）。
+     */
+    @Test
+    fun planSpacingRules_pinZeroSpacingCasesAndBlockSequence() {
+        val chapter = Chapter(
+            id = 1L, bookId = 1, title = "第一章", section = "第一卷", chapterIndex = 0,
+            content = (1..40).joinToString(PARA_SEP) { "第${it}段正文，" + "内容".repeat(40) + "。" }
+        )
+        val spacingPx = with(densityObj) { style.paragraphSpacingPx.toDp().roundToPx() }.toFloat()
+        val paginator = ChapterPaginator(
+            chapterId = chapter.id,
+            items = BookWindow.buildChapterItems(chapter, "zh"),
+            style = style,
+            mode = "zh",
+            contentWidthPx = geometry().contentWidthPx,
+            contentHeightPx = geometry().contentHeightPx,
+            measurer = newMeasurer(),
+            density = density
+        )
+        var sawSplitFragment = false
+
+        paginator.pages.forEachIndexed { pageIndex, page ->
+            val units = page.units
+            val blocks = PageLayoutPlanner.plan(
+                units = units,
+                style = style,
+                density = densityObj,
+                contentWidthPx = geometry().contentWidthPx,
+                mode = "zh"
+            )
+            assertEquals("一页一块，块数与单元数一致", units.size, blocks.size)
+
+            // 块序：块顶 == 上一块底 + 上一块段距
+            blocks.forEachIndexed { i, b ->
+                if (i > 0) {
+                    assertEquals(
+                        "第 $pageIndex 页第 $i 块块顶必须紧接上一块底 + 段距",
+                        blocks[i - 1].bottomPx + blocks[i - 1].spacingBelowPx,
+                        b.yPx,
+                        0.01f
+                    )
+                }
+            }
+
+            val lastSpacedIdx = units.indexOfLast { it is PageUnit.Para || it is PageUnit.Image }
+            units.forEachIndexed { i, unit ->
+                if (unit is PageUnit.Para && unit.splitFirst) sawSplitFragment = true
+                val expected = when {
+                    unit is PageUnit.Title -> 0f          // 标题块自带底部间距
+                    i == lastSpacedIdx -> 0f              // 末个可间距块（realUsed 口径）
+                    unit is PageUnit.Para && unit.splitFirst -> 0f // 与续段视觉相连
+                    unit is PageUnit.Para || unit is PageUnit.Image -> spacingPx
+                    else -> 0f
+                }
+                assertEquals(
+                    "第 $pageIndex 页第 $i 块的段距（${unit::class.simpleName}）",
+                    expected,
+                    blocks[i].spacingBelowPx,
+                    0.01f
+                )
+            }
+
+            // 计划总高不得溢出内容区：溢出即底行被裁（PageRenderer 的无界高度 Layout
+            // 允许微溢到 Box padding，但整页溢出内容区就是排版错误了）。
+            // 不与排版器 usedHeightPx 比相等：两者口径刻意不同（测量期浮点 vs 渲染期
+            // roundToPx），每处段距差最多 0.25px，差距随段数累积，比相等是错的断言。
+            assertTrue(
+                "第 $pageIndex 页计划总高 ${blocks.last().bottomPx} 不得溢出内容区 ${geometry().contentHeightPx}",
+                blocks.last().bottomPx <= geometry().contentHeightPx + 1f
+            )
+        }
+        assertTrue("语料应产生跨页拆分片段以覆盖 splitFirst 分支", sawSplitFragment)
     }
 
     // ── 4. 原文气泡矩形：位图侧必须与 BilingualParagraph 使用同一组常量 ──
@@ -477,6 +555,12 @@ class PageGeometryConsistencyTest {
     }
 
     private companion object {
+        const val TAG_NO_SECTION = "title-no-section"
+        const val TAG_WITH_SECTION = "title-with-section"
+
+        /** 段落分隔符（章节字符串里的空行契约）。 */
+        const val PARA_SEP = "\n\n"
+
         /** 插图测试用的纯色标记（不与页面背景/文字色冲突）。 */
         const val IMAGE_MARKER = 0xFF00FF00.toInt()
 

@@ -161,7 +161,7 @@ private fun BoxScope.ChineseBubble(
                 )
         ) {
             Surface(
-                shape = RoundedCornerShape(3.dp),
+                shape = RoundedCornerShape(ReaderMetrics.BUBBLE_CORNER_RADIUS_DP.dp),
                 color = palette.bubble,
                 modifier = Modifier.fillMaxSize()
             ) {}

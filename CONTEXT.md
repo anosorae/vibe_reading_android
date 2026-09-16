@@ -55,6 +55,7 @@
 | **手柄反转 (Handle Reverse)** | 拖拽手柄越过对面手柄时自动交换角色：START 变为 END、END 变为 START，原拖拽手势不中断，用户拖拽的始终是活动端 | 固定手柄 |
 | **查词 (Dict Lookup)** | 工具栏「查词」→ 离线查询内嵌 ECDICT 库 → 弹窗显示音标/词性/中文释义；未收录时提示（中文词提示"仅支持英文查词"） | 选词 |
 | **词典库 (Dict Database)** | 内嵌 ECDICT 精简版 SQLite（约 50 万常用词条，只含 word/phonetic/translation/pos 四列）；构建时 gzip 预压缩为 `assets/dict/ecdict.dict`，首次查词解压到内部存储 | 在线词典 |
+| **词条名 (Word vs Lemma)** | 两个模型刻意不合并：`DictEntry.word` 是 ECDICT **精确查得的词形**（用户选中的那个形式）；`WordExplanation.lemma` 是 LLM 给出的**规范化词条**（基本形式，词组场景保留完整词组）。同理 `DictEntry.phonetic/pos` 可为空（源数据可能缺失），`WordExplanation` 的对应字段非空（prompt 要求未知填空串）——nullability 差异是语义差异，不是重复定义 | 统一为一个词典模型（已否决） |
 | **单词解释 (Word Explanation)** | 选词工具栏「解释」按钮调用 LLM（非流式）返回 `WordExplanation`（音标/词性/释义/例句等 JSON）；与离线「查词」并列，依赖已配置的 API Key | 查词 |
 | **LLM 配置档案 (LLM Profile)** | `llm_profiles` 表中的翻译服务配置（名称/API Key/API Base/模型/单章字符上限/最大输出Token/思考模式/采样温度/Top P 等），多档案共存，`isActive` 标记当前生效档案；`LlmSettings` 是其翻译/连接测试使用的运行时子集 | 单一全局配置 |
 | **应用日志 (App Log)** | 运行时事件日志：内存环形缓冲（`AppLog`，上限 100 条）+ 异步文件日志（`LogUtils`，`<externalCacheDir>/logs/`）；错误路径统一调用 `AppLog.put` 落日志，用户经「设置 → 调试 → 日志」查看 | 崩溃日志 |

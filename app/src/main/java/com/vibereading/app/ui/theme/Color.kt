@@ -68,36 +68,49 @@ object VibeColors {
 
 // 黛蓝 (Indigo) 浅色 —— 默认档。
 //
-// 取值对齐书架视觉基线（docs/ADR-006-bookshelf-visual-baseline.md）：
-// `Cream`/`ContainerLow`/`ContainerHigh`/`Charcoal` 直接取自设计稿实测值。
-// 唯一偏离设计稿的是 `Accent`：设计稿的 #1091D2 当文字只有 3.3:1，过不了本文件的
-// 4.5:1 门槛，所以取 #08759F（在 #EEF6FE 上 4.63:1）—— 比原 #0879AD 只深 4%，
-// 肉眼与设计稿的蓝几乎同色，但当 `primary` 被当正文文字用时仍然达标。
+// 取值对齐全局设计规范（Modern Minimal + iOS-inspired + Soft Card UI）：
+// 背景 #F6F9FC、卡片纯白、主文字 #101828、次级文字 #667A99、分隔线 #E7EDF4、主色 #0A84FF。
+// 两处刻意偏离规范原值（本文件的对比度约束是正文 ≥4.5:1）：
+// 1. `Accent`：规范蓝 #0A84FF 当文字只有 3.45:1，取同色相加深的 #0A6FDE（压 #F6F9FC 4.58:1）
+//    —— 肉眼仍是「系统蓝」，但当 `primary` 被当正文/选中态文字用时达标（先例：#1091D2 → #08759F）；
+// 2. `WarmGray`：规范次级文字 #667A99 压白卡只有 4.37:1，取 #5C6F8F（白卡 5.09:1），
+//    色相同为蓝灰，仅加深一档。
 object IndigoColors {
     val White = Color(0xFFFFFFFF)
-    val Cream = Color(0xFFEEF6FE)       // background / surface：设计稿页面底色
-    val SurfaceVariant = Color(0xFFE7F0F7)
-    val ContainerLow = Color(0xFFF6FAFE)     // 书架卡片 / 悬浮底栏
-    val ContainerHigh = Color(0xFFE4EEF8)    // 圆钮 / 进度槽 / 状态徽标底
-    val ContainerHighest = Color(0xFFDDEAF3)
-    val Sand = Color(0xFFC8D8E5)
-    val Outline = Color(0xFF647B8C)
-    val Charcoal = Color(0xFF0A1E33)         // 主文字墨色：设计稿是深藏青，不是暖黑
-    val WarmGray = Color(0xFF536D7E)
-    val Accent = Color(0xFF08759F)
-    val AccentLight = Color(0xFF7CC8E8)
-    val AccentContainer = Color(0xFFE6F4FE)  // 底栏选中胶囊底
-    val OnAccentContainer = Color(0xFF063A52)
-    val Secondary = Color(0xFF4A6F85)        // 当文字用在浅底上：原 #547B91 只有 4.17:1，不达标
-    val SecondaryContainer = Color(0xFFDDEBF3)
-    val OnSecondaryContainer = Color(0xFF183B4C)
-    val Tertiary = Color(0xFF4E6E83)
+    val Cream = Color(0xFFF6F9FC)       // background / surface：规范页面底色（浅灰蓝）
+    val SurfaceVariant = Color(0xFFEFF3F9)
+    val ContainerLow = Color(0xFFFFFFFF)      // 卡片 / 悬浮底栏：规范纯白卡片
+    val ContainerHigh = Color(0xFFEEF3FA)     // 圆钮 / 进度槽 / 状态徽标底
+    val ContainerHighest = Color(0xFFE7EDF4)
+    val Sand = Color(0xFFE7EDF4)        // outlineVariant（分隔线，规范值，低对比为设计意图）
+    val Outline = Color(0xFF667A99)     // outline：规范次级文字值复用，浅底 4.14:1（图形门槛 3:1）
+    val Charcoal = Color(0xFF101828)         // 主文字：规范值
+    val WarmGray = Color(0xFF5C6F8F)
+    val Accent = Color(0xFF0A6FDE)
+    val AccentLight = Color(0xFF5EB2FF)
+    val AccentContainer = Color(0xFFE8F2FF)  // 底栏选中胶囊底（淡蓝）
+    val OnAccentContainer = Color(0xFF0B3B66)
+    val Secondary = Color(0xFF4C6E92)
+    val SecondaryContainer = Color(0xFFE3EDF6)
+    val OnSecondaryContainer = Color(0xFF1B3A55)
+    val Tertiary = Color(0xFF3E7C4F)
     val OnTertiary = Color(0xFFFFFFFF)
-    val TertiaryContainer = Color(0xFFDCEAF3)
-    val OnTertiaryContainer = Color(0xFF1D3B4A)
+    val TertiaryContainer = Color(0xFFE4F0E7)
+    val OnTertiaryContainer = Color(0xFF1C4227)
     val RedMuted = Color(0xFFB54842)
     val RedContainer = Color(0xFFF9DEDB)
     val OnRedContainer = Color(0xFF5E201C)
+}
+
+/**
+ * 全局功能色（低饱和绿/橙）：统计页数字与图标、设置页分区图标等 chrome 场景使用。
+ * 约束：压白卡当文字 ≥4.5:1（绿 5.00:1 / 橙 4.91:1），淡色档只作图标圆底，不承担文字对比。
+ */
+object FunctionalColors {
+    val Green = Color(0xFF3E7C4F)
+    val GreenLight = Color(0xFFE4F0E7)
+    val Orange = Color(0xFFA85E1A)
+    val OrangeLight = Color(0xFFF7ECDF)
 }
 
 object MossColors {

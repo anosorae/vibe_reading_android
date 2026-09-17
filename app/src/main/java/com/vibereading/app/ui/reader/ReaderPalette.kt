@@ -1,8 +1,10 @@
 package com.vibereading.app.ui.reader
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.VibeDarkColors
+import kotlin.math.pow
 
 /**
  * 阅读器语义色板：把「isDark 亮/暗」三元集中一处，正文/标题/气泡/弹窗各处共用，
@@ -84,3 +86,21 @@ fun readerChromeColors(isDark: Boolean): ReaderChromeColors = if (isDark) {
         onAccent = VibeColors.White
     )
 }
+
+/**
+ * 阅读器交互控件的主题强调色变体：同一个主题色在阅读器的**暖米纸面**上比在 App 的
+ * 冷白卡片上显深（冷暖对比放大了深色感），向白提一档恢复观感。
+ * 底栏图标/标签/滑块与顶栏中英切换的选中胶囊都用这个变体（白字压提亮后的蓝
+ * ≈ iOS 白字压系统蓝的观感）。只对「深」强调色生效（亮度 < 0.35）；粉彩亮色
+ * （深色主题档的 primary）与深色阅读底保持原值——它们本来就不显深，再提亮反而发灰。
+ */
+fun readerControlAccent(accent: Color, isDark: Boolean): Color {
+    if (isDark) return accent
+    val lum = 0.2126f * srgbToLinear(accent.red) +
+        0.7152f * srgbToLinear(accent.green) +
+        0.0722f * srgbToLinear(accent.blue)
+    return if (lum < 0.35f) lerp(accent, Color.White, 0.16f) else accent
+}
+
+private fun srgbToLinear(c: Float): Float =
+    if (c <= 0.04045f) c / 12.92f else ((c + 0.055f) / 1.055f).pow(2.4f)

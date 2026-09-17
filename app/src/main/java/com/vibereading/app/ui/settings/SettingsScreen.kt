@@ -32,6 +32,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.vibereading.app.ui.bookshelf.ShelfMetrics
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -91,7 +92,6 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(if (showTopBar) 4.dp else 12.dp))
-            SettingsIdentityCard(onClick = onOpenAbout)
             ThemeSettingsSection(
                 theme = state.theme,
                 onThemeModeChange = vm::updateThemeMode,
@@ -122,7 +122,14 @@ fun SettingsScreen(
                 onCopyUrl = { clipboard.setText(AnnotatedString(it)) }
             )
             DebugSection(onOpenLogs = onOpenLogs)
-            Spacer(Modifier.height(28.dp))
+            SettingsIdentityCard(onClick = onOpenAbout, showWaveDecoration = true)
+            // AppShell 的悬浮底栏覆盖在内容上方；为最后一项预留完整的滚动安全区。
+            Spacer(
+                Modifier.height(
+                    if (showTopBar) 28.dp
+                    else ShelfMetrics.NavBarHeight + ShelfMetrics.NavBarBottomGap
+                )
+            )
         }
     }
 }

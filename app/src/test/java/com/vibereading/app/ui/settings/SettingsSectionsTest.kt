@@ -37,9 +37,12 @@ class SettingsSectionsTest {
         }
 
         compose.onNodeWithText("外观").assertIsDisplayed()
+        compose.onNodeWithText("自定义界面显示效果").assertIsDisplayed()
+        compose.onNodeWithText("主题模式").assertIsDisplayed()
         compose.onNodeWithText("跟随系统").assertIsDisplayed()
         compose.onNodeWithText("浅色").assertIsDisplayed()
         compose.onNodeWithText("深色").assertIsDisplayed()
+        compose.onNodeWithText("主题色").assertIsDisplayed()
         compose.onNodeWithContentDescription("主题色：黛蓝").assertIsDisplayed()
         compose.onAllNodesWithText("青简").assertCountEquals(0)
     }
@@ -61,6 +64,7 @@ class SettingsSectionsTest {
         }
 
         compose.onNodeWithText("翻译与 AI").assertIsDisplayed()
+        compose.onNodeWithText("配置 AI 模型与翻译行为").assertIsDisplayed()
         compose.onNodeWithText("LLM 配置").assertIsDisplayed()
         compose.onNodeWithText("Qwen3.6").assertIsDisplayed()
         compose.onAllNodesWithText("关于").assertCountEquals(0)
@@ -86,8 +90,22 @@ class SettingsSectionsTest {
         }
 
         compose.onNodeWithText("阅读体验").assertIsDisplayed()
+        compose.onNodeWithText("优化你的阅读使用场景").assertIsDisplayed()
         compose.onNodeWithText("局域网网页阅读").assertIsDisplayed()
         compose.onNodeWithText("其他").assertIsDisplayed()
+        compose.onNodeWithText("应用日志等工具").assertIsDisplayed()
         compose.onNodeWithText("日志").assertIsDisplayed()
+    }
+
+    @Test
+    fun `identity card exposes about entry and version`() {
+        compose.setContent {
+            MaterialTheme {
+                SettingsIdentityCard(onClick = {}, showWaveDecoration = true)
+            }
+        }
+
+        compose.onNodeWithText("译读").assertIsDisplayed()
+        compose.onNodeWithText("用 AI 让阅读没有语言的边界").assertIsDisplayed()
     }
 }

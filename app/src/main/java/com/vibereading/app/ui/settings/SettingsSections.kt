@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -71,13 +72,13 @@ internal fun ThemeSettingsSection(
     onThemeModeChange: (ThemeMode) -> Unit,
     onAccentChange: (AppAccent) -> Unit
 ) {
-    SettingsSectionHeader(
+    SectionCard(
         title = "外观",
+        subtitle = "自定义界面显示效果",
         icon = Icons.Filled.Palette,
         iconTint = MaterialTheme.colorScheme.primary
-    )
-    SectionCard {
-        SettingsRowLabel("主题模式")
+    ) {
+        SettingsRowLabel("主题模式", showChevron = true)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -99,13 +100,13 @@ internal fun ThemeSettingsSection(
                         else MaterialTheme.colorScheme.onSurface
                     )
                 ) {
-                    Text(label, fontSize = 13.sp, maxLines = 1)
+                        Text(label, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 1)
                 }
             }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-        SettingsRowLabel("主题色")
+        SettingsRowLabel("主题色", showChevron = true)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -137,12 +138,12 @@ internal fun LlmOverviewSection(
     onOpenTranslationParams: () -> Unit,
     onToggleExplainThinking: (Boolean) -> Unit
 ) {
-    SettingsSectionHeader(
+    SectionCard(
         title = "翻译与 AI",
+        subtitle = "配置 AI 模型与翻译行为",
         icon = Icons.Filled.Translate,
         iconTint = MaterialTheme.colorScheme.secondary
-    )
-    SectionCard {
+    ) {
         SettingsNavigationRow(
             title = "LLM 配置",
             value = state.profiles.firstOrNull { it.id == state.activeProfileId }?.model
@@ -186,12 +187,12 @@ internal fun WebCompanionSection(
     onToggle: (Boolean) -> Unit,
     onCopyUrl: (String) -> Unit
 ) {
-    SettingsSectionHeader(
+    SectionCard(
         title = "阅读体验",
+        subtitle = "优化你的阅读使用场景",
         icon = Icons.Filled.AutoStories,
         iconTint = MaterialTheme.colorScheme.tertiary
-    )
-    SectionCard {
+    ) {
         SettingsSwitchRow(
             title = "局域网网页阅读",
             subtitle = "同一 Wi-Fi 下的电脑浏览器可阅读本书库",
@@ -230,12 +231,12 @@ internal fun WebCompanionSection(
 
 @Composable
 internal fun DebugSection(onOpenLogs: () -> Unit) {
-    SettingsSectionHeader(
+    SectionCard(
         title = "其他",
+        subtitle = "应用日志等工具",
         icon = Icons.Filled.Settings,
         iconTint = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    SectionCard {
+    ) {
         SettingsNavigationRow(title = "日志", onClick = onOpenLogs)
     }
 }
@@ -368,50 +369,87 @@ internal fun TranslationParamsSection(
 }
 
 @Composable
-private fun SettingsSectionHeader(
-    title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    iconTint: Color
+private fun SectionCard(
+    title: String? = null,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
+    content: @Composable ColumnScope.() -> Unit
 ) {
-    Row(
-        modifier = Modifier.padding(start = 20.dp, top = 18.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(iconTint.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(25.dp))
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun SectionCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp), content = content)
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
+            if (title != null && icon != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .background(iconTint.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(24.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            title,
+                            fontSize = 19.sp,
+                            lineHeight = 23.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (subtitle != null) {
+                            Text(
+                                subtitle,
+                                fontSize = 14.sp,
+                                lineHeight = 18.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+            content()
+        }
     }
 }
 
 @Composable
-private fun SettingsRowLabel(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(vertical = 4.dp)
-    )
+private fun SettingsRowLabel(
+    title: String,
+    showChevron: Boolean = false
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            title,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
+        if (showChevron) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -431,21 +469,23 @@ private fun SettingsNavigationRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
             if (subtitle != null) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
         if (value != null) {
-            Text(
-                value,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text(
+                    value,
+                    fontSize = 16.sp,
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -468,16 +508,17 @@ private fun SettingsSwitchRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

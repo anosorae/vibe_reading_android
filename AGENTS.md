@@ -24,7 +24,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
   - `domain/model/` — 纯 Kotlin 领域模型：`Book`、`BookShelfItem`、`Chapter`、`ReadingPosition`、`ReadingSettings`（含 `LlmSettings`，两者同文件）、`LlmProfile`、`ThemeSettings`、`DictEntry`、`WordExplanation`
   - `domain/parser/` — 纯 Kotlin 解析器，包括 `TxtParser`、`ReadingContentParser`、`EpubParser`（EPUB 导入期一次性转纯文本章节，ADR-002）、`IllustrationLink`（插图链接语法唯一数据源）、`SourceLanguageDetector`（导入期原文语言判定，ADR-003）；负责保留原文段落的 UTF-16 起止 offset
   - `domain/translation/` — `TranslationPreflight`（翻译前置判定纯函数：API Key / 章节长度 / 纯插图章节，单点可测）
-  - `ui/` — Compose：`bookshelf`（书架和封面）、`reader`（阅读器及共享组件）、`settings`（全局设置，含调试/日志入口）、`log`（日志查看器）、`navigation`、`theme`
+  - `ui/` — Compose：`bookshelf`（书架和封面）、`stats`（统计 Tab 页）、`settings`（全局设置，含调试/日志入口）、`components`（设计系统共享组件与 LLM 面板）、`log`（日志查看器）、`navigation`（AppShell 三栏导航）、`reader`（阅读器及共享组件）、`theme`
     - `reader/ReaderScreen.kt` — 阅读器容器、五种翻页交互、生命周期 flush、滚动/分页接线（页面协调）
     - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
     - `reader/ReaderChrome.kt` — 顶栏/底栏/翻译状态面板/章节标签等 chrome 组件
@@ -44,7 +44,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/components/CatalogBottomSheet.kt` — 章节目录底部抽屉
     - `reader/components/PageInfoOverlays.kt` — 分页页眉/页脚浮层（页眉章节名，页脚页码/时间/电量；视觉覆盖层不参与排版）
     - `reader/content/ReadingContent.kt` — 统一章节内容结构（`ReadingContent.fromChapter()`），分页与滚动的共同数据源
-    - `reader/ReaderPalette.kt` — 亮/暗语义色板
+    - `reader/ReaderPalette.kt` — 亮/暗语义色板 + `ReaderChromeColors`（阅读器 chrome 固定配色，不随全局主题）
     - `reader/ReaderGeometry.kt` — 页面几何和系统栏扣除公式
     - `reader/ChapterStatusUi.kt` — 章节状态到颜色映射
     - `reader/pagination/TextPaginator.kt` — `PageStyle`、`FlowItem`、`PageUnit`、`TextPage`、`ChapterPaginator`；按当前样式排版并支持 offset→页映射
@@ -67,6 +67,22 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - `reference_code/legado-E/` — Legado 开源阅读器参考源码，**只读，禁止修改**。
 - `tools/build_dict_db.py` — 词典库构建脚本（CSV → 四列 SQLite → gzip 资产）
 - `app/proguard-rules.pro` — R8 保留规则（release `minifyEnabled`）；keep Gson 模型 `data.remote.**` 与 `WordExplanation`、Room 实体 `data.local.entity.**`、伴读 DTO `web.**`，dontwarn OkHttp/okio。新增 Gson 反序列化的数据类必须在此加 keep 规则。
+
+## UI 设计系统（2026-09 全局视觉规范）
+
+设计语言：**Modern Minimal + iOS-inspired + Soft Card UI**——浅灰蓝底、白色大圆角卡片、柔和低对比投影、系统蓝主强调 + 低饱和绿/橙功能色，追求留白感，避免传统 Android 设置页的密集工具感。
+
+- **App 外壳（书架/统计/我的 + 详情页）**：
+  - 刻度：页面左右边距 24dp、卡片圆角 24dp、卡片间距 16dp（每卡上下各 8dp）、卡片内容内边距 24dp（分区卡上下 16dp）、控件圆角 12-16dp。
+  - 色板（默认档黛蓝 `IndigoColors`，落进 M3 角色而非硬编码）：背景 #F6F9FC、卡片纯白、主文字 #101828、次级文字 #5C6F8F、分隔线 #E7EDF4、描边 #667A99；主色规范值 #0A84FF，因正文对比度门槛（≥4.5:1）同色相加深为 **#0A6FDE**，次级文字 #667A99 同理加深为 #5C6F8F（先例与理由见 `Color.kt` 注释）。绿/橙功能色用 `FunctionalColors`。
+  - 标准件：内容卡用 `SoftCard`（白卡 + 24dp 圆角 + 柔和投影 + 默认 24dp 内容内边距，通栏装饰传 `PaddingValues(0)`）；开关用 `AppSwitch`（iOS 胶囊）；分区/磁贴图标用 `IconCircle`（线性图标 + 浅色圆形底）。不要另起卡片/开关/图标底样式。
+  - 三栏导航「书架 / 统计 / 我的」由 `AppShell` 的悬浮胶囊底栏承载：选中态 = 蓝色图标 + 蓝色文字 + 淡蓝胶囊高亮。
+  - **书架是刻意的例外**：遵循 ADR-006 密排视觉基线（15dp 边距、小圆角书封、`ShelfTypography` 局部字号刻度），不套 24dp 卡片体系；底栏与书架网格共用 `ShelfMetrics.PagePadding` 对齐线。
+  - 统计页数据全部来自本地真实数据：聚合走 `readingStatsOf()` 纯函数（与书架共用 `getShelfItems()` 数据源、已读章节数同一算法），禁止虚构阅读时长等未采集口径。
+- **阅读器是独立视觉世界（纸面 + 赭色 chrome），不随全局主题 accent 变化**：
+  - chrome 表面（顶/底栏表面与文字、目录抽屉、状态面板）用 `ReaderChromeColors`（只跟阅读背景深浅走）；目录/弹窗/打开过渡的强调色用 `ReaderPalette.accent`（赭色系）。
+  - **交互强调控件例外**：底栏「目录/翻译/重翻/设置」四按钮、顶栏中英文切换选中态、章节滑块用 `themeAccent`（= `MaterialTheme.colorScheme.primary`，用户选的主题色）——「表面固定、强调个性化」。
+  - 阅读页内三个大弹窗（目录/阅读设置/翻译配置）整体包在 `ReaderSheetTheme(isDark)` 里：容器与内部 M3 控件全部换成固定的原木暖纸配色；App 侧同组件仍跑 `VibeReadingTheme`，一份代码两套皮肤。
 
 ## 架构与分层规则
 
@@ -127,7 +143,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 
 ## 复用与内聚
 
-- 共享概念只能有一个定义：颜色用 `ReaderPalette`，**全局主题强调色用 `MaterialTheme.colorScheme.primary`**（禁止按 `AppAccent` 手工重算——深色档会拿到浅色 token；也禁止把 accent 当参数层层穿透），**主题深浅用 `LocalIsDarkTheme`**（不是 `isSystemInDarkTheme()`，themeMode 可能强制），几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，**页面版面几何用 `PageLayoutPlanner`**，中文两端对齐用 `CjkJustifier`，章节状态颜色/提示用 `chapterStatusColor`/`chapterStatusHint`（必须传「自己所在那层表面」的深浅：阅读器正文用 `ReaderBgPresets.isDark`，Material 表面用 `LocalIsDarkTheme`），圆角与排版刻度用 `MaterialTheme.shapes`/`AppTypography`（**书架 3 列密排卡片的局部字号刻度是刻意的例外，用 `ShelfTypography`**），内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`（offset 归一化走 `ReadingPosition.clampOffset`），书架进度用 `BookShelfItem.progressOf`，**书架版面度量用 `ShelfMetrics`**（列数/列宽/已读章节数/百分比/进度条填充五个纯函数都在这里，不要在 Composable 里另算），翻译前置判定用 `TranslationPreflight`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，选词弹窗定位用 `SelectionPopupPositionProvider`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，阅读背景档位用 `ReaderBgPresets.all`/`isDark`，前台服务样板用 `log/ForegroundServiceSupport`，设备信息用 `LogUtils.deviceInfoText`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃）。
+- 共享概念只能有一个定义：颜色用 `ReaderPalette`，**全局主题强调色用 `MaterialTheme.colorScheme.primary`**（禁止按 `AppAccent` 手工重算——深色档会拿到浅色 token；也禁止把 accent 当参数层层穿透），**主题深浅用 `LocalIsDarkTheme`**（不是 `isSystemInDarkTheme()`，themeMode 可能强制），几何用 `ReaderPageGeometry`，排版常量用 `ReaderMetrics`，**页面版面几何用 `PageLayoutPlanner`**，中文两端对齐用 `CjkJustifier`，章节状态颜色/提示用 `chapterStatusColor`/`chapterStatusHint`（必须传「自己所在那层表面」的深浅：阅读器正文与目录抽屉等阅读页内表面按阅读背景深浅（`ReaderBgPresets.isDark` + nightMode 折算），仍挂在 Material 主题上的表面才用 `LocalIsDarkTheme`），圆角与排版刻度用 `MaterialTheme.shapes`/`AppTypography`（**书架 3 列密排卡片的局部字号刻度是刻意的例外，用 `ShelfTypography`**），内容样式用 `PageStyle`，内容结构用 `ReadingContent`，位置用 `ReadingPosition`（offset 归一化走 `ReadingPosition.clampOffset`），书架进度用 `BookShelfItem.progressOf`，**书架版面度量用 `ShelfMetrics`**（列数/列宽/已读章节数/百分比/进度条填充五个纯函数都在这里，不要在 Composable 里另算），翻译前置判定用 `TranslationPreflight`，翻译状态机用 `TranslationCoordinator`，翻译网络服务用 `TranslationService`，选词状态与分词用 `TextSelectionState`/`findWordBoundary`，选词弹窗定位用 `SelectionPopupPositionProvider`，词典访问用 `DictDatabase`，插图链接语法用 `IllustrationLink`，插图/封面文件用 `BookImageStore`，阅读背景档位用 `ReaderBgPresets.all`/`isDark`，前台服务样板用 `log/ForegroundServiceSupport`，设备信息用 `LogUtils.deviceInfoText`，日志用 `AppLog`（内存）/`LogUtils`（文件）/`CrashHandler`（崩溃），App 外壳的设计系统三件套——内容卡 `SoftCard`、胶囊开关 `AppSwitch`、图标圆底 `IconCircle`，阅读器 chrome 固定配色 `ReaderChromeColors` 与弹窗皮肤 `ReaderSheetTheme`（阅读器强调色 `ReaderPalette.accent`、跟主题的交互强调色 `themeAccent`），统计页聚合 `readingStatsOf`。
 - 错误路径（`catch` / `Result.exceptionOrNull()`）除了写 UI 状态外，应调用 `AppLog.put(msg, throwable)` 落日志，便于用户在「设置 → 调试 → 日志」中定位 bug；不要散落 `android.util.Log` 或 `printStackTrace`。
 - 修改跨组件概念前先搜索其单一数据源；不要在组件内复制常量或重新解析章节文本。
 - 共享 Composable 优先复用 `ReadingChapterTitle`、`ReadingParagraphItem`、`BilingualParagraph`；新增视觉差异应通过参数表达，而不是复制组件。

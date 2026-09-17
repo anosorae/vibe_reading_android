@@ -149,7 +149,6 @@ fun BoxScope.ReaderContentOverlays(
         ReaderBottomBar(
             chapters = state.chapters,
             activeChapterId = state.activeChapterId,
-            accentColor = model.themeAccent,
             barColor = model.background,
             isDark = model.isDark,
             isRetryEnabled = activeNeedsTranslation && !state.isStreaming && state.activeChapter?.status in setOf(

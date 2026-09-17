@@ -19,8 +19,9 @@ data class ReaderPalette(
     val popupBorder: Color,     // 弹窗左侧描边
     val selectionHighlight: Color, // 长按选词高亮背景（与气泡同色系，仅背景不影响排版）
     val handleColor: Color,     // 选择手柄颜色（竖线+圆点，跟随主题强调色）
-    // chrome 强调色（底栏按钮/滑块/目录高亮/打开过渡指示器）：取自阅读器自己的色板，
-    // **不随全局主题 accent 变化**——切换黛蓝/苔绿等主题时阅读器内部保持稳定
+    // chrome 强调色（目录抽屉高亮/阅读设置与翻译配置弹窗/打开过渡指示器）：取自阅读器自己的色板，
+    // **不随全局主题 accent 变化**——切换黛蓝/苔绿等主题时阅读器内部保持稳定。
+    // 底栏整条（按钮/滑块/上一章下一章）统一 chrome 次级灰，顶栏中英切换选中态用 themeAccent。
     val accent: Color
 ) {
     companion object {
@@ -90,9 +91,9 @@ fun readerChromeColors(isDark: Boolean): ReaderChromeColors = if (isDark) {
 /**
  * 阅读器交互控件的主题强调色变体：同一个主题色在阅读器的**暖米纸面**上比在 App 的
  * 冷白卡片上显深（冷暖对比放大了深色感），向白提一档恢复观感。
- * 底栏图标/标签/滑块与顶栏中英切换的选中胶囊都用这个变体（白字压提亮后的蓝
- * ≈ iOS 白字压系统蓝的观感）。只对「深」强调色生效（亮度 < 0.35）；粉彩亮色
- * （深色主题档的 primary）与深色阅读底保持原值——它们本来就不显深，再提亮反而发灰。
+ * 目前只有顶栏中英切换的选中胶囊用它（白字压提亮后的蓝 ≈ iOS 白字压系统蓝的观感）。
+ * 只对「深」强调色生效（亮度 < 0.35）；粉彩亮色（深色主题档的 primary）与深色阅读底
+ * 保持原值——它们本来就不显深，再提亮反而发灰。
  */
 fun readerControlAccent(accent: Color, isDark: Boolean): Color {
     if (isDark) return accent

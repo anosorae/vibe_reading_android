@@ -200,7 +200,6 @@ fun ReaderTopToolbar(
 fun ReaderBottomBar(
     chapters: List<Chapter>,
     activeChapterId: Long?,
-    accentColor: Color,
     barColor: Color,
     isDark: Boolean,
     isRetryEnabled: Boolean,
@@ -218,8 +217,6 @@ fun ReaderBottomBar(
     val sliderValue = if (dragging) dragChapter else chapterIndex
     val chrome = readerChromeColors(isDark)
     val labelColor = chrome.mutedText
-    // 图标/标签/滑块用提亮变体：同一主题蓝在暖米纸面上比冷白卡片上显深（见 readerControlAccent）
-    val controlAccent = readerControlAccent(accentColor, isDark)
     Surface(
         color = barColor.copy(alpha = 0.97f),
         contentColor = chrome.text,
@@ -280,8 +277,8 @@ fun ReaderBottomBar(
                                 },
                                 valueRange = 0f..(chapters.size - 1).coerceAtLeast(0).toFloat(),
                                 colors = SliderDefaults.colors(
-                                    thumbColor = controlAccent,
-                                    activeTrackColor = controlAccent,
+                                    thumbColor = labelColor,
+                                    activeTrackColor = labelColor,
                                     inactiveTrackColor = chrome.pillBg
                                 ),
                                 modifier = Modifier.fillMaxWidth().height(28.dp)
@@ -308,16 +305,17 @@ fun ReaderBottomBar(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BottomAction("目录", Icons.Filled.List, controlAccent, onToggleCatalog)
-                BottomAction("翻译", Icons.Filled.Translate, controlAccent, onOpenLlmSettings)
+                // 整条底栏统一 chrome 次级灰（不随主题 accent）；重翻不可用态再压一档透明度
+                BottomAction("目录", Icons.Filled.List, labelColor, onToggleCatalog)
+                BottomAction("翻译", Icons.Filled.Translate, labelColor, onOpenLlmSettings)
                 BottomAction(
                     "重翻",
                     Icons.Filled.Refresh,
-                    if (isRetryEnabled) controlAccent else labelColor,
+                    labelColor,
                     onRetry,
                     enabled = isRetryEnabled
                 )
-                BottomAction("设置", Icons.Filled.Settings, controlAccent, onOpenSettings)
+                BottomAction("设置", Icons.Filled.Settings, labelColor, onOpenSettings)
             }
         }
     }

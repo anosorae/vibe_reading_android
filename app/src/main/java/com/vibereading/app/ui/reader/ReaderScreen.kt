@@ -46,7 +46,6 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     val editModel by vm.editModel.collectAsState()
     val context = LocalContext.current
     val density = LocalDensity.current
-    val accent = MaterialTheme.colorScheme.primary
     val settings = state.readingSettings
     val backgroundValue = if (state.nightMode) ReaderBgPresets.DarkNight
     else ReaderBgPresets.all.getOrElse(settings.bgColorIndex) { ReaderBgPresets.WarmCream }
@@ -54,6 +53,11 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     val isDark = state.nightMode || ReaderBgPresets.isDark(settings.bgColorIndex)
     val paletteValue = remember(isDark) { ReaderPalette.of(isDark) }
     val palette by rememberUpdatedState(paletteValue)
+    // 阅读器 chrome 强调色取自阅读器色板，不随全局主题 accent 变化（独立视觉世界）
+    val accent by rememberUpdatedState(paletteValue.accent)
+    // 底栏四按钮/中英切换/章节滑块这类交互强调控件跟随外部主题色（用户选的个性化色），
+    // 与固定的 chrome 表面形成「纸面稳定、强调个性化」的分工
+    val themeAccent = MaterialTheme.colorScheme.primary
     val isPagerMode = settings.pageFlipMode != ReadingSettings.FLIP_SCROLL
     val anyOverlayVisible = state.toolbarVisible || state.catalogVisible ||
         state.settingsVisible || state.llmSettingsVisible
@@ -217,7 +221,7 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     val catalogGroups = remember(state.chapters) { buildCatalogGroups(state.chapters) }
     val overlayModel = ReaderOverlayModel(
         state, layout, window, pagerState, catalogGroups, opening, isPagerMode, isDark,
-        background, accent, editApiKey, editApiBase, editModel
+        background, accent, themeAccent, editApiKey, editApiBase, editModel
     )
     val gestureKey = ReaderGestureLayoutKey(
         settings.paddingH, settings.paddingV, layout.geometry.statusBarPx, layout.geometry.navBarPx

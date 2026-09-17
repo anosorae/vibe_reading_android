@@ -21,8 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.domain.model.Chapter
+import com.vibereading.app.ui.reader.ReaderChromeColors
 import com.vibereading.app.ui.reader.chapterStatusColor
-import com.vibereading.app.ui.theme.LocalIsDarkTheme
+import com.vibereading.app.ui.reader.readerChromeColors
 
 data class CatalogGroup(
     val section: String?,
@@ -34,9 +35,14 @@ data class CatalogGroup(
 fun CatalogBottomSheet(
     groups: List<CatalogGroup>,
     activeChapterId: Long?,
+    accentColor: Color,
+    isDark: Boolean,
     onChapterClick: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
+    // 目录抽屉属于阅读器视觉世界：配色取阅读器固定 chrome 色板（跟阅读背景深浅走），
+    // 不随全局主题 accent 变化
+    val chrome = readerChromeColors(isDark)
     // 预展开当前章节所在卷
     val activeSection = remember(activeChapterId, groups) {
         groups.find { it.chapters.any { ch -> ch.id == activeChapterId } }?.section
@@ -58,7 +64,7 @@ fun CatalogBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = chrome.sheetBg,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -73,16 +79,17 @@ fun CatalogBottomSheet(
                 Text(
                     "目录",
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = chrome.text
                 )
                 Text(
                     "${groups.sumOf { it.chapters.size }} 章",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = chrome.mutedText
                 )
             }
 
-            Divider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline)
+            Divider(thickness = 0.5.dp, color = chrome.divider)
 
             // Chapter list
             LazyColumn(
@@ -99,6 +106,8 @@ fun CatalogBottomSheet(
                                 section = group.section,
                                 chapterCount = group.chapters.size,
                                 expanded = isExpanded,
+                                accentColor = accentColor,
+                                chrome = chrome,
                                 onToggle = {
                                     expandedSections.value = if (isExpanded) {
                                         expandedSections.value - group.section
@@ -114,6 +123,9 @@ fun CatalogBottomSheet(
                                 ChapterItem(
                                     chapter = chapter,
                                     isActive = chapter.id == activeChapterId,
+                                    accentColor = accentColor,
+                                    chrome = chrome,
+                                    isDark = isDark,
                                     onClick = {
                                         onChapterClick(chapter.id)
                                         onDismiss()
@@ -127,6 +139,9 @@ fun CatalogBottomSheet(
                             ChapterItem(
                                 chapter = chapter,
                                 isActive = chapter.id == activeChapterId,
+                                accentColor = accentColor,
+                                chrome = chrome,
+                                isDark = isDark,
                                 onClick = {
                                     onChapterClick(chapter.id)
                                     onDismiss()
@@ -145,6 +160,8 @@ private fun SectionHeader(
     section: String,
     chapterCount: Int,
     expanded: Boolean,
+    accentColor: Color,
+    chrome: ReaderChromeColors,
     onToggle: () -> Unit
 ) {
     val rotation by animateFloatAsState(
@@ -162,7 +179,7 @@ private fun SectionHeader(
         Text(
             "›",
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
+            color = accentColor,
             modifier = Modifier.rotate(rotation)
         )
         Spacer(Modifier.width(8.dp))
@@ -170,13 +187,13 @@ private fun SectionHeader(
             section,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
+            color = accentColor,
             modifier = Modifier.weight(1f)
         )
         Text(
             "($chapterCount)",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = chrome.mutedText
         )
     }
 }
@@ -185,14 +202,17 @@ private fun SectionHeader(
 private fun ChapterItem(
     chapter: Chapter,
     isActive: Boolean,
+    accentColor: Color,
+    chrome: ReaderChromeColors,
+    isDark: Boolean,
     onClick: () -> Unit
 ) {
-    // 目录抽屉是 Material 表面（容器色取 colorScheme.surface），按**主题深浅**取状态色，
-    // 而不是阅读背景深浅 —— 两者可以不一致（浅色主题 + 深色阅读背景）
-    val statusColor = chapterStatusColor(chapter.status, LocalIsDarkTheme.current)
+    // 目录抽屉属于阅读器视觉世界：状态色按**阅读背景深浅**取（不是全局主题深浅），
+    // 与顶栏圆点、阅读正文同一层表面
+    val statusColor = chapterStatusColor(chapter.status, isDark)
 
     val bgColor = if (isActive) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+        accentColor.copy(alpha = 0.08f)
     } else {
         Color.Transparent
     }
@@ -218,7 +238,7 @@ private fun ChapterItem(
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            color = if (isActive) accentColor else chrome.text,
             modifier = Modifier.weight(1f)
         )
     }

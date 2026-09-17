@@ -45,6 +45,7 @@ import com.vibereading.app.ui.reader.components.SelectionHandles
 import com.vibereading.app.ui.reader.components.SelectionToolbar
 import com.vibereading.app.ui.reader.components.TextSelectionState
 import com.vibereading.app.ui.reader.pagination.BookWindow
+import com.vibereading.app.ui.theme.ReaderSheetTheme
 import androidx.compose.foundation.pager.PagerState
 import kotlinx.coroutines.flow.StateFlow
 
@@ -69,7 +70,10 @@ data class ReaderOverlayModel(
     val isPagerMode: Boolean,
     val isDark: Boolean,
     val background: Color,
+    /** 阅读器固定强调色（目录/弹窗/打开过渡），不随全局主题 */
     val accent: Color,
+    /** 外部主题强调色：底栏四按钮、中英切换、章节滑块这类交互控件用 */
+    val themeAccent: Color,
     val editApiKey: String,
     val editApiBase: String,
     val editModel: String
@@ -127,7 +131,8 @@ fun BoxScope.ReaderContentOverlays(
         modifier = Modifier.align(Alignment.TopCenter)
     ) {
         ReaderTopToolbar(
-            state.bookTitle, state.mode, state.activeChapter?.status, model.background, model.isDark,
+            state.bookTitle, state.mode, state.activeChapter?.status, model.background,
+            model.themeAccent, model.isDark,
             actions::leaveReader, actions::switchMode
         )
     }
@@ -144,8 +149,9 @@ fun BoxScope.ReaderContentOverlays(
         ReaderBottomBar(
             chapters = state.chapters,
             activeChapterId = state.activeChapterId,
-            accentColor = model.accent,
+            accentColor = model.themeAccent,
             barColor = model.background,
+            isDark = model.isDark,
             isRetryEnabled = activeNeedsTranslation && !state.isStreaming && state.activeChapter?.status in setOf(
                 Chapter.STATUS_DONE, Chapter.STATUS_FAILED, Chapter.STATUS_IN_PROGRESS
             ),
@@ -214,22 +220,30 @@ fun BoxScope.ReaderContentOverlays(
 @Composable
 fun ReaderModalOverlays(model: ReaderOverlayModel, actions: ReaderOverlayActions) {
     val state = model.state
-    if (state.catalogVisible) {
-        CatalogBottomSheet(model.catalogGroups, state.activeChapterId, actions::jumpToChapter, actions::dismissCatalog)
-    }
-    if (state.settingsVisible) {
-        ReaderSettingsSheet(state.readingSettings, model.accent, actions::updateReadingSettings, actions::dismissSettings)
-    }
-    if (state.llmSettingsVisible) {
-        val sheetState = remember(
-            state.llmSettings, state.profiles, state.activeProfileId, state.editingProfileId,
-            model.editApiKey, model.editApiBase, model.editModel, state.llmTestResult, state.llmTestSuccess
-        ) {
-            LlmSettingsSheetUiState(
-                state.llmSettings, state.profiles, state.activeProfileId, state.editingProfileId,
-                model.editApiKey, model.editApiBase, model.editModel, state.llmTestResult, state.llmTestSuccess
+    // 阅读页内的弹窗全部包在固定的 ReaderSheetTheme 里：容器与内部 M3 控件都是
+    // 阅读器自己的暖纸配色，不随全局主题 accent 变化（与目录抽屉同一口径）
+    ReaderSheetTheme(isDark = model.isDark) {
+        if (state.catalogVisible) {
+            CatalogBottomSheet(
+                model.catalogGroups, state.activeChapterId,
+                accentColor = model.accent, isDark = model.isDark,
+                actions::jumpToChapter, actions::dismissCatalog
             )
         }
-        LlmSettingsSheet(sheetState, actions, model.accent)
+        if (state.settingsVisible) {
+            ReaderSettingsSheet(state.readingSettings, model.accent, actions::updateReadingSettings, actions::dismissSettings)
+        }
+        if (state.llmSettingsVisible) {
+            val sheetState = remember(
+                state.llmSettings, state.profiles, state.activeProfileId, state.editingProfileId,
+                model.editApiKey, model.editApiBase, model.editModel, state.llmTestResult, state.llmTestSuccess
+            ) {
+                LlmSettingsSheetUiState(
+                    state.llmSettings, state.profiles, state.activeProfileId, state.editingProfileId,
+                    model.editApiKey, model.editApiBase, model.editModel, state.llmTestResult, state.llmTestSuccess
+                )
+            }
+            LlmSettingsSheet(sheetState, actions, model.accent)
+        }
     }
 }

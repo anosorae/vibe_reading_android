@@ -127,13 +127,34 @@ val AppTypography: Typography = Typography().run {
     )
 }
 
-/** 圆角刻度：本轮钮 4 / 小控件 8 / 卡片与输入框 12 / 底部弹窗与图片块 16。 */
+/**
+ * 圆角刻度：本轮钮 4 / 小控件 8 / 卡片与输入框 12 / 底部弹窗与图片块 16。 */
 val AppShapes: Shapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
     small = RoundedCornerShape(8.dp),
     medium = RoundedCornerShape(12.dp),
     large = RoundedCornerShape(16.dp)
 )
+
+/**
+ * 阅读器弹窗的固定 Material 皮肤：目录/阅读设置/翻译配置这类阅读页内的大表单弹窗
+ * 包一层原木（Vibe）色系的 colorScheme，使其内部所有 M3 控件（开关/输入框/按钮/文字）
+ * 都用阅读器自己的暖纸配色，**不随全局主题 accent 变化**——与 [com.vibereading.app.ui.reader.ReaderChromeColors]
+ * 同属「阅读器是独立视觉世界」的口径。App 侧同组件仍跑在 VibeReadingTheme 下，互不影响。
+ * 字阶与圆角沿用全局刻度，只覆盖色彩。
+ */
+@Composable
+fun ReaderSheetTheme(
+    isDark: Boolean,
+    content: @Composable () -> Unit
+) {
+    MaterialTheme(
+        colorScheme = if (isDark) vibeDarkColorScheme() else vibeColorScheme(),
+        typography = AppTypography,
+        shapes = AppShapes,
+        content = content
+    )
+}
 
 // ── 原木 (Vibe) ──
 

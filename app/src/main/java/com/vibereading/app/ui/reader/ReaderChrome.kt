@@ -139,12 +139,16 @@ fun ReaderTopToolbar(
     mode: String,
     activeChapterStatus: Int?,
     barColor: Color,
+    accentColor: Color,
     isDark: Boolean,
     onBack: () -> Unit,
     onToggleMode: (String) -> Unit
 ) {
+    // 阅读器 chrome 固定配色：不随全局主题（切换主题色时阅读页内部保持稳定）
+    val chrome = readerChromeColors(isDark)
     Surface(
         color = barColor.copy(alpha = 0.95f),
+        contentColor = chrome.text,
         shadowElevation = 4.dp
     ) {
         Row(
@@ -169,13 +173,13 @@ fun ReaderTopToolbar(
             Row(
                 modifier = Modifier
                     .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
+                        chrome.pillBg,
                         RoundedCornerShape(8.dp)
                     )
                     .padding(2.dp)
             ) {
-                ModeButton("中文", mode == "zh", onClick = { onToggleMode("zh") })
-                ModeButton("英文", mode == "en", onClick = { onToggleMode("en") })
+                ModeButton("中文", mode == "zh", accentColor, chrome, onClick = { onToggleMode("zh") })
+                ModeButton("英文", mode == "en", accentColor, chrome, onClick = { onToggleMode("en") })
             }
             if (activeChapterStatus != null) {
                 val dotColor = chapterStatusColor(activeChapterStatus, isDark)
@@ -198,6 +202,7 @@ fun ReaderBottomBar(
     activeChapterId: Long?,
     accentColor: Color,
     barColor: Color,
+    isDark: Boolean,
     isRetryEnabled: Boolean,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -211,9 +216,11 @@ fun ReaderBottomBar(
     var dragging by remember { mutableStateOf(false) }
     var dragChapter by remember { mutableIntStateOf(chapterIndex) }
     val sliderValue = if (dragging) dragChapter else chapterIndex
-    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val chrome = readerChromeColors(isDark)
+    val labelColor = chrome.mutedText
     Surface(
         color = barColor.copy(alpha = 0.97f),
+        contentColor = chrome.text,
         shadowElevation = 4.dp
     ) {
         Column(
@@ -272,7 +279,8 @@ fun ReaderBottomBar(
                                 valueRange = 0f..(chapters.size - 1).coerceAtLeast(0).toFloat(),
                                 colors = SliderDefaults.colors(
                                     thumbColor = accentColor,
-                                    activeTrackColor = accentColor
+                                    activeTrackColor = accentColor,
+                                    inactiveTrackColor = chrome.pillBg
                                 ),
                                 modifier = Modifier.fillMaxWidth().height(28.dp)
                             )
@@ -288,7 +296,7 @@ fun ReaderBottomBar(
                 }
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+            HorizontalDivider(color = chrome.divider)
 
             // Row 2: catalog | 翻译 | retry | settings
             Row(
@@ -339,11 +347,13 @@ private fun BottomAction(
 private fun ModeButton(
     text: String,
     isActive: Boolean,
+    accentColor: Color,
+    chrome: ReaderChromeColors,
     onClick: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = if (isActive) MaterialTheme.colorScheme.primary else Color.Transparent,
+        color = if (isActive) accentColor else Color.Transparent,
         tonalElevation = if (isActive) 2.dp else 0.dp
     ) {
         Text(
@@ -351,7 +361,7 @@ private fun ModeButton(
             modifier = Modifier
                 .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
-            color = if (isActive) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (isActive) chrome.onAccent else chrome.mutedText,
             fontSize = 13.sp,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal
         )
@@ -423,7 +433,7 @@ fun BoxScope.TranslationStatusPanel(
                 }
                 HorizontalDivider(
                     modifier = Modifier.padding(vertical = 8.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
+                    color = if (isDark) VibeDarkColors.OutlineVariant else VibeColors.Sand
                 )
                 Column(
                     modifier = Modifier

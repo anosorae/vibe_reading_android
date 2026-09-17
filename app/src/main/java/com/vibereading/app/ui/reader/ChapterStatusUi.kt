@@ -45,8 +45,9 @@ private fun hues(dark: Boolean) = if (dark) DarkStatusHues else LightStatusHues
 /**
  * 章节状态 → 状态点/徽章颜色（顶栏圆点、目录、状态徽章共用同一映射）。
  *
- * [dark] 由调用方按**自己所在的那层表面**传入，不要全局统一取一个：阅读器正文上的圆点用
- * `ReaderBgPresets.isDark`（阅读背景），目录抽屉这类 Material 表面用 `LocalIsDarkTheme`。
+ * [dark] 由调用方按**自己所在的那层表面**传入，不要全局统一取一个：阅读器正文上的圆点
+ * 用 `ReaderBgPresets.isDark`（阅读背景），目录抽屉同属阅读器视觉世界、也按阅读背景取；
+ * 仍挂在 Material 主题上的表面（如设置类底部弹窗）才用 `LocalIsDarkTheme`。
  * 用错会出现「深色阅读背景上顶栏圆点几乎看不见」。
  */
 fun chapterStatusColor(status: Int, dark: Boolean): Color {

@@ -26,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -84,7 +85,15 @@ internal fun AppShell(
             )
         }
     ) { padding ->
-        when (selectedTab) {
+        // 底栏占掉的区域（含系统导航栏 inset）已由上面的 padding 从内容里整体扣掉。
+        // 内容子树若再拿到整份 stableInsets（页面的 contentWindowInsets），会把导航栏
+        // inset 重复叠一次：内容在底栏上方一个导航栏高度处就被裁掉，看起来像底栏上沿
+        // 多出一条「遮挡带」（书架最后一排书卡、设置页最后一节都切在这条带后面）。
+        // 所以这里把 bottom 清零 —— 底部留白只由 AppShell 这一层负责。
+        val contentInsets = LocalStableSystemBarInsets.current
+            .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+        CompositionLocalProvider(LocalStableSystemBarInsets provides contentInsets) {
+            when (selectedTab) {
             AppTab.BOOKSHELF -> BookshelfScreen(
                 vm = bookshelfVm,
                 onOpenBook = onOpenBook,
@@ -107,6 +116,7 @@ internal fun AppShell(
                 showTopBar = false,
                 modifier = Modifier.appShellContentPadding(padding)
             )
+            }
         }
     }
 }

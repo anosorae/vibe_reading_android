@@ -59,6 +59,7 @@ import com.vibereading.app.ui.components.LlmProfileEditor
 import com.vibereading.app.ui.components.LlmProfileList
 import com.vibereading.app.ui.components.LlmTranslationParams
 import com.vibereading.app.ui.components.SoftCard
+import com.vibereading.app.ui.theme.FunctionalColors
 import com.vibereading.app.ui.theme.IndigoColors
 import com.vibereading.app.ui.theme.InkColors
 import com.vibereading.app.ui.theme.LotusColors
@@ -145,7 +146,8 @@ internal fun LlmOverviewSection(
         title = "翻译与 AI",
         subtitle = "配置 AI 模型与翻译行为",
         icon = Icons.Outlined.Translate,
-        iconTint = MaterialTheme.colorScheme.secondary
+        // 低饱和橙功能色：四个分区形成 蓝/橙/绿/灰 的功能色分布（secondary 蓝灰不显彩）
+        iconTint = FunctionalColors.Orange
     ) {
         SettingsNavigationRow(
             title = "LLM 配置",
@@ -286,7 +288,7 @@ internal fun LlmProfilesSection(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .clickable(onClick = onCancelEdit)
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -345,21 +347,17 @@ internal fun TranslationParamsSection(
     llmSettings: LlmSettings,
     onUpdateChapterMaxChars: (Int) -> Unit,
     onUpdateMaxOutputTokens: (Int) -> Unit,
-    onToggleThinking: (Boolean) -> Unit,
-    onToggleExplainThinking: (Boolean) -> Unit,
     onUpdateTemperature: (Float) -> Unit,
     onUpdateTopP: (Float) -> Unit
 ) {
     SectionCard {
+        // 思考模式/解释时思考在「翻译与 AI」一级分区里，这里只放数值类高级参数
         LlmTranslationParams(
             llmSettings = llmSettings,
             onUpdateChapterMaxChars = onUpdateChapterMaxChars,
             onUpdateMaxOutputTokens = onUpdateMaxOutputTokens,
-            onToggleThinking = onToggleThinking,
-            onToggleExplainThinking = onToggleExplainThinking,
             onUpdateTemperature = onUpdateTemperature,
-            onUpdateTopP = onUpdateTopP,
-            dividerBetweenGroups = true
+            onUpdateTopP = onUpdateTopP
         )
     }
 }

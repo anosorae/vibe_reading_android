@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -65,11 +68,14 @@ fun LlmSectionTitle(title: String) {
     )
 }
 
+// 设计系统的控件圆角刻度（12-16dp 区间取 14）：输入框 / 按钮 / 结果条共用
+private val ControlCorner = RoundedCornerShape(14.dp)
+
 /** 连接测试结果条（成功/失败两态）。 */
 @Composable
 fun LlmTestResultBanner(testResult: String, testSuccess: Boolean?) {
     Surface(
-        shape = MaterialTheme.shapes.small,
+        shape = RoundedCornerShape(12.dp),
         color = if (testSuccess == true) MaterialTheme.colorScheme.secondaryContainer
         else MaterialTheme.colorScheme.errorContainer
     ) {
@@ -106,23 +112,25 @@ fun LlmProfileList(
     onDelete: ((Long) -> Unit)? = null,
     onAdd: (() -> Unit)? = null
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         profiles.forEach { profile ->
             val isActive = profile.id == activeProfileId
+            val itemShape = RoundedCornerShape(12.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.small)
+                    .clip(itemShape)
                     .clickable { onSelect(profile.id) }
                     .background(
                         if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
-                        MaterialTheme.shapes.small
+                        itemShape
                     )
+                    // 与「我的」页行一致：未选中是扁平行，不带描边；选中才用主色描边表达状态
                     .then(
-                        if (isActive) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small)
-                        else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small)
+                        if (isActive) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, itemShape)
+                        else Modifier
                     )
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // 活跃标记
@@ -138,8 +146,9 @@ fun LlmProfileList(
                 // 名称
                 Text(
                     profile.name.ifEmpty { "未命名" },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -179,7 +188,7 @@ fun LlmProfileList(
             OutlinedButton(
                 onClick = onAdd,
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
+                shape = ControlCorner,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -229,7 +238,7 @@ fun LlmProfileEditor(
                 onValueChange = onUpdateName,
                 label = { Text("配置名称") },
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
+                shape = ControlCorner,
                 singleLine = true
             )
         }
@@ -281,7 +290,7 @@ fun LlmProfileEditor(
             Button(
                 onClick = onSave,
                 modifier = Modifier.weight(1f),
-                shape = MaterialTheme.shapes.small,
+                shape = ControlCorner,
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 enabled = !isSaving
             ) {
@@ -290,7 +299,7 @@ fun LlmProfileEditor(
             OutlinedButton(
                 onClick = onTest,
                 modifier = Modifier.weight(1f),
-                shape = MaterialTheme.shapes.small,
+                shape = ControlCorner,
                 enabled = !isTesting
             ) {
                 if (isTesting) {
@@ -317,24 +326,42 @@ fun LlmProfileEditor(
     }
 }
 
-/** 标题 + 说明 + 右侧开关的一行参数。 */
+/** 参数行骨架：与「我的」页设置行同一套字号与行高（14sp 标题 / 12sp 说明）。 */
 @Composable
-private fun LlmSwitchRow(
+private fun LlmParamRow(
+    title: String,
+    description: String,
+    trailing: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                description,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        trailing()
+    }
+}
+
+/** 标题 + 说明 + 右侧开关的一行参数（设置页「翻译与 AI」分区与阅读器弹窗一级共用）。 */
+@Composable
+fun LlmSwitchRow(
     title: String,
     description: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(description, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    LlmParamRow(title, description) {
         AppSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
@@ -349,16 +376,7 @@ private fun LlmStepperRow(
     step: Float,
     onValueChange: (Float) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(description, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    LlmParamRow(title, description) {
         StepperValueInput(
             value = value,
             range = range,
@@ -378,16 +396,7 @@ private fun LlmIntStepperRow(
     step: Int,
     onValueChange: (Int) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(description, style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    LlmParamRow(title, description) {
         StepperValueInput(
             value = value,
             range = range,
@@ -398,22 +407,19 @@ private fun LlmIntStepperRow(
 }
 
 /**
- * 翻译参数区块（阅读器抽屉与设置页共用同一份文案与控件，差异只在分组分隔线与预译开关）。
+ * 翻译参数区块：只承载**数值类高级参数**（单章上限 / 最大 Token / 采样温度 / Top P）。
  *
- * [onToggleAutoTranslateNext] 为空时不显示「提前翻译下一章」（设置页不提供该开关）。
- * [dividerBetweenGroups] 为 true 时按「长度类 / 开关类 / 采样类」插入分隔线（设置页样式）。
+ * 层级约定：思考模式、解释时思考、提前翻译下一章这类**行为开关**由调用方放在一级
+ * （设置页的「翻译与 AI」分区、阅读器弹窗的顶层），不要塞回本组件——
+ * 两处的翻译参数入口都是二级，只放低频调整的数值项。
  */
 @Composable
 fun LlmTranslationParams(
     llmSettings: LlmSettings,
     onUpdateChapterMaxChars: (Int) -> Unit,
     onUpdateMaxOutputTokens: (Int) -> Unit,
-    onToggleThinking: (Boolean) -> Unit,
-    onToggleExplainThinking: (Boolean) -> Unit,
     onUpdateTemperature: (Float) -> Unit,
-    onUpdateTopP: (Float) -> Unit,
-    onToggleAutoTranslateNext: ((Boolean) -> Unit)? = null,
-    dividerBetweenGroups: Boolean = false
+    onUpdateTopP: (Float) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         LlmIntStepperRow(
@@ -434,32 +440,7 @@ fun LlmTranslationParams(
             onValueChange = onUpdateMaxOutputTokens
         )
 
-        if (dividerBetweenGroups) HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-        LlmSwitchRow(
-            title = "思考模式",
-            description = "允许模型输出思考过程",
-            checked = llmSettings.enableThinking,
-            onCheckedChange = onToggleThinking
-        )
-
-        LlmSwitchRow(
-            title = "解释时思考",
-            description = "选词解释时使用深度思考模式",
-            checked = llmSettings.enableExplainThinking,
-            onCheckedChange = onToggleExplainThinking
-        )
-
-        if (onToggleAutoTranslateNext != null) {
-            LlmSwitchRow(
-                title = "提前翻译下一章",
-                description = "英文阅读时自动预译未译的下一章",
-                checked = llmSettings.autoTranslateNext,
-                    onCheckedChange = onToggleAutoTranslateNext
-            )
-        }
-
-        if (dividerBetweenGroups) HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
         LlmStepperRow(
             title = "采样温度",

@@ -10,24 +10,34 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material3.*
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.log.AppLog
 import com.vibereading.app.log.CrashLogFiles
 import com.vibereading.app.log.LogUtils
+import com.vibereading.app.ui.components.DetailPageHeader
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 import java.io.File
 import java.text.SimpleDateFormat
@@ -39,7 +49,6 @@ private enum class LogTab(val label: String) {
     CRASH("崩溃日志")
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogViewerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -54,49 +63,77 @@ fun LogViewerScreen(onBack: () -> Unit) {
     var selectedCrash by remember { mutableStateOf<File?>(null) }
 
     Scaffold(
-        contentWindowInsets = stableInsets,
-        topBar = {
-            TopAppBar(
-                windowInsets = stableInsets,
-                title = { Text("日志", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        when (tab) {
-                            LogTab.RUN -> {
-                                AppLog.clear()
-                                refreshKey++
-                                Toast.makeText(context, "已清除运行日志", Toast.LENGTH_SHORT).show()
-                            }
-
-                            LogTab.CRASH -> {
-                                CrashLogFiles.clear(context)
-                                crashFiles = emptyList()
-                                Toast.makeText(context, "已清除崩溃日志", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }) {
-                        Icon(Icons.Filled.Delete, "清除")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = stableInsets
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = tab.ordinal) {
+            DetailPageHeader(
+                title = "日志",
+                subtitle = "运行日志与崩溃日志",
+                onBack = onBack,
+                modifier = Modifier.padding(top = 8.dp),
+                actions = {
+                    // 清除是破坏性操作：错误色浅底圆钮，与返回钮同形
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                            .clickable {
+                                when (tab) {
+                                    LogTab.RUN -> {
+                                        AppLog.clear()
+                                        refreshKey++
+                                        Toast.makeText(context, "已清除运行日志", Toast.LENGTH_SHORT).show()
+                                    }
+
+                                    LogTab.CRASH -> {
+                                        CrashLogFiles.clear(context)
+                                        crashFiles = emptyList()
+                                        Toast.makeText(context, "已清除崩溃日志", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "清除",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            )
+            Spacer(Modifier.height(12.dp))
+            // 分段胶囊（与「我的 → 外观 → 主题模式」同一控件语言，取代 M3 TabRow 的下划线）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(4.dp)
+            ) {
                 LogTab.entries.forEach { t ->
-                    Tab(
-                        selected = tab == t,
+                    val selected = tab == t
+                    Surface(
                         onClick = { tab = t },
-                        text = { Text(t.label) }
-                    )
+                        shape = RoundedCornerShape(percent = 50),
+                        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            t.label,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp)
+                        )
+                    }
                 }
             }
             when (tab) {
@@ -137,7 +174,7 @@ private fun RunLogList(
     // 简单做法：列表可滚动 + 顶部提供一个轻量刷新提示
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         item {
@@ -166,10 +203,10 @@ private fun RunLogItem(time: Long, message: String, hasThrowable: Boolean) {
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                RoundedCornerShape(8.dp)
+                MaterialTheme.colorScheme.surfaceContainerLowest,
+                RoundedCornerShape(12.dp)
             )
-            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Text(
             LogUtils.logTimeFormat.format(Date(time)),
@@ -198,23 +235,21 @@ private fun CrashLogList(files: List<File>, onOpen: (File) -> Unit) {
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items(files, key = { it.name }) { file ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
                     .clickable { onOpen(file) }
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                    .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Filled.Description,
+                    Icons.Outlined.Description,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)

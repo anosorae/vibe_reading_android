@@ -1,5 +1,7 @@
 package com.vibereading.app.ui.reader.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -7,25 +9,30 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.LlmProfile
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.ui.components.LlmProfileEditor
 import com.vibereading.app.ui.components.LlmProfileList
 import com.vibereading.app.ui.components.LlmSectionTitle
+import com.vibereading.app.ui.components.LlmSwitchRow
 import com.vibereading.app.ui.components.LlmTranslationParams
 
 /**
  * 阅读器内翻译设置面板：
  * - LLM 配置区：配置列表（切换/编辑）/ 编辑页（apiKey+base+model + 保存/测试）
- * - 翻译参数区：章节上限/上下文增强/思考模式，即时生效。
+ * - 一级行为开关：思考模式 / 解释时思考 / 提前翻译下一章（与 App「翻译与 AI」分区同层级）
+ * - 二级翻译参数：单章上限 / 最大 Token / 采样温度 / Top P，折叠收起，低频调整才展开
  * 编辑字段由外部 ViewModel 持有，面板只负责渲染与回调。
  */
 data class LlmSettingsSheetUiState(
@@ -67,6 +74,11 @@ fun LlmSettingsSheet(
     accentColor: Color
 ) {
     var showApiKey by remember { mutableStateOf(false) }
+    var paramsExpanded by remember { mutableStateOf(false) }
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (paramsExpanded) 90f else 0f,
+        label = "paramsChevron"
+    )
 
     ModalBottomSheet(
         onDismissRequest = actions::dismiss,
@@ -97,7 +109,7 @@ fun LlmSettingsSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .clickable { actions.cancelEdit() }
                         .padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -143,21 +155,65 @@ fun LlmSettingsSheet(
                 )
             }
 
-            // ── 翻译参数 ──
+            // ── 一级行为开关（与 App「翻译与 AI」分区同层级）──
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
-            LlmSectionTitle("翻译参数")
+            LlmSectionTitle("翻译行为")
 
-            LlmTranslationParams(
-                llmSettings = state.llmSettings,
-                onUpdateChapterMaxChars = actions::updateChapterMaxChars,
-                onUpdateMaxOutputTokens = actions::updateMaxOutputTokens,
-                onToggleThinking = actions::toggleThinking,
-                onToggleExplainThinking = actions::toggleExplainThinking,
-                onUpdateTemperature = actions::updateTemperature,
-                onUpdateTopP = actions::updateTopP,
-                onToggleAutoTranslateNext = actions::toggleAutoTranslateNext
+            Spacer(Modifier.height(10.dp))
+
+            LlmSwitchRow(
+                title = "思考模式",
+                description = "允许模型输出思考过程",
+                checked = state.llmSettings.enableThinking,
+                onCheckedChange = actions::toggleThinking
             )
+            LlmSwitchRow(
+                title = "解释时思考",
+                description = "选词解释时使用深度思考模式",
+                checked = state.llmSettings.enableExplainThinking,
+                onCheckedChange = actions::toggleExplainThinking
+            )
+            LlmSwitchRow(
+                title = "提前翻译下一章",
+                description = "英文阅读时自动预译未译的下一章",
+                checked = state.llmSettings.autoTranslateNext,
+                onCheckedChange = actions::toggleAutoTranslateNext
+            )
+
+            // ── 二级翻译参数（低频数值项，折叠收起）──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { paramsExpanded = !paramsExpanded }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "翻译参数",
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = if (paramsExpanded) "收起" else "展开",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.rotate(chevronRotation).size(20.dp)
+                )
+            }
+
+            AnimatedVisibility(visible = paramsExpanded) {
+                LlmTranslationParams(
+                    llmSettings = state.llmSettings,
+                    onUpdateChapterMaxChars = actions::updateChapterMaxChars,
+                    onUpdateMaxOutputTokens = actions::updateMaxOutputTokens,
+                    onUpdateTemperature = actions::updateTemperature,
+                    onUpdateTopP = actions::updateTopP
+                )
+            }
         }
     }
 }

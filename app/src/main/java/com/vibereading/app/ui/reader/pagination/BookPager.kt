@@ -187,11 +187,11 @@ fun simFlipSettlePage(simFlip: SimFlipState, currentPage: Int, pageCount: Int): 
 }
 
 /** 卷页自动动画速度基准：时长按位移占全屏宽/高的比例缩放。 */
-internal const val SIM_FLIP_ANIMATION_SPEED_MS = 400
+internal const val SIM_FLIP_ANIMATION_SPEED_MS = 200
 
 // 点按翻页与拖拽抬手共用同一手感区间（此前两处 coerceIn 区间不一致导致手感漂移）
-private const val SIM_FLIP_MIN_DURATION_MS = 100L
-private const val SIM_FLIP_MAX_DURATION_MS = 600L
+private const val SIM_FLIP_MIN_DURATION_MS = 60L
+private const val SIM_FLIP_MAX_DURATION_MS = 300L
 
 /** 卷页自动动画时长：按位移比例缩放并钳制到统一手感区间。 */
 internal fun simFlipDurationMs(dx: Float, dy: Float, viewWidth: Float, viewHeight: Float): Long {

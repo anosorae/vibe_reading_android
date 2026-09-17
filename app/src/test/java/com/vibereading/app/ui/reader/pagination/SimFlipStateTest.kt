@@ -97,12 +97,12 @@ class SimFlipStateTest {
         val wf = 1080f
         val hf = 2400f
         // 全屏位移 → 恰为速度基准值
-        assertEquals(400L, simFlipDurationMs(dx = wf, dy = 0f, viewWidth = wf, viewHeight = hf))
+        assertEquals(200L, simFlipDurationMs(dx = wf, dy = 0f, viewWidth = wf, viewHeight = hf))
         // 微小位移 → 钳到共享区间下限
-        assertEquals(100L, simFlipDurationMs(dx = 1f, dy = 0f, viewWidth = wf, viewHeight = hf))
+        assertEquals(60L, simFlipDurationMs(dx = 1f, dy = 0f, viewWidth = wf, viewHeight = hf))
         // 越屏大位移（NEXT 全程 ≈ 1.9×宽）→ 钳到共享区间上限
-        assertEquals(600L, simFlipDurationMs(dx = wf * 2f, dy = 0f, viewWidth = wf, viewHeight = hf))
+        assertEquals(300L, simFlipDurationMs(dx = wf * 2f, dy = 0f, viewWidth = wf, viewHeight = hf))
         // 纯纵向回弹（dx==0）走 dy 分支，按全屏高缩放
-        assertEquals(400L, simFlipDurationMs(dx = 0f, dy = hf, viewWidth = wf, viewHeight = hf))
+        assertEquals(200L, simFlipDurationMs(dx = 0f, dy = hf, viewWidth = wf, viewHeight = hf))
     }
 }

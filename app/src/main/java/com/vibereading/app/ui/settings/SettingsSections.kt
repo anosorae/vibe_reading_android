@@ -23,18 +23,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,9 +52,12 @@ import com.vibereading.app.domain.model.AppAccent
 import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.domain.model.ThemeMode
 import com.vibereading.app.domain.model.ThemeSettings
+import com.vibereading.app.ui.components.AppSwitch
+import com.vibereading.app.ui.components.IconCircle
 import com.vibereading.app.ui.components.LlmProfileEditor
 import com.vibereading.app.ui.components.LlmProfileList
 import com.vibereading.app.ui.components.LlmTranslationParams
+import com.vibereading.app.ui.components.SoftCard
 import com.vibereading.app.ui.theme.IndigoColors
 import com.vibereading.app.ui.theme.InkColors
 import com.vibereading.app.ui.theme.LotusColors
@@ -74,7 +73,7 @@ internal fun ThemeSettingsSection(
     SectionCard(
         title = "外观",
         subtitle = "自定义界面显示效果",
-        icon = Icons.Filled.Palette,
+        icon = Icons.Outlined.Palette,
         iconTint = MaterialTheme.colorScheme.primary
     ) {
         // 主题模式：标签左、分段胶囊右的单行（控件不独占整行，视觉基线见设计稿）
@@ -99,7 +98,7 @@ internal fun ThemeSettingsSection(
                             fontSize = 13.sp,
                             lineHeight = 16.sp,
                             maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
                     }
                 }
@@ -144,7 +143,7 @@ internal fun LlmOverviewSection(
     SectionCard(
         title = "翻译与 AI",
         subtitle = "配置 AI 模型与翻译行为",
-        icon = Icons.Filled.Translate,
+        icon = Icons.Outlined.Translate,
         iconTint = MaterialTheme.colorScheme.secondary
     ) {
         SettingsNavigationRow(
@@ -186,7 +185,7 @@ internal fun WebCompanionSection(
     SectionCard(
         title = "阅读体验",
         subtitle = "优化你的阅读使用场景",
-        icon = Icons.Filled.AutoStories,
+        icon = Icons.Outlined.AutoStories,
         iconTint = MaterialTheme.colorScheme.tertiary
     ) {
         SettingsSwitchRow(
@@ -230,7 +229,7 @@ internal fun DebugSection(onOpenLogs: () -> Unit) {
     SectionCard(
         title = "其他",
         subtitle = "应用日志等工具",
-        icon = Icons.Filled.Settings,
+        icon = Icons.Outlined.Settings,
         iconTint = MaterialTheme.colorScheme.onSurfaceVariant
     ) {
         SettingsNavigationRow(title = "日志", onClick = onOpenLogs)
@@ -372,50 +371,40 @@ private fun SectionCard(
     iconTint: Color = MaterialTheme.colorScheme.primary,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-            if (title != null && icon != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(13.dp))
-                            .background(iconTint.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(24.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
+    // 设计规范刻度：页面左右 24dp、卡片间距 16dp（每卡上下各 8dp）、卡片圆角与内边距 24dp
+    SoftCard(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+        if (title != null && icon != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconCircle(
+                    icon = icon,
+                    tint = iconTint,
+                    circleSize = 34.dp,
+                    iconSize = 18.dp
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        fontSize = 16.sp,
+                        lineHeight = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (subtitle != null) {
                         Text(
-                            title,
-                            fontSize = 19.sp,
-                            lineHeight = 23.sp,
-                            fontWeight = FontWeight.Bold
+                            subtitle,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (subtitle != null) {
-                            Text(
-                                subtitle,
-                                fontSize = 14.sp,
-                                lineHeight = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                     }
                 }
-                Spacer(Modifier.height(14.dp))
             }
-            content()
+            Spacer(Modifier.height(12.dp))
         }
+        content()
     }
 }
 
@@ -434,8 +423,8 @@ private fun ThemeRow(
     ) {
         Text(
             label,
-            fontSize = 16.sp,
-            lineHeight = 20.sp,
+            fontSize = 15.sp,
+            lineHeight = 19.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
         )
@@ -455,18 +444,18 @@ private fun SettingsNavigationRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .heightIn(min = 48.dp)
-            .padding(vertical = 8.dp),
+            .heightIn(min = 44.dp)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
             if (subtitle != null) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     subtitle,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
+                    fontSize = 13.sp,
+                    lineHeight = 17.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -474,8 +463,8 @@ private fun SettingsNavigationRow(
         if (value != null) {
                 Text(
                     value,
-                    fontSize = 16.sp,
-                    lineHeight = 20.sp,
+                    fontSize = 14.sp,
+                    lineHeight = 19.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -486,7 +475,7 @@ private fun SettingsNavigationRow(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(20.dp)
         )
     }
 }
@@ -504,29 +493,25 @@ private fun SettingsSwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Spacer(Modifier.width(10.dp))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
-        )
+        AppSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
 @Composable
 private fun SectionDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(vertical = 5.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+        modifier = Modifier.padding(vertical = 4.dp),
+        color = MaterialTheme.colorScheme.outlineVariant
     )
 }
 

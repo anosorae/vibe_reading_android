@@ -3,7 +3,6 @@ package com.vibereading.app.ui.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.BuildConfig
+import com.vibereading.app.ui.components.SoftCard
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -118,13 +118,13 @@ internal fun TranslationParamsDetailScreen(
                 "翻译参数",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp)
+                modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp)
             )
             Text(
                 "调整章节长度、输出上限和模型采样方式",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
             )
             Spacer(Modifier.height(8.dp))
             TranslationParamsSection(
@@ -160,29 +160,19 @@ internal fun AboutScreen(onBack: () -> Unit) {
 
 @Composable
 private fun AboutInfoCard() {
-    androidx.compose.material3.Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    SoftCard(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+        Text("版本", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "v${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text("版本", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "v${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "译读是一款双语阅读器：导入 TXT 或 EPUB 书籍，逐章调用 LLM 生成译文，在中文与英文模式之间自由切换。",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "译读是一款双语阅读器：导入 TXT 或 EPUB 书籍，逐章调用 LLM 生成译文，在中文与英文模式之间自由切换。",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

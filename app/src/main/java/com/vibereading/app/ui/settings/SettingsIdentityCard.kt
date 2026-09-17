@@ -3,17 +3,15 @@ package com.vibereading.app.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -25,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.BuildConfig
+import com.vibereading.app.ui.components.SoftCard
 
 @Composable
 internal fun SettingsIdentityCard(
@@ -34,18 +33,14 @@ internal fun SettingsIdentityCard(
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
     val onPrimary = MaterialTheme.colorScheme.onPrimary
-    val cardModifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 16.dp, vertical = 10.dp)
-    val cardShape = RoundedCornerShape(24.dp)
-    val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
+    val cardModifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
 
     if (onClick != null) {
-        Card(
+        SoftCard(
             onClick = onClick,
             modifier = cardModifier,
-            shape = cardShape,
-            colors = cardColors
+            // 波浪装饰要通栏铺满卡片，内容内边距由 Row 自带（24/20）
+            contentPadding = PaddingValues(0.dp)
         ) {
             IdentityCardContent(
                 primary,
@@ -56,10 +51,9 @@ internal fun SettingsIdentityCard(
             )
         }
     } else {
-        Card(
+        SoftCard(
             modifier = cardModifier,
-            shape = cardShape,
-            colors = cardColors
+            contentPadding = PaddingValues(0.dp)
         ) {
             IdentityCardContent(
                 primary,
@@ -107,7 +101,7 @@ private fun IdentityCardContent(
             }
         }
         Row(
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {

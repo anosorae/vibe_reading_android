@@ -58,6 +58,7 @@ class SettingsSectionsTest {
                     ),
                     onOpenLlmSettings = {},
                     onOpenTranslationParams = {},
+                    onToggleThinking = {},
                     onToggleExplainThinking = {}
                 )
             }
@@ -68,9 +69,10 @@ class SettingsSectionsTest {
         compose.onNodeWithText("LLM 配置").assertIsDisplayed()
         compose.onNodeWithText("Qwen3.6").assertIsDisplayed()
         compose.onAllNodesWithText("关于").assertCountEquals(0)
+        compose.onNodeWithText("思考模式").assertIsDisplayed()
         compose.onNodeWithText("解释时思考").assertIsDisplayed()
-        compose.onNodeWithText("采样温度").assertIsDisplayed()
-        compose.onNodeWithText("Top P").assertIsDisplayed()
+        compose.onAllNodesWithText("采样温度").assertCountEquals(0)
+        compose.onAllNodesWithText("Top P").assertCountEquals(0)
     }
 
     @Test

@@ -101,6 +101,7 @@ fun SettingsScreen(
                 state = state,
                 onOpenLlmSettings = onOpenLlmSettings,
                 onOpenTranslationParams = onOpenTranslationParams,
+                onToggleThinking = vm::updateThinking,
                 onToggleExplainThinking = vm::updateExplainThinking
             )
             WebCompanionSection(

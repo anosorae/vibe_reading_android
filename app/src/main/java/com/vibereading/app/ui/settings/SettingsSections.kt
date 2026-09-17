@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -26,13 +27,11 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -78,54 +77,57 @@ internal fun ThemeSettingsSection(
         icon = Icons.Filled.Palette,
         iconTint = MaterialTheme.colorScheme.primary
     ) {
-        SettingsRowLabel("主题模式", showChevron = true)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(
-                ThemeMode.SYSTEM to "跟随系统",
-                ThemeMode.LIGHT to "浅色",
-                ThemeMode.DARK to "深色"
-            ).forEach { (mode, label) ->
-                val selected = theme.themeMode == mode
-                OutlinedButton(
-                    onClick = { onThemeModeChange(mode) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = ButtonDefaults.ContentPadding,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        // 主题模式：标签左、分段胶囊右的单行（控件不独占整行，视觉基线见设计稿）
+        ThemeRow(label = "主题模式") {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    ThemeMode.SYSTEM to "跟随系统",
+                    ThemeMode.LIGHT to "浅色",
+                    ThemeMode.DARK to "深色"
+                ).forEach { (mode, label) ->
+                    val selected = theme.themeMode == mode
+                    Surface(
+                        onClick = { onThemeModeChange(mode) },
+                        shape = RoundedCornerShape(percent = 50),
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
                         else MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                        Text(label, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 1)
+                    ) {
+                        Text(
+                            label,
+                            fontSize = 13.sp,
+                            lineHeight = 16.sp,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp)
+                        )
+                    }
                 }
             }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-        SettingsRowLabel("主题色", showChevron = true)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            listOf(
-                Triple(AppAccent.INDIGO, "黛蓝", IndigoColors.Accent),
-                Triple(AppAccent.MOSS, "苔绿", MossColors.Accent),
-                Triple(AppAccent.VIBE, "原木", VibeColors.Sienna),
-                Triple(AppAccent.LOTUS, "藕荷", LotusColors.Accent),
-                Triple(AppAccent.INK, "墨白", InkColors.Accent)
-            ).forEach { (accent, label, color) ->
-                AccentDot(
-                    label = label,
-                    color = color,
-                    isSelected = theme.accent == accent,
-                    onClick = { onAccentChange(accent) },
-                    modifier = Modifier.weight(1f)
-                )
+        SectionDivider()
+
+        // 主题色：标签左、色点右的单行
+        ThemeRow(label = "主题色") {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf(
+                    Triple(AppAccent.INDIGO, "黛蓝", IndigoColors.Accent),
+                    Triple(AppAccent.MOSS, "苔绿", MossColors.Accent),
+                    Triple(AppAccent.VIBE, "原木", VibeColors.Sienna),
+                    Triple(AppAccent.LOTUS, "藕荷", LotusColors.Accent),
+                    Triple(AppAccent.INK, "墨白", InkColors.Accent)
+                ).forEach { (accent, label, color) ->
+                    AccentDot(
+                        label = label,
+                        color = color,
+                        isSelected = theme.accent == accent,
+                        onClick = { onAccentChange(accent) }
+                    )
+                }
             }
         }
     }
@@ -136,6 +138,7 @@ internal fun LlmOverviewSection(
     state: SettingsUiState,
     onOpenLlmSettings: () -> Unit,
     onOpenTranslationParams: () -> Unit,
+    onToggleThinking: (Boolean) -> Unit,
     onToggleExplainThinking: (Boolean) -> Unit
 ) {
     SectionCard(
@@ -153,8 +156,15 @@ internal fun LlmOverviewSection(
         SectionDivider()
         SettingsNavigationRow(
             title = "翻译参数",
-            subtitle = "单章字符上限、最大输出 Token 等",
+            subtitle = "单章字符上限、最大输出 Token、采样温度等",
             onClick = onOpenTranslationParams
+        )
+        SectionDivider()
+        SettingsSwitchRow(
+            title = "思考模式",
+            subtitle = "允许模型输出思考过程",
+            checked = state.llmSettings.enableThinking,
+            onCheckedChange = onToggleThinking
         )
         SectionDivider()
         SettingsSwitchRow(
@@ -162,20 +172,6 @@ internal fun LlmOverviewSection(
             subtitle = "选词解释时使用深度思考模式",
             checked = state.llmSettings.enableExplainThinking,
             onCheckedChange = onToggleExplainThinking
-        )
-        SectionDivider()
-        SettingsNavigationRow(
-            title = "采样温度",
-            subtitle = "越高输出越随机，建议 0.2 ~ 0.5",
-            value = formatParameter(state.llmSettings.temperature),
-            onClick = onOpenTranslationParams
-        )
-        SectionDivider()
-        SettingsNavigationRow(
-            title = "Top P",
-            subtitle = "仅考虑前 top_p 概率的 token",
-            value = formatParameter(state.llmSettings.topP),
-            onClick = onOpenTranslationParams
         )
     }
 }
@@ -381,7 +377,7 @@ private fun SectionCard(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
     ) {
         Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
             if (title != null && icon != null) {
@@ -423,32 +419,27 @@ private fun SectionCard(
     }
 }
 
+/**
+ * 外观卡的行骨架：标签居左，行尾控件（分段胶囊/色点）由调用方给出。
+ * 刻意没有箭头：这两行的操作件就在行内，箭头是"长得像入口却点不动"的装饰（ADR-006 先例）。
+ */
 @Composable
-private fun SettingsRowLabel(
-    title: String,
-    showChevron: Boolean = false
+private fun ThemeRow(
+    label: String,
+    content: @Composable RowScope.() -> Unit
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            title,
+            label,
             fontSize = 16.sp,
             lineHeight = 20.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
         )
-        if (showChevron) {
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp)
-            )
-        }
+        content()
     }
 }
 
@@ -544,13 +535,12 @@ private fun AccentDot(
     label: String,
     color: Color,
     isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onClick: () -> Unit
 ) {
     Box(
-        modifier = modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(14.dp))
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
             .selectable(
                 selected = isSelected,
                 role = Role.RadioButton,
@@ -559,20 +549,18 @@ private fun AccentDot(
             .semantics { contentDescription = "主题色：$label" },
         contentAlignment = Alignment.Center
     ) {
+        // 选中态 = 主色描边环 + 3dp 空隙 + 色点，空隙透出卡片底色（对齐设计稿的选中环）
         Box(
             modifier = Modifier
-                .size(if (isSelected) 42.dp else 34.dp)
+                .size(if (isSelected) 28.dp else 20.dp)
                 .border(
                     width = if (isSelected) 2.dp else 0.dp,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                     shape = CircleShape
                 )
-                .padding(if (isSelected) 4.dp else 0.dp)
+                .padding(if (isSelected) 3.dp else 0.dp)
                 .clip(CircleShape)
                 .background(color)
         )
     }
 }
-
-private fun formatParameter(value: Float): String =
-    if (value % 1f == 0f) value.toInt().toString() else "%.1f".format(java.util.Locale.US, value)

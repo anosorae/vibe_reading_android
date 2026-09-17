@@ -38,7 +38,7 @@ internal fun SettingsIdentityCard(
         .fillMaxWidth()
         .padding(horizontal = 16.dp, vertical = 10.dp)
     val cardShape = RoundedCornerShape(24.dp)
-    val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)
 
     if (onClick != null) {
         Card(

@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.BuildConfig
+import com.vibereading.app.R
 import com.vibereading.app.ui.components.SoftCard
 
 @Composable
@@ -132,7 +133,7 @@ private fun IdentityCardContent(
                 drawPath(wave, color = onPrimary.copy(alpha = 0.22f))
             }
             Icon(
-                Icons.Filled.AutoStories,
+                painter = painterResource(R.drawable.ic_brand_mark),
                 contentDescription = null,
                 modifier = Modifier.size(30.dp),
                 tint = onPrimary

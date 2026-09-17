@@ -2,8 +2,9 @@ package com.vibereading.app.ui.theme
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,11 +34,12 @@ val LocalStableSystemBarInsets = compositionLocalOf { WindowInsets(0) }
  */
 val LocalIsDarkTheme = staticCompositionLocalOf { false }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StableSystemBarInsetsProvider(content: @Composable () -> Unit) {
     val density = LocalDensity.current
-    val statusBarPx = WindowInsets.systemBars.getTop(density)
-    val navBarPx = WindowInsets.systemBars.getBottom(density)
+    val statusBarPx = WindowInsets.systemBarsIgnoringVisibility.getTop(density)
+    val navBarPx = WindowInsets.systemBarsIgnoringVisibility.getBottom(density)
     val cachedTop = remember { mutableIntStateOf(statusBarPx) }
     val cachedBottom = remember { mutableIntStateOf(navBarPx) }
     if (statusBarPx > cachedTop.intValue) cachedTop.intValue = statusBarPx

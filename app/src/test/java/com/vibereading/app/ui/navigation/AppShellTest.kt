@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +25,22 @@ class AppShellTest {
             MaterialTheme {
                 AppBottomBar(
                     stableInsets = WindowInsets(0),
+                    selectedTab = AppTab.BOOKSHELF,
+                    onSelect = {}
+                )
+            }
+        }
+        compose.onNodeWithText("书架").assertIsDisplayed()
+        compose.onNodeWithText("统计").assertIsDisplayed()
+        compose.onNodeWithText("我的").assertIsDisplayed()
+    }
+
+    @Test
+    fun `bottom navigation remains visible above gesture navigation inset`() {
+        compose.setContent {
+            MaterialTheme {
+                AppBottomBar(
+                    stableInsets = WindowInsets(bottom = 24.dp),
                     selectedTab = AppTab.BOOKSHELF,
                     onSelect = {}
                 )

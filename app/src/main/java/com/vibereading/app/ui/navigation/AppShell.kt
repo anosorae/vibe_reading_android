@@ -47,6 +47,8 @@ import com.vibereading.app.ui.bookshelf.BookshelfScreen
 import com.vibereading.app.ui.bookshelf.BookshelfViewModel
 import com.vibereading.app.ui.settings.SettingsScreen
 import com.vibereading.app.ui.settings.SettingsViewModel
+import com.vibereading.app.ui.stats.StatisticsScreen
+import com.vibereading.app.ui.stats.StatisticsViewModel
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 
 internal enum class AppTab(val label: String, val icon: ImageVector) {
@@ -58,6 +60,7 @@ internal enum class AppTab(val label: String, val icon: ImageVector) {
 @Composable
 internal fun AppShell(
     bookshelfVm: BookshelfViewModel,
+    statsVm: StatisticsViewModel,
     settingsVm: SettingsViewModel,
     onOpenBook: (Long) -> Unit,
     onOpenLogs: () -> Unit,
@@ -100,7 +103,9 @@ internal fun AppShell(
                 coverTransition = coverTransition,
                 modifier = Modifier.appShellContentPadding(padding)
             )
-            AppTab.STATISTICS -> StatisticsPlaceholderScreen(
+            AppTab.STATISTICS -> StatisticsScreen(
+                vm = statsVm,
+                onOpenBook = onOpenBook,
                 modifier = Modifier.appShellContentPadding(padding)
             )
             AppTab.PROFILE -> SettingsScreen(

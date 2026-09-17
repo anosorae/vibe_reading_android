@@ -34,6 +34,7 @@ import com.vibereading.app.ui.settings.LlmSettingsDetailScreen
 import com.vibereading.app.ui.settings.SettingsScreen
 import com.vibereading.app.ui.settings.SettingsViewModel
 import com.vibereading.app.ui.settings.TranslationParamsDetailScreen
+import com.vibereading.app.ui.stats.StatisticsViewModel
 import com.vibereading.app.web.WebCompanionService
 import com.vibereading.app.VibeReadingApp
 import kotlinx.coroutines.flow.first
@@ -127,8 +128,12 @@ fun AppNavigation() {
                         settingsRepo, llmProfileRepo, llmService, application
                     )
                 )
+                val statsVm: StatisticsViewModel = viewModel(
+                    factory = StatisticsViewModel.Factory(bookRepo)
+                )
                 AppShell(
                     bookshelfVm = vm,
+                    statsVm = statsVm,
                     settingsVm = settingsVm,
                     onOpenBook = { bookId ->
                         navController.navigate(Routes.reader(bookId)) { launchSingleTop = true }

@@ -19,15 +19,6 @@ class AppShellTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun `statistics placeholder renders`() {
-        compose.setContent {
-            MaterialTheme { StatisticsPlaceholderScreen() }
-        }
-        compose.onNodeWithText("阅读统计").assertIsDisplayed()
-        compose.onNodeWithText("统计功能即将上线\n你的阅读轨迹会在这里汇聚。").assertIsDisplayed()
-    }
-
-    @Test
     fun `bottom navigation exposes three tabs`() {
         compose.setContent {
             MaterialTheme {

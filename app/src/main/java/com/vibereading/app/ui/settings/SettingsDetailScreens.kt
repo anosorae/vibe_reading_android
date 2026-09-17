@@ -165,13 +165,13 @@ private fun AboutInfoCard() {
         Spacer(Modifier.height(4.dp))
         Text(
             "v${BuildConfig.VERSION_NAME}",
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
             "译读是一款双语阅读器：导入 TXT 或 EPUB 书籍，逐章调用 LLM 生成译文，在中文与英文模式之间自由切换。",
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }

@@ -91,7 +91,7 @@ fun SettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(Modifier.height(if (showTopBar) 4.dp else 16.dp))
+            Spacer(Modifier.height(if (showTopBar) 4.dp else 12.dp))
             ThemeSettingsSection(
                 theme = state.theme,
                 onThemeModeChange = vm::updateThemeMode,

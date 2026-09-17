@@ -21,7 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vibereading.app.BuildConfig
 import com.vibereading.app.ui.components.SoftCard
 
@@ -101,20 +103,20 @@ private fun IdentityCardContent(
             }
         }
         Row(
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(
             modifier = Modifier
-                .size(76.dp)
-                .clip(RoundedCornerShape(22.dp)),
+                .size(56.dp)
+                .clip(RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
             androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
                 drawRoundRect(
                     brush = Brush.linearGradient(listOf(primary, secondary)),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(22.dp.toPx())
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx())
                 )
                 val wave = Path().apply {
                     moveTo(0f, size.height * 0.72f)
@@ -132,21 +134,28 @@ private fun IdentityCardContent(
             Icon(
                 Icons.Filled.AutoStories,
                 contentDescription = null,
-                modifier = Modifier.size(44.dp),
+                modifier = Modifier.size(30.dp),
                 tint = onPrimary
             )
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text("译读", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "译读",
+                fontSize = 18.sp,
+                lineHeight = 22.sp,
+                fontWeight = FontWeight.Bold
+            )
             Text(
                 "用 AI 让阅读没有语言的边界",
-                style = MaterialTheme.typography.bodyLarge,
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.size(4.dp))
+            Spacer(Modifier.size(2.dp))
             Text(
                 "v${BuildConfig.VERSION_NAME}",
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 11.sp,
+                lineHeight = 14.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -95,10 +96,10 @@ internal fun ThemeSettingsSection(
                     ) {
                         Text(
                             label,
-                            fontSize = 13.sp,
-                            lineHeight = 16.sp,
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
                             maxLines = 1,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
                 }
@@ -371,8 +372,11 @@ private fun SectionCard(
     iconTint: Color = MaterialTheme.colorScheme.primary,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // 设计规范刻度：页面左右 24dp、卡片间距 16dp（每卡上下各 8dp）、卡片圆角与内边距 24dp
-    SoftCard(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+    // 设计规范刻度：页面左右 24dp、卡片间距 16dp（每卡上下各 8dp）、卡片圆角 24dp
+    SoftCard(
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp)
+    ) {
         if (title != null && icon != null) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -381,28 +385,28 @@ private fun SectionCard(
                 IconCircle(
                     icon = icon,
                     tint = iconTint,
-                    circleSize = 34.dp,
-                    iconSize = 18.dp
+                    circleSize = 30.dp,
+                    iconSize = 16.dp
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         title,
-                        fontSize = 16.sp,
-                        lineHeight = 20.sp,
+                        fontSize = 15.sp,
+                        lineHeight = 19.sp,
                         fontWeight = FontWeight.Bold
                     )
                     if (subtitle != null) {
                         Text(
                             subtitle,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
         }
         content()
     }
@@ -423,8 +427,8 @@ private fun ThemeRow(
     ) {
         Text(
             label,
-            fontSize = 15.sp,
-            lineHeight = 19.sp,
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f)
         )
@@ -444,18 +448,18 @@ private fun SettingsNavigationRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .heightIn(min = 44.dp)
-            .padding(vertical = 6.dp),
+            .heightIn(min = 40.dp)
+            .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
             if (subtitle != null) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     subtitle,
-                    fontSize = 13.sp,
-                    lineHeight = 17.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -463,8 +467,8 @@ private fun SettingsNavigationRow(
         if (value != null) {
                 Text(
                     value,
-                    fontSize = 14.sp,
-                    lineHeight = 19.sp,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -475,7 +479,7 @@ private fun SettingsNavigationRow(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(18.dp)
         )
     }
 }
@@ -493,12 +497,12 @@ private fun SettingsSwitchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
-                fontSize = 13.sp,
-                lineHeight = 17.sp,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }

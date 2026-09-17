@@ -362,8 +362,11 @@ class TranslationCoordinatorTest {
         suspend fun channel(content: String, invocation: Int = callCount(content) - 1): Channel<TranslationEvent> {
             val deadline = System.currentTimeMillis() + 10_000
             while (true) {
-                channels[content]?.getOrNull(invocation)?.let { return it }
-                if (System.currentTimeMillis() > deadline) throw AssertionError("等待服务调用超时：$content#$invocation")
+                // 协调器先写库 IN_PROGRESS 再调 translateStream 注册通道，测试线程可能抢跑；
+                // 此时 callCount=0 会推算出 -1，须等注册完成后按真实调用次数重新定位
+                val idx = if (invocation < 0) maxOf(0, callCount(content) - 1) else invocation
+                channels[content]?.getOrNull(idx)?.let { return it }
+                if (System.currentTimeMillis() > deadline) throw AssertionError("等待服务调用超时：$content#$idx")
                 delay(10)
             }
         }

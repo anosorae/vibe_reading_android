@@ -29,6 +29,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/ReaderScroll.kt` — 滚动模式内容项（`ScrollItem`/`buildScrollChunks`/`indexInChunks`）与 `ScrollReader` 列表
     - `reader/ReaderChrome.kt` — 顶栏/底栏/翻译状态面板/章节标签等 chrome 组件
     - `reader/ReaderViewModel.kt` — 初始化恢复、阅读位置状态、串行进度写入、翻译协调器接线、词典查词入口
+    - `reader/LlmEditController.kt` — LLM 配置编辑与连通测试控制器（编辑草稿/测试结果独立状态流，宿主 ReaderViewModel 提供 LLM 上下文，`LlmEditHost` 是接缝）
     - `reader/TranslationCoordinator.kt` — 进程级多任务翻译协调器：按 `bookId + chapterId` 管理运行任务，同章互斥幂等、异章并行，章节级 `translationRunId` 提供数据库 stale 防护
     - `reader/components/ReadingContentRenderer.kt` — 分页与滚动共享的章节标题/正文/双语内容渲染
     - `reader/components/BilingualParagraph.kt` — 英文译文、原文气泡和 Popup

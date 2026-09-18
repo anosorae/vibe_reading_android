@@ -41,9 +41,7 @@ import com.vibereading.app.ui.theme.ReaderBgPresets
 @Composable
 fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     val state by vm.uiState.collectAsState()
-    val editApiKey by vm.editApiKey.collectAsState()
-    val editApiBase by vm.editApiBase.collectAsState()
-    val editModel by vm.editModel.collectAsState()
+    val llmEdit by vm.llmEditState.collectAsState()
     val context = LocalContext.current
     val density = LocalDensity.current
     val settings = state.readingSettings
@@ -221,7 +219,7 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     val catalogGroups = remember(state.chapters) { buildCatalogGroups(state.chapters) }
     val overlayModel = ReaderOverlayModel(
         state, layout, window, pagerState, catalogGroups, opening, isPagerMode, isDark,
-        background, accent, themeAccent, editApiKey, editApiBase, editModel
+        background, accent, themeAccent, llmEdit
     )
     val gestureKey = ReaderGestureLayoutKey(
         settings.paddingH, settings.paddingV, layout.geometry.statusBarPx, layout.geometry.navBarPx

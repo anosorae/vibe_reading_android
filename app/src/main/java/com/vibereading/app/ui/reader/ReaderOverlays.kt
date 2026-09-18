@@ -74,9 +74,8 @@ data class ReaderOverlayModel(
     val accent: Color,
     /** 外部主题强调色：底栏四按钮、中英切换、章节滑块这类交互控件用 */
     val themeAccent: Color,
-    val editApiKey: String,
-    val editApiBase: String,
-    val editModel: String
+    /** LLM 配置编辑会话状态（编辑草稿/测试结果），来自 LlmEditController */
+    val llmEdit: LlmEditState
 )
 
 interface ReaderOverlayActions : LlmSettingsSheetActions {
@@ -233,13 +232,14 @@ fun ReaderModalOverlays(model: ReaderOverlayModel, actions: ReaderOverlayActions
             ReaderSettingsSheet(state.readingSettings, model.accent, actions::updateReadingSettings, actions::dismissSettings)
         }
         if (state.llmSettingsVisible) {
+            val e = model.llmEdit
             val sheetState = remember(
-                state.llmSettings, state.profiles, state.activeProfileId, state.editingProfileId,
-                model.editApiKey, model.editApiBase, model.editModel, state.llmTestResult, state.llmTestSuccess
+                state.llmSettings, state.profiles, state.activeProfileId,
+                e.editingProfileId, e.editApiKey, e.editApiBase, e.editModel, e.testResult, e.testSuccess
             ) {
                 LlmSettingsSheetUiState(
-                    state.llmSettings, state.profiles, state.activeProfileId, state.editingProfileId,
-                    model.editApiKey, model.editApiBase, model.editModel, state.llmTestResult, state.llmTestSuccess
+                    state.llmSettings, state.profiles, state.activeProfileId,
+                    e.editingProfileId, e.editApiKey, e.editApiBase, e.editModel, e.testResult, e.testSuccess
                 )
             }
             LlmSettingsSheet(sheetState, actions, model.accent)

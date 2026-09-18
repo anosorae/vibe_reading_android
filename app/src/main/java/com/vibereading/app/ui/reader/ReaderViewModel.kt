@@ -23,7 +23,6 @@ import com.vibereading.app.domain.model.toLlmProfile
 import com.vibereading.app.domain.model.toLlmSettings
 import com.vibereading.app.domain.parser.SourceLanguageDetector
 import com.vibereading.app.log.AppLog
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -58,9 +57,6 @@ data class ReaderUiState(
     val llmSettingsVisible: Boolean = false,
     val nightMode: Boolean = false,
     val errorMessage: String? = null,
-    val editingProfileId: Long? = null,     // 非空 = 翻译设置面板中正在编辑某个配置
-    val llmTestResult: String? = null,
-    val llmTestSuccess: Boolean? = null,
     val dictQueryWord: String? = null, // 非空 = 词典弹窗可见
     val dictEntry: DictEntry? = null,
     val dictLoading: Boolean = false,
@@ -81,7 +77,7 @@ class ReaderViewModel(
     private val wordExplainService: WordExplainService? = null,
     appContext: Context,
     coordinator: TranslationCoordinator? = null
-) : ViewModel() {
+) : ViewModel(), LlmEditHost {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
     val uiState: StateFlow<ReaderUiState> = _uiState.asStateFlow()
@@ -93,7 +89,6 @@ class ReaderViewModel(
     // 生产环境与 Web 伴读共用进程级协调器；测试可注入独立实例。
     // 同章互斥、异章并行，阅读焦点只决定展示哪个任务状态。
     private val translationCoordinator = coordinator ?: TranslationCoordinatorProvider.get(appContext)
-    private var llmEditDirty = false
     private val progressMutex = Mutex()
     private var pendingPosition: ReadingPosition? = null
     private var restoreCompleted = false
@@ -104,13 +99,15 @@ class ReaderViewModel(
     private val firstContentReady = MutableStateFlow(false)
     private val settingsSaver = ReadingSettingsSaver(viewModelScope, settingsRepo.reading::saveSettings)
 
-    // ── LLM 编辑字段（必须在 init 之前声明，因为 llmSettings.collect 会写这些字段） ──
-    private val _editApiKey = MutableStateFlow("")
-    private val _editApiBase = MutableStateFlow("")
-    private val _editModel = MutableStateFlow("")
-    val editApiKey: StateFlow<String> = _editApiKey.asStateFlow()
-    val editApiBase: StateFlow<String> = _editApiBase.asStateFlow()
-    val editModel: StateFlow<String> = _editModel.asStateFlow()
+    // ── LLM 配置编辑/连通测试的独立状态单元（编辑草稿跟随活跃配置回填，dirty 期间不被覆盖） ──
+    // 必须在 init 之前声明：init 中的 activeLlmSettings 收集会调用 onActiveSettingsChanged。
+    private val llmEdit = LlmEditController(
+        scope = viewModelScope,
+        llmProfileRepo = llmProfileRepo,
+        translationService = translationService,
+        host = this
+    )
+    val llmEditState: StateFlow<LlmEditState> = llmEdit.state
 
     init {
         // 书籍/目标单章与设置并行准备，首屏不再等待整书正文读取。
@@ -188,11 +185,7 @@ class ReaderViewModel(
             firstContentReady.first { it }
             llmProfileRepo.activeLlmSettings.collect { ls ->
                 _uiState.update { it.copy(llmSettings = ls) }
-                if (!llmEditDirty) {
-                    _editApiKey.value = ls.apiKey
-                    _editApiBase.value = ls.apiBase
-                    _editModel.value = ls.model
-                }
+                llmEdit.onActiveSettingsChanged(ls)
                 // 配置变更后重新评估当前章节是否需要翻译
                 if (needsTranslation()) {
                     _uiState.value.activeChapterId?.let { maybeTranslateChapter(it) }
@@ -362,8 +355,8 @@ class ReaderViewModel(
     fun toggleLlmSettings() = openOverlay({ llmSettingsVisible }) { copy(llmSettingsVisible = true) }
 
     fun dismissLlmSettings() {
-        llmEditDirty = false
-        _uiState.update { it.copy(llmSettingsVisible = false, editingProfileId = null, llmTestResult = null, llmTestSuccess = null, toolbarVisible = true) }
+        llmEdit.onSheetDismissed()
+        _uiState.update { it.copy(llmSettingsVisible = false, toolbarVisible = true) }
     }
 
     fun dismissAllOverlays() {
@@ -388,60 +381,32 @@ class ReaderViewModel(
         viewModelScope.launch { settingsRepo.reading.saveNightMode(new) }
     }
 
-    // ── Profile 切换 ──
+    // ── LlmEditHost：编辑控制器读写本 ViewModel 的 LLM 上下文 ──
 
-    /** 切换活跃配置（即时生效，下次翻译用新配置） */
-    fun switchProfile(id: Long) {
-        viewModelScope.launch {
-            llmProfileRepo.setActive(id)
-        }
+    override val currentProfiles: List<LlmProfile> get() = _uiState.value.profiles
+    override val currentActiveProfileId: Long? get() = _uiState.value.activeProfileId
+    override val currentLlmSettings: LlmSettings get() = _uiState.value.llmSettings
+
+    override fun onActiveLlmSettingsUpdated(newSettings: LlmSettings) {
+        _uiState.update { it.copy(llmSettings = newSettings) }
     }
 
-    /** 进入编辑某个配置的 API 设置 */
-    fun editProfileInSheet(id: Long) {
-        val profile = _uiState.value.profiles.find { it.id == id } ?: return
-        llmEditDirty = true
-        _editApiKey.value = profile.apiKey
-        _editApiBase.value = profile.apiBase
-        _editModel.value = profile.model
-        _uiState.update { it.copy(editingProfileId = id, llmTestResult = null, llmTestSuccess = null) }
-    }
+    // ── LLM 配置编辑与连通测试（实现在 LlmEditController，此处仅保留面板 Actions 的转发） ──
 
-    /** 退出编辑，回到配置列表 */
-    fun cancelProfileEditInSheet() {
-        llmEditDirty = false
-        _uiState.update { it.copy(editingProfileId = null, llmTestResult = null, llmTestSuccess = null) }
-        val ls = _uiState.value.llmSettings
-        _editApiKey.value = ls.apiKey
-        _editApiBase.value = ls.apiBase
-        _editModel.value = ls.model
-    }
+    fun switchProfile(id: Long) = llmEdit.switchProfile(id)
 
-    // ── LLM settings (翻译设置面板 — 编辑当前活跃配置) ──
+    fun editProfileInSheet(id: Long) = llmEdit.editProfile(id)
+
+    fun cancelProfileEditInSheet() = llmEdit.cancelEdit()
 
     /** 打开面板时从最新持久化值填充；已有草稿则保持不变。 */
-    fun initLlmEditFields() {
-        if (llmEditDirty) return
-        val ls = _uiState.value.llmSettings
-        _editApiKey.value = ls.apiKey
-        _editApiBase.value = ls.apiBase
-        _editModel.value = ls.model
-    }
+    fun initLlmEditFields() = llmEdit.initEditFields()
 
-    fun updateEditApiKey(key: String) {
-        llmEditDirty = true
-        _editApiKey.value = key
-    }
+    fun updateEditApiKey(key: String) = llmEdit.updateApiKey(key)
 
-    fun updateEditApiBase(base: String) {
-        llmEditDirty = true
-        _editApiBase.value = base
-    }
+    fun updateEditApiBase(base: String) = llmEdit.updateApiBase(base)
 
-    fun updateEditModel(model: String) {
-        llmEditDirty = true
-        _editModel.value = model
-    }
+    fun updateEditModel(model: String) = llmEdit.updateModel(model)
 
     // ── 翻译参数（解绑自 LLM 配置，即时持久化到活跃 profile） ──
 
@@ -476,71 +441,10 @@ class ReaderViewModel(
     fun updateLlmTemperature(value: Float) = updateActiveProfile { it.copy(temperature = value.coerceIn(0f, 2f)) }
     fun updateLlmTopP(value: Float) = updateActiveProfile { it.copy(topP = value.coerceIn(0f, 1f)) }
 
-    private fun currentEditedLlmSettings(): LlmSettings =
-        _uiState.value.llmSettings.copy(
-            apiKey = _editApiKey.value.trim(),
-            apiBase = _editApiBase.value.trim(),
-            model = _editModel.value.trim()
-        )
-
     /** 保存当前编辑的配置 */
-    fun saveLlmSettings() {
-        viewModelScope.launch {
-            val newSettings = currentEditedLlmSettings()
-            try {
-                _uiState.update { it.copy(llmSettings = newSettings, llmTestResult = null, llmTestSuccess = null) }
-                val editId = _uiState.value.editingProfileId ?: return@launch
-                val profile = _uiState.value.profiles.find { it.id == editId }
-                    ?: return@launch
-                val updated = newSettings.toLlmProfile(name = profile.name, id = editId)
-                val isActive = editId == _uiState.value.activeProfileId
-                llmProfileRepo.updateProfileWithActiveState(updated, isActive = isActive)
-                llmEditDirty = false
-                _uiState.update { it.copy(editingProfileId = null) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AppLog.put("保存翻译设置失败", e)
-                _uiState.update { it.copy(llmTestResult = e.message ?: "保存翻译设置失败", llmTestSuccess = false) }
-            }
-        }
-    }
+    fun saveLlmSettings() = llmEdit.save()
 
-    fun testLlmConnection() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(llmTestResult = null, llmTestSuccess = null) }
-            val newSettings = currentEditedLlmSettings()
-            try {
-                // 先保存再测试
-                val editId = _uiState.value.editingProfileId
-                if (editId != null) {
-                    val profile = _uiState.value.profiles.find { it.id == editId }
-                    if (profile != null) {
-                        val updated = newSettings.toLlmProfile(name = profile.name, id = editId)
-                        val isActive = editId == _uiState.value.activeProfileId
-                        llmProfileRepo.updateProfileWithActiveState(updated, isActive = isActive)
-                        if (isActive) _uiState.update { it.copy(llmSettings = newSettings) }
-                    }
-                }
-                llmEditDirty = false
-                val result = translationService.testConnection(newSettings)
-                result.exceptionOrNull()?.let { AppLog.put("连接测试失败", it) }
-                _uiState.update {
-                    it.copy(
-                        llmTestResult = result.getOrNull() ?: result.exceptionOrNull()?.message,
-                        llmTestSuccess = result.isSuccess
-                    )
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AppLog.put("测试连接失败", e)
-                _uiState.update {
-                    it.copy(llmTestResult = e.message ?: "测试连接失败", llmTestSuccess = false)
-                }
-            }
-        }
-    }
+    fun testLlmConnection() = llmEdit.testConnection()
 
     private fun maybeTranslateChapter(chapterId: Long) {
         val chapter = _uiState.value.chapters.find { it.id == chapterId } ?: return

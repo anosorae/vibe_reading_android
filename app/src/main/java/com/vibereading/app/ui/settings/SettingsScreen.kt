@@ -30,9 +30,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.vibereading.app.ui.bookshelf.ShelfMetrics
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -45,6 +45,7 @@ fun SettingsScreen(
     onOpenTranslationParams: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
     showTopBar: Boolean = true,
+    bottomChromePadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
     val state by vm.uiState.collectAsState()
@@ -128,7 +129,7 @@ fun SettingsScreen(
             Spacer(
                 Modifier.height(
                     if (showTopBar) 28.dp
-                    else ShelfMetrics.NavBarHeight + ShelfMetrics.NavBarBottomGap
+                    else bottomChromePadding
                 )
             )
         }

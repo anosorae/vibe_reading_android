@@ -58,12 +58,20 @@ internal object ShelfMetrics {
     val SortRowTopPadding = 19.dp
     val SortRowBottomPadding = 12.dp
 
-    /** 悬浮底栏：条高 53dp、圆角 18dp、距手势条 14dp、选中胶囊内缩 4dp */
-    val NavBarHeight = 53.dp
-    val NavBarCorner = 18.dp
-    val NavBarBottomGap = 14.dp
-    val NavBarItemInset = 4.dp
-    val NavItemCorner = 16.dp
+    /** 液态玻璃悬浮底栏：条高 64dp、全胶囊圆角 32dp、距手势区 12dp、选中胶囊内缩 5dp */
+    val NavBarHeight = 64.dp
+    val NavBarCorner = 32.dp
+    val NavBarBottomGap = 12.dp
+    val NavItemInset = 5.dp
+    /** 选中胶囊圆角 =（条高 - 内缩×2）÷ 2，维持全胶囊 */
+    val NavItemCorner = 27.dp
+
+    /** 滚动呼吸：列表最后一项完整滚出玻璃底栏所需的额外余量（玻璃栏下方有内容透出） */
+    val NavBarScrollBreath = 16.dp
+
+    /** 蓝色玻璃加号按钮：58dp 大圆角方形 */
+    val NavFabSize = 58.dp
+    val NavFabCorner = 19.dp
 
     /** 书架背景插画的宽高比：裁自设计稿 821×438（很扁的一张画，所以不能 cover 整屏） */
     const val BackdropAspect = 821f / 438f

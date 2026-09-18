@@ -1,10 +1,13 @@
 package com.vibereading.app.ui.navigation
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.unit.dp
 import org.junit.Rule
 import org.junit.Test
@@ -19,17 +22,23 @@ import org.robolectric.annotation.GraphicsMode
 class AppShellTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test
-    fun `bottom navigation exposes three tabs`() {
+    private fun setContentWithBar(stableInsets: WindowInsets) {
         compose.setContent {
             MaterialTheme {
-                AppBottomBar(
-                    stableInsets = WindowInsets(0),
+                GlassBottomBar(
+                    stableInsets = stableInsets,
                     selectedTab = AppTab.BOOKSHELF,
-                    onSelect = {}
+                    onSelect = {},
+                    captureLayer = rememberGraphicsLayer(),
+                    captureTick = remember { mutableIntStateOf(0) }
                 )
             }
         }
+    }
+
+    @Test
+    fun `bottom navigation exposes three tabs`() {
+        setContentWithBar(WindowInsets(0))
         compose.onNodeWithText("书架").assertIsDisplayed()
         compose.onNodeWithText("统计").assertIsDisplayed()
         compose.onNodeWithText("我的").assertIsDisplayed()
@@ -37,15 +46,7 @@ class AppShellTest {
 
     @Test
     fun `bottom navigation remains visible above gesture navigation inset`() {
-        compose.setContent {
-            MaterialTheme {
-                AppBottomBar(
-                    stableInsets = WindowInsets(bottom = 24.dp),
-                    selectedTab = AppTab.BOOKSHELF,
-                    onSelect = {}
-                )
-            }
-        }
+        setContentWithBar(WindowInsets(bottom = 24.dp))
         compose.onNodeWithText("书架").assertIsDisplayed()
         compose.onNodeWithText("统计").assertIsDisplayed()
         compose.onNodeWithText("我的").assertIsDisplayed()

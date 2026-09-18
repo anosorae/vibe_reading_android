@@ -7,11 +7,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -36,6 +33,7 @@ fun BookshelfScreen(
     vm: BookshelfViewModel,
     onOpenBook: (Long) -> Unit,
     coverTransition: @Composable (Long) -> Modifier = { Modifier },
+    bottomChromePadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
     val state by vm.uiState.collectAsState()
@@ -47,12 +45,6 @@ fun BookshelfScreen(
     var confirmSourceLang by remember { mutableStateOf<Pair<BookShelfItem, String>?>(null) }
     var searchExpanded by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
-
-    val fileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let { vm.uploadBook(context, it) }
-    }
 
     // 封面图片选择器：image/* 走 SAF（零权限）；pendingCoverBookId 记住长按的是哪本书，
     // 因为选择器返回时菜单已关闭、menuBook 已置空
@@ -111,17 +103,6 @@ fun BookshelfScreen(
                     vm.switchLayout(if (state.layout == "grid") "list" else "grid")
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                // TXT 与 EPUB 一起可选（ADR-002）；部分文件管理器对 epub 上报的 MIME 不规范，
-                // 同时给出具体类型与通配扩展名兜底
-                onClick = { fileLauncher.launch(arrayOf("text/plain", "application/epub+zip", "*/*")) },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = "上传书籍")
-            }
         }
     ) { padding ->
         // 背景插画是 Scaffold 内容的**第一个子节点**：它压在 Scaffold 的 containerColor 之上、
@@ -134,6 +115,7 @@ fun BookshelfScreen(
                     state = state,
                     searchText = searchText,
                     coverTransition = coverTransition,
+                    bottomChromePadding = bottomChromePadding,
                     onOpenBook = onOpenBook,
                     onLongClickBook = { menuBook = it },
                     onMoreClickBook = { menuBook = it },

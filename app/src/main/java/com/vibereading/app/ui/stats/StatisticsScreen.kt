@@ -42,7 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vibereading.app.ui.bookshelf.ShelfMetrics
+import androidx.compose.ui.unit.Dp
 import com.vibereading.app.ui.bookshelf.percentLabel
 import com.vibereading.app.ui.components.IconCircle
 import com.vibereading.app.ui.components.SoftCard
@@ -57,6 +57,7 @@ import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 internal fun StatisticsScreen(
     vm: StatisticsViewModel,
     onOpenBook: (Long) -> Unit,
+    bottomChromePadding: Dp = 0.dp,
     modifier: Modifier = Modifier
 ) {
     val state by vm.uiState.collectAsState()
@@ -95,8 +96,8 @@ internal fun StatisticsScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 )
-                // AppShell 的悬浮底栏覆盖在内容上方；预留完整滚动安全区
-                Spacer(Modifier.height(ShelfMetrics.NavBarHeight + ShelfMetrics.NavBarBottomGap))
+                // AppShell 的玻璃底栏悬浮在内容上方；预留「底栏 + 呼吸」的完整滚动余量
+                Spacer(Modifier.height(bottomChromePadding))
             }
         }
     }

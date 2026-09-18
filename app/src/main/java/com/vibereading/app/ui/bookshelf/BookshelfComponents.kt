@@ -57,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.domain.model.BookShelfItem
 
@@ -154,6 +155,7 @@ internal fun BoxScope.BookshelfContent(
     state: BookshelfUiState,
     searchText: String,
     coverTransition: @Composable (Long) -> Modifier,
+    bottomChromePadding: Dp,
     onOpenBook: (Long) -> Unit,
     onLongClickBook: (BookShelfItem) -> Unit,
     onMoreClickBook: (BookShelfItem) -> Unit,
@@ -189,6 +191,7 @@ internal fun BoxScope.BookshelfContent(
                 state.layout == "grid" -> BooksGrid(
                     items = state.filteredItems,
                     coverTransition = coverTransition,
+                    bottomChromePadding = bottomChromePadding,
                     onOpenBook = onOpenBook,
                     onLongClickBook = onLongClickBook,
                     onMoreClickBook = onMoreClickBook
@@ -197,6 +200,7 @@ internal fun BoxScope.BookshelfContent(
                 else -> BooksList(
                     items = state.filteredItems,
                     coverTransition = coverTransition,
+                    bottomChromePadding = bottomChromePadding,
                     onOpenBook = onOpenBook,
                     onLongClickBook = onLongClickBook,
                     onMoreClickBook = onMoreClickBook
@@ -236,6 +240,7 @@ private fun EmptyShelf() {
 private fun BooksGrid(
     items: List<BookShelfItem>,
     coverTransition: @Composable (Long) -> Modifier,
+    bottomChromePadding: Dp,
     onOpenBook: (Long) -> Unit,
     onLongClickBook: (BookShelfItem) -> Unit,
     onMoreClickBook: (BookShelfItem) -> Unit
@@ -247,7 +252,12 @@ private fun BooksGrid(
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = ShelfMetrics.PagePadding),
+            // 底部余量给玻璃底栏：最后一排书卡能完整滚出栏体，且滚动中从栏后玻璃透出
+            contentPadding = PaddingValues(
+                start = ShelfMetrics.PagePadding,
+                end = ShelfMetrics.PagePadding,
+                bottom = bottomChromePadding
+            ),
             horizontalArrangement = Arrangement.spacedBy(ShelfMetrics.GridSpacing),
             verticalArrangement = Arrangement.spacedBy(ShelfMetrics.GridSpacing)
         ) {
@@ -269,6 +279,7 @@ private fun BooksGrid(
 private fun BooksList(
     items: List<BookShelfItem>,
     coverTransition: @Composable (Long) -> Modifier,
+    bottomChromePadding: Dp,
     onOpenBook: (Long) -> Unit,
     onLongClickBook: (BookShelfItem) -> Unit,
     onMoreClickBook: (BookShelfItem) -> Unit
@@ -278,7 +289,7 @@ private fun BooksList(
         contentPadding = PaddingValues(
             start = ShelfMetrics.PagePadding,
             end = ShelfMetrics.PagePadding,
-            bottom = 4.dp
+            bottom = bottomChromePadding + 4.dp
         ),
         verticalArrangement = Arrangement.spacedBy(ShelfMetrics.GridSpacing)
     ) {

@@ -34,7 +34,7 @@ object AppLog {
     private fun record(message: String?, throwable: Throwable?, toast: Boolean, persist: Boolean) {
         message ?: return
         if (toast) toastOnUi(message)
-        if (mLogs.size > MAX_SIZE) mLogs.removeLastOrNull()
+        if (mLogs.size >= MAX_SIZE) mLogs.removeLastOrNull()
         if (persist) {
             LogUtils.d(
                 "AppLog",

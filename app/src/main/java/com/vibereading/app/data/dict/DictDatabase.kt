@@ -3,6 +3,7 @@ package com.vibereading.app.data.dict
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import com.vibereading.app.domain.model.DictEntry
+import com.vibereading.app.log.AppLog
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -74,7 +75,8 @@ class DictDatabase private constructor(
                         ((extra[2].toLong() and 0xff) shl 16) or
                         ((extra[3].toLong() and 0xff) shl 24)
                 }
-            } catch (_: IOException) {
+            } catch (e: IOException) {
+                AppLog.put("读取词典资产 gz 头失败，退化为按存在复用", e)
                 null
             }
         }

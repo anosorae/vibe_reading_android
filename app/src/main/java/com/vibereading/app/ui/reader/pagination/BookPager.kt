@@ -554,7 +554,8 @@ fun renderPageBitmap(
                         try {
                             android.graphics.Bitmap.createScaledBitmap(it, wInt, hInt, true)
                                 .asImageBitmap()
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
+                            AppLog.put("卷页位图缩放插图失败: ${unit.path}", e)
                             null
                         }
                     }

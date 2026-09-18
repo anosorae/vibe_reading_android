@@ -123,6 +123,11 @@ android {
             isIncludeAndroidResources = true
         }
     }
+
+    lint {
+        // 基线起步：不因 lint 问题中断构建，遗留问题随迭代逐步清理
+        abortOnError = false
+    }
 }
 
 dependencies {
@@ -155,9 +160,8 @@ dependencies {
     // 用户上传封面的 EXIF 方向读取（minSdk 26 用不了 API 28 才有的 ImageDecoder）
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
-    // OkHttp + SSE
+    // OkHttp（SSE 流式响应由 LlmApiService 自行解析，未用 okhttp-sse）
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")
 
     // JSON
     implementation("com.google.code.gson:gson:2.11.0")

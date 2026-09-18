@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
 import androidx.compose.ui.text.style.TextAlign
 import com.vibereading.app.data.image.BookImageStore
+import com.vibereading.app.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -48,7 +49,8 @@ fun BookCover(
                 try {
                     BookImageStore.coverFile(path).takeIf { it.exists() }
                         ?.let { BitmapFactory.decodeFile(it.absolutePath) }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    AppLog.put("封面解码失败，回退渐变占位: $path", e)
                     null
                 }
             }

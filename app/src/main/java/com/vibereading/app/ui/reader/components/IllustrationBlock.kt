@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.data.image.BookImageStore
 import com.vibereading.app.domain.parser.IllustrationLink
+import com.vibereading.app.log.AppLog
 import com.vibereading.app.ui.reader.pagination.ReaderMetrics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -67,7 +68,8 @@ fun ReadingIllustrationBlock(
         value = withContext(Dispatchers.IO) {
             try {
                 true to BookImageStore.loadBitmap(link.path, targetWidth = 1080)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                AppLog.put("插图加载失败: ${link.path}", e)
                 true to null
             }
         }
@@ -151,7 +153,8 @@ fun IllustrationPreviewOverlay(
             try {
                 BookImageStore.loadBitmap(path, targetWidth = 0)
                     ?: BookImageStore.loadBitmap(path, targetWidth = 1080)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                AppLog.put("插图预览解码失败: $path", e)
                 null
             }
         }

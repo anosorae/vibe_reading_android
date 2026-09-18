@@ -1,34 +1,24 @@
 package com.vibereading.app.ui.reader.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.vibereading.app.domain.model.DictEntry
 import com.vibereading.app.ui.reader.ReaderPalette
 import com.vibereading.app.ui.reader.pagination.PageStyle
 
 /**
  * 词典查询结果弹窗（离线 ECDICT）：显示在长按点附近，展示音标 / 词性 / 中文释义。
- * 复用原文弹窗的 Popup 模式（focusable 独立窗口，点外部或返回键关闭），
+ * Popup 外壳复用 [SelectionPopupScaffold]（focusable 独立窗口，点外部或返回键关闭），
  * 视觉叠加层，不参与排版。
  */
 @Composable
@@ -45,65 +35,57 @@ fun DictPopup(
     val popupBody = pageStyle.body.copy(textIndent = null, textAlign = TextAlign.Start)
     val popupCn = pageStyle.cn.copy(textIndent = null, textAlign = TextAlign.Start)
 
-    Popup(
-        popupPositionProvider = SelectionPopupPositionProvider(LocalDensity.current) { anchor },
-        onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true)
+    SelectionPopupScaffold(
+        anchor = anchor,
+        palette = palette,
+        maxHeight = 320.dp,
+        onDismiss = onDismiss
     ) {
-        Column(
-            modifier = Modifier
-                .background(color = palette.popupBg, shape = RoundedCornerShape(8.dp))
-                .widthIn(max = 320.dp)
-                .heightIn(max = 320.dp)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            when {
-                loading -> Text(
-                    text = "查询中…",
-                    style = popupCn,
-                    color = palette.cnText
-                )
+        when {
+            loading -> Text(
+                text = "查询中…",
+                style = popupCn,
+                color = palette.cnText
+            )
 
-                entry == null -> Text(
-                    text = if (queryWord.any { it.isCjk() }) "仅支持英文查词" else "未收录该词",
-                    style = popupCn,
-                    color = palette.cnText
-                )
+            entry == null -> Text(
+                text = if (queryWord.any { it.isCjk() }) "仅支持英文查词" else "未收录该词",
+                style = popupCn,
+                color = palette.cnText
+            )
 
-                else -> {
-                    Row(verticalAlignment = Alignment.Bottom) {
+            else -> {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = entry.word,
+                        style = popupBody.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold),
+                        color = palette.titleText
+                    )
+                    if (!entry.phonetic.isNullOrBlank()) {
                         Text(
-                            text = entry.word,
-                            style = popupBody.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold),
-                            color = palette.titleText
-                        )
-                        if (!entry.phonetic.isNullOrBlank()) {
-                            Text(
-                                text = "/${entry.phonetic}/",
-                                fontSize = 15.sp,
-                                fontStyle = FontStyle.Italic,
-                                color = palette.cnText,
-                                modifier = Modifier.padding(start = 10.dp, bottom = 2.dp)
-                            )
-                        }
-                    }
-                    if (!entry.pos.isNullOrBlank()) {
-                        Text(
-                            text = entry.pos,
-                            fontSize = 13.sp,
+                            text = "/${entry.phonetic}/",
+                            fontSize = 15.sp,
+                            fontStyle = FontStyle.Italic,
                             color = palette.cnText,
-                            modifier = Modifier.padding(top = 4.dp)
+                            modifier = Modifier.padding(start = 10.dp, bottom = 2.dp)
                         )
                     }
-                    if (!entry.translation.isNullOrBlank()) {
-                        Text(
-                            text = entry.translation,
-                            style = popupCn,
-                            color = palette.cnText,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
+                }
+                if (!entry.pos.isNullOrBlank()) {
+                    Text(
+                        text = entry.pos,
+                        fontSize = 13.sp,
+                        color = palette.cnText,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                if (!entry.translation.isNullOrBlank()) {
+                    Text(
+                        text = entry.translation,
+                        style = popupCn,
+                        color = palette.cnText,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 }
             }
         }

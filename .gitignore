@@ -26,3 +26,6 @@ local.properties
 
 # Release keystore（不入库，CI 通过 Secrets 注入）
 app/release.keystore
+
+# Kotlin/Gradle daemon 构建错误日志
+.kotlin/

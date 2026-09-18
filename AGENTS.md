@@ -36,6 +36,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
     - `reader/components/SelectionHandles.kt` — 选词双端拖拽手柄（屏幕级覆盖层，ReaderScreen 层级渲染，拖拽扩展选区）
     - `reader/components/SelectionToolbar.kt` — 选词工具栏（查词/复制/解释）
     - `reader/components/SelectionPopupPositionProvider.kt` — 选词相关弹窗（工具栏/词典/解释）共用的定位策略唯一实现
+    - `reader/components/SelectionPopupScaffold.kt` — 选词系弹窗（词典/解释）共用的 Popup 外壳（focusable 独立窗口 + 圆角滚动容器，定位走 SelectionPopupPositionProvider）
     - `reader/components/DictPopup.kt` — 词典查询结果弹窗
     - `reader/components/IllustrationBlock.kt` — 正文插图块（分页固定高/滚动自然高）与全屏预览叠加层（双指缩放）
     - `reader/components/ExplainPopup.kt` — LLM 单词解释结果弹窗（`WordExplanation`）

@@ -15,7 +15,7 @@
            read = 用户选择的正文，只作用于正文与标题，不污染按钮/目录。
      排版：正文尺寸走 --fs/--lh，标题与标签用 em 相对缩放，形成单一 type scale；
            阅读栏宽按「每行多少字」表达（--measure-chars）。
-     签名：双语对照 —— 可展开的段落靠指针形状与原生 title 提示，展开的另一种语言用
+     签名：双语对照 —— 可展开的段落只靠指针形状示意（无悬浮提示），展开的另一种语言用
            Markdown 引用块样式（左侧细线 + 弱化文字色）与正文区分。 */
   :root {
     --bg: #faf7f2; --card: #fffdf8; --text: #2c2825; --muted: #6b635b;
@@ -127,12 +127,12 @@
   .chapter-rule { height: 1px; background: var(--border); margin: 0 0 26px; }
 
   p.para {
-    margin: 0 0 1em; text-indent: 2em; text-align: justify;
+    margin: 0 0 1em; text-indent: calc(var(--indent, 2) * 1em); text-align: justify;
     line-height: var(--lh); font-family: var(--font-read);
     -webkit-hyphens: auto; hyphens: auto;
     scroll-margin-top: calc(var(--header-h, 56px) + 12px);
   }
-  /* 可展开的段落只留指针形状与原生 title 提示，不加底色（触屏靠首访提示说明可点按） */
+  /* 可展开的段落只留指针形状示意，不加底色与悬浮提示（触屏靠首访提示说明可点按） */
   p.para.has-other { cursor: pointer; }
 
   /* 展开的另一种语言：Markdown 引用块样式——左侧细线 + 弱化文字色，不填底色 */
@@ -352,6 +352,14 @@
       <button type="button" id="lh-minus" aria-label="减小行距">−</button>
       <span class="val" id="lh-val"></span>
       <button type="button" id="lh-plus" aria-label="增大行距">＋</button>
+    </span>
+  </div>
+  <div class="pop-row">
+    <span class="pop-label">缩进</span>
+    <span class="stepper">
+      <button type="button" id="ind-minus" aria-label="减小首行缩进">−</button>
+      <span class="val" id="ind-val"></span>
+      <button type="button" id="ind-plus" aria-label="增大首行缩进">＋</button>
     </span>
   </div>
 </div>
@@ -673,28 +681,39 @@ function initBgPicker() {
   applyBg();
 }
 
-// ── 字号 / 行距（阅读场景最刚需的两项，此前只能靠系统缩放）──
-const FS_MIN = 14, FS_MAX = 24, LH_MIN = 1.5, LH_MAX = 2.4;
+// ── 字号 / 行距 / 首行缩进（阅读场景最刚需的排版三项，此前只能靠系统缩放）──
+// 缩进范围/步长对齐 App 端 ReaderSettingsSheet 的 indentEm 步进器（0–4em、步长 0.5）。
+const FS_MIN = 14, FS_MAX = 24, LH_MIN = 1.5, LH_MAX = 2.4, IND_MIN = 0, IND_MAX = 4;
 let fsPx = Math.min(FS_MAX, Math.max(FS_MIN, parseInt(lsGet('companion_fs', '17'), 10) || 17));
 let lhVal = Math.min(LH_MAX, Math.max(LH_MIN, parseFloat(lsGet('companion_lh', '1.9')) || 1.9));
+// 缩进 0 是合法值，不能用 `|| 默认` 回退（0 会 falsy），须按 NaN 判断
+const indRaw = parseFloat(lsGet('companion_indent', '2'));
+let indVal = Math.min(IND_MAX, Math.max(IND_MIN, isNaN(indRaw) ? 2 : indRaw));
 function applyType() {
   const root = document.documentElement.style;
   root.setProperty('--fs', fsPx + 'px');
   root.setProperty('--lh', String(+lhVal.toFixed(2)));
+  root.setProperty('--indent', String(+indVal.toFixed(1)));
   $('fs-val').textContent = fsPx + 'px';
   $('lh-val').textContent = lhVal.toFixed(1);
+  $('ind-val').textContent = indVal.toFixed(1) + 'em';
   $('fs-minus').disabled = fsPx <= FS_MIN;
   $('fs-plus').disabled = fsPx >= FS_MAX;
   $('lh-minus').disabled = lhVal <= LH_MIN + 1e-9;
   $('lh-plus').disabled = lhVal >= LH_MAX - 1e-9;
+  $('ind-minus').disabled = indVal <= IND_MIN + 1e-9;
+  $('ind-plus').disabled = indVal >= IND_MAX - 1e-9;
   lsSet('companion_fs', String(fsPx));
   lsSet('companion_lh', String(lhVal));
+  lsSet('companion_indent', String(indVal));
 }
 function initTypeControls() {
   $('fs-minus').onclick = () => { fsPx = Math.max(FS_MIN, fsPx - 1); applyType(); };
   $('fs-plus').onclick = () => { fsPx = Math.min(FS_MAX, fsPx + 1); applyType(); };
   $('lh-minus').onclick = () => { lhVal = Math.max(LH_MIN, +(lhVal - 0.1).toFixed(2)); applyType(); };
   $('lh-plus').onclick = () => { lhVal = Math.min(LH_MAX, +(lhVal + 0.1).toFixed(2)); applyType(); };
+  $('ind-minus').onclick = () => { indVal = Math.max(IND_MIN, +(indVal - 0.5).toFixed(1)); applyType(); };
+  $('ind-plus').onclick = () => { indVal = Math.min(IND_MAX, +(indVal + 0.5).toFixed(1)); applyType(); };
   applyType();
 }
 
@@ -760,16 +779,12 @@ function sidesOf(p, book) {
     : Object.assign(pick(zh, en), { otherIsSource: book.sourceLanguage === 'en' });
 }
 /**
- * 另一侧的元信息：是原文还是译文、以及它的语言。
- * 两者都不再显示成可见标签（展开块只留引用样式），语言只落到 lang 属性上，
- * 用于断词与读屏发音——信息不丢，但不占视觉。
+ * 另一侧文本的语言：原文侧是书源语言，译文侧取另一侧。语言只落到展开块的
+ * lang 属性上，用于断词与读屏发音——不占视觉（不再有可见标签或 title 悬浮提示）。
  */
-function otherSideMeta(book, otherIsSource) {
+function otherSideLang(book, otherIsSource) {
   const src = book.sourceLanguage === 'en' ? 'en' : 'zh';
-  return {
-    role: otherIsSource ? '原文' : '译文',
-    lang: otherIsSource ? src : (src === 'en' ? 'zh' : 'en')
-  };
+  return otherIsSource ? src : (src === 'en' ? 'zh' : 'en');
 }
 
 // ── 路由 ──
@@ -1079,13 +1094,11 @@ function renderContent() {
     el.dataset.end = p.end;
     if (sides.other) {
       hasOtherSide = true;
-      const other = otherSideMeta(book, sides.otherIsSource);
       el.classList.add('has-other');
       el.setAttribute('role', 'button');
       el.setAttribute('tabindex', '0');
       el.setAttribute('aria-expanded', 'false');
-      el.title = '点击展开' + other.role;
-      const toggle = () => toggleExpand(el, sides.other, other.lang);
+      const toggle = () => toggleExpand(el, sides.other, otherSideLang(book, sides.otherIsSource));
       el.addEventListener('click', toggle);
       el.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +50,7 @@ internal fun BookActionsSheet(
     onOpenBook: () -> Unit,
     onSelectSourceLanguage: () -> Unit,
     onSelectCover: () -> Unit,
+    onSearchCover: () -> Unit,
     onRemoveCover: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -101,6 +103,12 @@ internal fun BookActionsSheet(
                 supportingContent = { Text("从相册或文件中选择图片") },
                 leadingContent = { Icon(Icons.Filled.Image, contentDescription = null) },
                 modifier = Modifier.clickable(onClick = onSelectCover)
+            )
+            ListItem(
+                headlineContent = { Text("搜索封面") },
+                supportingContent = { Text("用浏览器按书名搜索封面图片") },
+                leadingContent = { Icon(Icons.Filled.Search, contentDescription = null) },
+                modifier = Modifier.clickable(onClick = onSearchCover)
             )
             if (item.book.coverPath != null) {
                 ListItem(

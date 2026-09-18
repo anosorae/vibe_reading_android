@@ -1,7 +1,9 @@
 package com.vibereading.app.ui.bookshelf
 
 import android.app.Activity
+import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.vibereading.app.domain.model.BookShelfItem
+import com.vibereading.app.log.AppLog
 import com.vibereading.app.ui.theme.LocalStableSystemBarInsets
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -143,6 +146,20 @@ fun BookshelfScreen(
                 pendingCoverBookId = item.book.id
                 menuBook = null
                 coverLauncher.launch(arrayOf("image/*"))
+            },
+            onSearchCover = {
+                menuBook = null
+                runCatching {
+                    context.startActivity(
+                        Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://www.baidu.com/s?wd=${Uri.encode(item.book.title)}")
+                        )
+                    )
+                }.onFailure { e ->
+                    AppLog.put("搜索封面：打开浏览器失败 book=${item.book.id}", e)
+                    Toast.makeText(context, "未找到可用的浏览器", Toast.LENGTH_SHORT).show()
+                }
             },
             onRemoveCover = {
                 menuBook = null

@@ -122,6 +122,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - 双语译文必须保留 `[1] [2] ...` 标记，并与原文段落一一对应。无效标记不能静默绑定到其他段落；修改 prompt/解析器时必须更新 offset 对齐测试。
 - `ReadingPosition.offset` 是非负 UTF-16 code-unit 偏移，使用半开区间语义；offset 超过章节长度时按当前章节内容长度规范化。
 - 运行时页码变化不是数据迁移事件。不要把 page index 写回 `BookEntity`、DAO 或 Room；Room 进度 SQL 只更新章节 ID、原文 offset 和时间。
+- 分页/滚动的 `PagerState`/`LazyListState` **不参与跨进程恢复**（`readerProcessGeneration` 作用域 key）：进程被杀后 savedInstanceState 恢复的扁平页索引来自已销毁的窗口（邻居章节数不同则越界），HorizontalPager 首帧布局遇越界索引会回落第 0 页，覆盖 chapterId+offset 的恢复定位并被翻页上报链落库，表现为「回到章节首页」。页码/滚动索引只是当前窗口的派生状态，位置唯一事实源是 DB；同进程内（旋转重建）恢复行为不变。
 - 原文气泡和 Popup 是视觉叠加层，不参与分页测量、不触发重排；en 模式每个带译文的英文片段段尾都有气泡，弹窗恒显示整段中文侧文本。
 - 排版内容区宽高必须按整像素对齐；PageRenderer、卷页位图和滚动 content padding 的系统栏扣除必须与 `ReaderPageGeometry` 一致。
 - `PageRenderer` 使用无界高度的自定义 `Layout`，不要改回会以剩余高度截断末子元素的 `Column`。末段不绘制段距，必须和 `ChapterPaginator.buildPage()` 的 `realUsed` 一致。

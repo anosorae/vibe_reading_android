@@ -22,6 +22,17 @@ internal data class ReaderGestureLayoutKey(
     val navBarPx: Int
 )
 
+/**
+ * 进程代际（每进程一次）：作用域 key，令 `rememberPagerState`/`rememberLazyListState` 的
+ * saveable 恢复在**跨进程**重启后失效。进程被系统杀死重启时，savedInstanceState 会把
+ * 上一个窗口的扁平页索引恢复进 PagerState；该索引来自已销毁的窗口（邻居章节数不同则
+ * 数值越界），HorizontalPager 首次布局遇到越界索引会回落到第 0 页，覆盖恢复定位
+ * （chapterId+offset 的 seek），再被翻页上报链落库——表现为「回到章节首页」。
+ * 阅读位置的唯一事实源是 DB 的 chapterId+offset（ADR-001），页码只是派生状态，
+ * 不应参与跨进程恢复；同进程内（如旋转重建）该 key 不变，恢复行为保持原样。
+ */
+internal val readerProcessGeneration: Long = System.nanoTime()
+
 @Composable
 internal fun rememberReaderLayoutSpec(
     settings: ReadingSettings,

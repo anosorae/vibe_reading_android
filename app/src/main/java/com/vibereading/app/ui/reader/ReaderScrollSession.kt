@@ -41,7 +41,9 @@ fun rememberReaderScrollSession(
     titleMode: Int,
     updateProgress: (Long, Int) -> Unit
 ): ReaderScrollSession {
-    val listState = rememberLazyListState()
+    // 滚动位置同样以 DB 的 chapterId+offset 为唯一事实源（见 readerProcessGeneration 注释），
+    // 跨进程恢复的列表索引指向已销毁的 chunk 列表，交给定位 effect 按保存 offset 重锚。
+    val listState = androidx.compose.runtime.key(readerProcessGeneration) { rememberLazyListState() }
     val session = remember(listState) { ReaderScrollSession(listState) }
 
     LaunchedEffect(titleMode) {

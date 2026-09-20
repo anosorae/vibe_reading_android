@@ -93,7 +93,9 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     }
     SideEffect { window.updateChapterSource(state.chapters) }
 
-    val pagerState = rememberPagerState(initialPage = 0) { window.pageCount }
+    val pagerState = androidx.compose.runtime.key(readerProcessGeneration) {
+        rememberPagerState(initialPage = 0) { window.pageCount }
+    }
     val scope = rememberCoroutineScope()
     val simFlip = remember { SimFlipState() }
     val curlController = remember(scope, simFlip) { ReaderCurlController(simFlip, scope) }

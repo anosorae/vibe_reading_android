@@ -70,12 +70,16 @@ class CompanionApi(
 
     /**
      * 回写阅读进度：offset 以「视口顶部段落 startOffset」上报，此处按章节内容长度
-     * 规范化后走与 App 相同的进度入口。
+     * 规范化后走与 App 相同的进度入口。落一条日志：浏览器端停驻的旧标签页在
+     * visibilitychange/pagehide 时会回写其旧位置（后写覆盖），若手机侧随后被系统
+     * 冻结杀进程，重开即表现为「回到章节首页」——日志用于事后指认这类回写。
      */
     suspend fun saveProgress(bookId: Long, chapterId: Long, offset: Int): Boolean {
         val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return false
         val normalized = ReadingPosition.clampOffset(offset, chapter.content.length)
-        return bookRepo.updateLastReadProgress(bookId, chapterId, normalized)
+        val ok = bookRepo.updateLastReadProgress(bookId, chapterId, normalized)
+        if (ok) AppLog.put("Web 伴读回写进度：书 $bookId 章 $chapterId offset $normalized")
+        return ok
     }
 
     // ── 显示模式 ──

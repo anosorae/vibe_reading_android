@@ -6,6 +6,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -35,6 +37,13 @@ fun ReaderSystemUiEffects(
     val view = LocalView.current
     val activity = view.context as? Activity
 
+    // DisposableEffect 只在 lifecycleOwner 变化时重注册，观察者闭包若直接捕获参数
+    // 会一直持有首帧组合的 syncProgress（当时 window 为空 → chapterOfPage 恒 null，
+    // ON_STOP 的「先按当前页同步再落盘」实际一直是 no-op）。经 rememberUpdatedState
+    // 转发，观察者拿到的恒为最新组合的闭包（含当前 window/isPagerMode）。
+    val currentSyncProgress by rememberUpdatedState(syncProgress)
+    val currentFlushProgress by rememberUpdatedState(flushProgress)
+
     val restoreSystemBars = {
         activity?.window?.let { window ->
             WindowCompat.getInsetsController(window, view).apply {
@@ -56,8 +65,8 @@ fun ReaderSystemUiEffects(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                syncProgress()
-                scope.launch { flushProgress() }
+                currentSyncProgress()
+                scope.launch { currentFlushProgress() }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

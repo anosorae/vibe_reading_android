@@ -68,20 +68,37 @@ import com.vibereading.app.ui.theme.VibeColors
 import com.vibereading.app.ui.theme.VibeDarkColors
 import kotlin.math.roundToInt
 
-/** 章节号正则：提取「第N章/回/节/卷」中的数字。 */
-private val chapterNumRegex = Regex("""^第(\d+)[章回节卷]""")
+/** 底部栏章节标签：全局章号 = 章节列表位置 + 1，与滑块位置和「共N章」同一口径；
+ *  序章/楔子显示原名。internal 供 PageInfoOverlays 页眉复用（同一口径，不另起炉灶）。
+ *  不从标题提取章号：分卷书每卷重新编号，标题里的「第一章」和全局位置对不上，
+ *  拖滑块切到第二卷开头会显示成「第1章 / 共N章」。 */
+/** 标题自带章号检测：中文「第N章/回/节/卷」（容忍「第 28 章」式空格）、英文「Chapter N」
+ *  与「1. / 1、」式数字编号（英文原版书常见，如「1. Good Morning Brother」）。 */
+private val titleNumberRegex = Regex(
+    """^\s*(第\s*\d+\s*[章回节卷]|Chapter\s+\d+|\d+\s*[.、)])""",
+    RegexOption.IGNORE_CASE
+)
 
-/** 底部栏章节标签：序章/楔子显示原名，其余取标题里的章号（避免把序章算成第1章导致整体偏移）。
- *  internal 供 PageInfoOverlays 页眉复用（同一口径，不另起炉灶）。 */
 internal fun chapterLabel(chapters: List<Chapter>, index: Int): String {
     if (index !in chapters.indices) return "—"
     val title = chapters[index].title
     return when {
         title == "序章" || title == "楔子" || title.startsWith("序") || title.startsWith("楔") -> "序章"
-        else -> {
-            val num = chapterNumRegex.find(title)?.groupValues?.get(1)
-            if (num != null) "第${num}章" else "第${index + 1}章"
-        }
+        else -> "第${index + 1}章"
+    }
+}
+
+/** 页眉章节文本：标题自带章号（分卷书的卷内编号、英文 Chapter N）时只显示标题，
+ *  避免与全局章号前缀拼成「第203章 · 第29章 诞生」式重复；标题无章号时（如「seed」）
+ *  前置全局章号「第N章 · 标题」保留位置信息。 */
+internal fun chapterHeaderText(chapters: List<Chapter>, index: Int): String {
+    if (index !in chapters.indices) return ""
+    val title = chapters[index].title
+    val label = chapterLabel(chapters, index)
+    return when {
+        title == label || title.startsWith(label) -> title
+        titleNumberRegex.containsMatchIn(title) -> title
+        else -> "$label · $title"
     }
 }
 

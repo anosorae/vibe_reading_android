@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.ui.reader.ReaderLayoutSpec
-import com.vibereading.app.ui.reader.chapterLabel
+import com.vibereading.app.ui.reader.chapterHeaderText
 import com.vibereading.app.ui.reader.pagination.BookWindow
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -114,11 +114,7 @@ fun PageInfoOverlays(
         // 以正文区顶部为锚点向上退让：文字底边 = contentTop - gap，文字顶边 = contentTop - gap - textHeight
         // 若 margin 不够，文字可少量叠入系统栏区域（边到边模式下状态栏半透明，可接受）
         Text(
-            text = if (inBook) {
-                val title = chapters[chapterIndex].title
-                val label = chapterLabel(chapters, chapterIndex)
-                if (title == label || title.startsWith(label)) title else "$label · $title"
-            } else "",
+            text = if (inBook) chapterHeaderText(chapters, chapterIndex) else "",
             fontSize = 12.sp,
             color = tipColor,
             maxLines = 1,

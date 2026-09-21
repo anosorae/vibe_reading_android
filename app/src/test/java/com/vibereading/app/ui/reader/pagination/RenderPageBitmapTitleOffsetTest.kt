@@ -108,7 +108,6 @@ class RenderPageBitmapTitleOffsetTest {
                 palette = ReaderPalette.of(isDark = false),
                 density = densityObj,
                 bgColorArgb = 0xFFFFF8F0.toInt(),
-                sectionColorArgb = 0xFF8B5E3C.toInt(),
                 measurer = measurer
             )
         )
@@ -214,7 +213,6 @@ class RenderPageBitmapTitleOffsetTest {
                 palette = ReaderPalette.of(isDark = false),
                 density = densityObj,
                 bgColorArgb = 0xFFFFF8F0.toInt(),
-                sectionColorArgb = 0xFF8B5E3C.toInt(),
                 measurer = measurer
             )
         )

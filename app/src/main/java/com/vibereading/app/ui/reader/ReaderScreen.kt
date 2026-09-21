@@ -114,7 +114,7 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
         curlController.update(
             ReaderCurlController.Config(
                 pagerState, window, state.mode, layout, density,
-                background.toArgb(), accent.toArgb(), measurer
+                background.toArgb(), measurer
             )
         )
     }

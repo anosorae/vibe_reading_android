@@ -82,7 +82,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
   - **书架是刻意的例外**：遵循 ADR-006 密排视觉基线（15dp 边距、小圆角书封、`ShelfTypography` 局部字号刻度），不套 24dp 卡片体系；底栏与书架网格共用 `ShelfMetrics.PagePadding` 对齐线。
   - 统计页数据全部来自本地真实数据：聚合走 `readingStatsOf()` 纯函数（与书架共用 `getShelfItems()` 数据源、已读章节数同一算法），禁止虚构阅读时长等未采集口径。
 - **阅读器是独立视觉世界（纸面 + 赭色 chrome），不随全局主题 accent 变化**：
-  - chrome 表面（顶/底栏表面与文字、目录抽屉、状态面板）用 `ReaderChromeColors`（只跟阅读背景深浅走）；目录/弹窗/打开过渡的强调色用 `ReaderPalette.accent`（赭色系）。
+  - chrome 表面（顶/底栏表面与文字、目录抽屉、状态面板）用 `ReaderChromeColors`（只跟阅读背景深浅走）；正文卷名（`ReadingChapterTitle` 的 section，滚动/分页/仿真位图三条路径共用）与目录/弹窗/打开过渡的强调色用 `ReaderPalette.accent`（赭色系），**禁止让卷名取 `MaterialTheme.colorScheme.primary` 或经参数另传 accent**——仿真位图 `renderPageBitmap` 只从 `palette.accent` 取色，曾因两条接线取色源不同导致翻页时卷名变色跳变。
   - **交互强调控件例外**：顶栏中英文切换选中态用 `themeAccent`（= `MaterialTheme.colorScheme.primary`，用户选的主题色）——「表面固定、强调个性化」。注意同一主题色在阅读器的**暖米纸面**上比 App 冷白卡片上显深，所以选中胶囊过 `readerControlAccent()`（深色强调色向白提 16%，粉彩与深色阅读底保持原值）再上色。底栏整条（「目录/翻译/重翻/设置」四按钮、章节滑块、上一章/下一章）统一 chrome 次级灰（`ReaderChromeColors.mutedText`），不随主题 accent，保持 chrome 中性。
   - 阅读页内三个大弹窗（目录/阅读设置/翻译配置）整体包在 `ReaderSheetTheme(isDark)` 里：容器与内部 M3 控件全部换成固定的原木暖纸配色；App 侧同组件仍跑 `VibeReadingTheme`，一份代码两套皮肤。
 

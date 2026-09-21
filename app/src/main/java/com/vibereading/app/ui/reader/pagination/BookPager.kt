@@ -481,7 +481,6 @@ fun renderPageBitmap(
     palette: ReaderPalette,
     density: androidx.compose.ui.unit.Density,
     bgColorArgb: Int,
-    sectionColorArgb: Int,
     measurer: TextMeasurer? = null,
     imageResolver: ((path: String, targetWidth: Int) -> Bitmap?)? = null
 ): Bitmap? {
@@ -512,10 +511,11 @@ fun renderPageBitmap(
         canvas.save()
         canvas.translate(offsetX, offsetY)
 
-        // 文本 Paint（按真实页配色）
+        // 文本 Paint（按真实页配色）；卷名色与 ReadingChapterTitle 同源取 palette.accent，
+        // 不接受外部传入——历史上位图侧接过独立的 accent 参数，导致仿真翻页卷名变色跳变
         val bodyPaint = textPaint(palette.bodyText)
         val titlePaint = textPaint(palette.titleText)
-        val sectionPaint = textPaint(Color(sectionColorArgb))
+        val sectionPaint = textPaint(palette.accent)
 
         // 版面几何由共享计划决定（与 Compose 页同一个 PageLayoutPlanner）：
         // 本函数只负责「按计划绘制」，不再自行累加间距、不再各自推导气泡矩形。

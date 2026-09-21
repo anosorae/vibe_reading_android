@@ -650,7 +650,6 @@ class PageGeometryConsistencyTest {
         palette = palette,
         density = densityObj,
         bgColorArgb = bgColorArgb,
-        sectionColorArgb = 0xFF8B5E3C.toInt(),
         measurer = newMeasurer(),
         imageResolver = imageResolver
     )

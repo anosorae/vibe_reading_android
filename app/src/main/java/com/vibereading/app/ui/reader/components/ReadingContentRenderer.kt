@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -39,7 +38,9 @@ fun ReadingChapterTitle(
             Text(
                 text = section,
                 style = pageStyle.cn.copy(textAlign = align),
-                color = MaterialTheme.colorScheme.primary,
+                // 卷名色单一来源 ReaderPalette.accent（阅读世界固定赭色，不随全局主题）；
+                // 仿真位图 renderPageBitmap 同源取色，两侧不设第二条接线
+                color = palette.accent,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = ReaderMetrics.SECTION_TITLE_GAP_DP.dp)

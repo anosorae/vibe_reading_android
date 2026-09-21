@@ -40,7 +40,6 @@ class ReaderCurlController(
         val layout: ReaderLayoutSpec,
         val density: Density,
         val backgroundArgb: Int,
-        val accentArgb: Int,
         val measurer: TextMeasurer
     )
 
@@ -116,12 +115,12 @@ class ReaderCurlController(
         val layout = config.layout
         val curBitmap = renderPageBitmap(
             config.window, cur, config.mode, layout.pageStyle, layout.geometry, layout.palette,
-            config.density, config.backgroundArgb, config.accentArgb, config.measurer,
+            config.density, config.backgroundArgb, config.measurer,
             imageResolver = { path, width -> BookImageStore.loadBitmap(path, width) }
         ) ?: return null
         val targetBitmap = renderPageBitmap(
             config.window, target, config.mode, layout.pageStyle, layout.geometry, layout.palette,
-            config.density, config.backgroundArgb, config.accentArgb, config.measurer,
+            config.density, config.backgroundArgb, config.measurer,
             imageResolver = { path, width -> BookImageStore.loadBitmap(path, width) }
         )
         if (targetBitmap == null) {

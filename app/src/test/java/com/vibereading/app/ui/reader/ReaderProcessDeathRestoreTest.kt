@@ -13,12 +13,12 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.inMemoryPreferenceStore
 import com.vibereading.app.newInMemoryDb
 import com.vibereading.app.seedBookAndChapters
+import com.vibereading.app.teardownRoomAndMain
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
@@ -115,8 +115,7 @@ class ReaderProcessDeathRestoreTest {
                 vm2.viewModelScope.cancel()
             }
         } finally {
-            db.close()
-            Dispatchers.resetMain()
+            teardownRoomAndMain(db)
         }
     }
 }

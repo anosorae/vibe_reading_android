@@ -13,15 +13,14 @@ import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.inMemoryPreferenceStore
 import com.vibereading.app.newInMemoryDb
 import com.vibereading.app.seedBookAndChapters
+import com.vibereading.app.teardownRoomAndMain
 import com.vibereading.app.ui.reader.TranslationCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
@@ -65,10 +64,9 @@ class BookshelfViewModelTest {
 
     @After
     fun tearDown() {
-        vm?.viewModelScope?.cancel()
-        coordinatorScope.cancel()
-        db.close()
-        Dispatchers.resetMain()
+        // 先 join 干净 VM/协调器在飞的协程再关库、resetMain，避免 Room 线程上
+        // 飞行中的 Flow resume 与 resetMain 并发（见 teardownRoomAndMain 注释）
+        teardownRoomAndMain(db, vm?.viewModelScope, coordinatorScope)
     }
 
     private fun newVm(): BookshelfViewModel {

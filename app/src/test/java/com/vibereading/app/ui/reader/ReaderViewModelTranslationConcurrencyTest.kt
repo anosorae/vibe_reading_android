@@ -15,6 +15,7 @@ import com.vibereading.app.domain.model.LlmSettings
 import com.vibereading.app.inMemoryPreferenceStore
 import com.vibereading.app.newInMemoryDb
 import com.vibereading.app.seedBookAndChapters
+import com.vibereading.app.teardownRoomAndMain
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +28,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
@@ -57,9 +57,9 @@ class ReaderViewModelTranslationConcurrencyTest {
 
     @After
     fun tearDown() {
-        appScope.cancel()
-        db.close()
-        Dispatchers.resetMain()
+        // 先 join 干净 appScope（协调器翻译任务）再关库、resetMain，
+        // 避免 Room/任务线程的飞行协程与 resetMain 并发
+        teardownRoomAndMain(db, appScope)
     }
 
     @Test

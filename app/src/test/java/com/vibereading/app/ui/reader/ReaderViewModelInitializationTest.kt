@@ -13,13 +13,13 @@ import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.inMemoryPreferenceStore
 import com.vibereading.app.newInMemoryDb
 import com.vibereading.app.seedBookAndChapters
+import com.vibereading.app.teardownRoomAndMain
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withContext
@@ -71,9 +71,7 @@ class ReaderViewModelInitializationTest {
             // 缺失/别书章节 ID 回退首章，查询仍局限于当前书籍。
             assertEquals(ids.first(), ChapterRepository(db.chapterDao()).getOpeningChapter(1, -99)!!.id)
         } finally {
-            vm?.viewModelScope?.cancel()
-            db.close()
-            Dispatchers.resetMain()
+            teardownRoomAndMain(db, vm?.viewModelScope)
         }
     }
 
@@ -117,8 +115,7 @@ class ReaderViewModelInitializationTest {
                 }
             }
         } finally {
-            db.close()
-            Dispatchers.resetMain()
+            teardownRoomAndMain(db)
         }
     }
 }

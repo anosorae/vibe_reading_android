@@ -20,10 +20,13 @@ import com.vibereading.app.ui.reader.pagination.PageStyle
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.resetMain
 
 /**
  * 单测共用夹具：只收敛**各测试逐字相同**的初始化样板
@@ -102,6 +105,38 @@ suspend fun seedBookAndChapters(
 
 /** 临时 DataStore 文件；调用方负责在 `@After` 删除。 */
 fun newTempPreferenceFile(prefix: String): File = File.createTempFile(prefix, ".preferences_pb")
+
+// ── 协程测试收尾 ──
+
+/**
+ * 测试收尾的固定顺序：取消作用域 → 关库 → 卸载 Main。
+ *
+ * resetMain 可能与 Room 执行器线程上飞行中的最后一次 Main resume 并发，
+ * coroutines-test 会抛 "Dispatchers.Main is used concurrently with setting it"
+ * （偶发、毫秒级窗口）。这里对 resetMain 做有界重试等窗口关闭；穷尽后仍失败
+ * 则让异常照常抛出、问题可见。
+ *
+ * 注意不要改成「cancelAndJoin 之后再 close」：join 等不到的飞行查询会让
+ * db.close() 与它互锁（Robolectric 单连接下实测挂死整个 worker），
+ * 保留裸 cancel 的原语义，只加固 resetMain。
+ */
+fun teardownRoomAndMain(db: AppDatabase, vararg scopes: CoroutineScope?) {
+    scopes.filterNotNull().forEach { it.cancel() }
+    db.close()
+    resetMainPatiently()
+}
+
+private fun resetMainPatiently() {
+    repeat(8) {
+        try {
+            Dispatchers.resetMain()
+            return
+        } catch (_: IllegalStateException) {
+            Thread.sleep(25)
+        }
+    }
+    Dispatchers.resetMain()
+}
 
 /** 真实文件后端 DataStore（[scope] 由调用方取消）。 */
 fun newPreferenceStore(scope: CoroutineScope, file: File): DataStore<Preferences> =

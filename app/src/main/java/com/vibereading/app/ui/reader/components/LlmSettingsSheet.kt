@@ -83,7 +83,12 @@ fun LlmSettingsSheet(
     ModalBottomSheet(
         onDismissRequest = actions::dismiss,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        containerColor = MaterialTheme.colorScheme.surface
+        containerColor = MaterialTheme.colorScheme.surface,
+        // material3 1.4.0 的 sheet 会按当前 offset 消耗 top inset 回灌给内容测量：
+        // offset → 顶部 insets padding → sheet 测量高度 → 锚点位置 → snap 回 offset，
+        // 内容接近满屏时构成测量反馈环，表现为面板持续抖动（相差恰为一个状态栏高度）。
+        // 固定只保留底部 inset，切断 offset 对内容测量的耦合。
+        contentWindowInsets = { WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom) }
     ) {
         Column(
             modifier = Modifier

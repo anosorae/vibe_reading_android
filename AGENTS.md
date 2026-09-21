@@ -14,7 +14,7 @@ VibeReading 是一个双语 TXT/EPUB 阅读器：导入书籍后，逐章调用 
 - 每次代码改动后都必须完成：构建 APK → 按 `app/build/outputs/apk/debug/output-metadata.json` 选择设备 ABI → 安装 → 启动。x86_64 模拟器通常使用 `app-x86_64-debug.apk`，没有匹配设备时使用 `app-universal-debug.apk`。
 - Android 验证优先使用 android-emulator MCP：`android_preflight` → `android_discover_project` → `android_build_and_run` 或 `build_app` + `install_app` + `launch_app`。除非用户明确要求，不主动截图或执行额外 UI 自动化。
 - 单测使用 Robolectric 4.14/NATIVE 真实换行测量；断言结构化结果（offset 范围、切段拼接、双语原子性、页高和位置映射），不要固定易变的像素值。
-- 项目为单模块 `:app`，包名 `com.vibereading.app`，minSdk 26，target/compileSdk 35，Kotlin 2.1.0，Compose BOM 2024.12.01，Gradle 8.11.1。
+- 项目为单模块 `:app`，包名 `com.vibereading.app`，minSdk 26，target/compileSdk 35，Kotlin 2.1.0，Compose BOM 2026.06.01（compose 1.11.4 + material3 1.4.0；再往上的 BOM 映射 compose 1.12.x 需 compileSdk 37 + AGP 9.1，暂不跟），Gradle 8.11.1。
 - Room schema 通过 KSP 输出到 `app/schemas`；当前数据库版本为 15，三个实体 `BookEntity`/`ChapterEntity`/`LlmProfileEntity`，迁移链 `MIGRATION_2_3` … `MIGRATION_14_15` 全部手写注册（v6→v7 新增 `llm_profiles` 表，v7→v8 增 `temperature`/`topP`，v9→v10 books 增 `languageMode`，v11→v12 books 增 `format`/`coverPath` 支持 EPUB，v12→v13 books 增 `sourceLanguage` 支持英文原版书 ADR-003，v13→v14 llm_profiles 增 `maxOutputTokens`，v14→v15 移除上下文增强三列）。实体模型使用 `lastReadOffset`；`chapters.translationRunId` 提供翻译任务的数据库级 stale 防护；书架「已译章节数」由 chapters 表 DONE 状态实时派生，`books.translatedChapters` 冗余列已移除。
 
 ## 目录结构

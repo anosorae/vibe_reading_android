@@ -131,8 +131,10 @@ android {
 }
 
 dependencies {
-    // Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    // Compose BOM（2026.06.01 = compose 1.11.4 + material3 1.4.0：
+    // 含 ModalBottomSheet「内容变高保持全开」上游修复 b/324934884；
+    // 再往上 2026.08.00 起映射 compose 1.12.x，需 compileSdk 37 + AGP 9.1，暂不跟）
+    val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")

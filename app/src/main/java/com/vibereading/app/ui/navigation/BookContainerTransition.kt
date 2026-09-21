@@ -46,7 +46,8 @@ internal fun SharedTransitionScope.bookContainerBounds(
         exit = ExitTransition.None,
         zIndexInOverlay = if (isCover) 2f else 1f,
         // 保持正文最终布局，只缩放绘制层；不在每帧重新分页或改变正文换行。
-        resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(ContentScale.FillBounds)
+        // compose 1.11：ResizeMode.ScaleToBounds 类工厂改为 Companion 的 scaleToBounds()
+        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.FillBounds)
     ).then(if (isCover) Modifier.graphicsLayer {
         rotationY = if (sharedContent.isMatchFound) coverAngle?.value ?: 0f else 0f
         transformOrigin = TransformOrigin(0f, 0.5f)

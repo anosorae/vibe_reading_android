@@ -30,13 +30,13 @@ class AppDatabaseMigrationTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun migrate5To15_dropsTranslatedColumn_andAddsRunId() {
+    fun migrate5To16_dropsTranslatedColumn_andAddsRunId() {
         val dbName = "migrate-5-6"
         createV5Database(context, dbName)
         try {
             // 用 Room + 迁移链打开：Room 严格校验迁移结果与当前实体 schema 一致
             val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15)
+                .addMigrations(AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16)
                 .build()
             runBlocking {
                 val book = db.bookDao().getBookById(1L)!!
@@ -141,6 +141,37 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate15To16_createsReadingTimeDaily_andPreservesData() {
+        val dbName = "migrate-15-16"
+        createV15Database(context, dbName)
+        try {
+            // 用 Room + 迁移打开：Room 严格校验迁移结果与 v16 实体 schema 一致
+            val db = Room.databaseBuilder(context, AppDatabase::class.java, dbName)
+                .addMigrations(AppDatabase.MIGRATION_15_16)
+                .build()
+            runBlocking {
+                val book = db.bookDao().getBookById(1L)!!
+                assertEquals("测试书", book.title)
+                // 新表立即可用：UPSERT 累加 + 聚合查询
+                db.readingTimeDao().addSeconds(1L, 100L, 60L)
+                db.readingTimeDao().addSeconds(1L, 100L, 30L)
+                val daily = db.readingTimeDao().observeDailyTotals().first().single()
+                assertEquals(100L, daily.epochDay)
+                assertEquals(90L, daily.seconds)
+            }
+            val sqlite = db.openHelper.writableDatabase
+            assertTrue(
+                "reading_time_daily 应存在",
+                "reading_time_daily" in tables(sqlite)
+            )
+            assertNoForeignKeyViolations(sqlite)
+            db.close()
+        } finally {
+            context.deleteDatabase(dbName)
+        }
+    }
+
     /** 手工建 v5 库（结构对齐导出的 5.json；缺 room_master_table，Room 打开时执行迁移并校验）。 */
     private fun createV5Database(context: Context, name: String): SupportSQLiteDatabase {
         val factory = FrameworkSQLiteOpenHelperFactory()
@@ -230,10 +261,68 @@ class AppDatabaseMigrationTest {
         return factory.create(configuration).writableDatabase
     }
 
+    /** 手工建 v15 库：books/chapters/llm_profiles 均为 v15 终态（缺 room_master_table，Room 打开时执行迁移并校验）。 */
+    private fun createV15Database(context: Context, name: String): SupportSQLiteDatabase {
+        val factory = FrameworkSQLiteOpenHelperFactory()
+        val configuration = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(name)
+            .callback(object : SupportSQLiteOpenHelper.Callback(15) {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE books (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "title TEXT NOT NULL, filePath TEXT NOT NULL, " +
+                            "totalChapters INTEGER NOT NULL, " +
+                            "lastReadChapterId INTEGER, lastReadOffset INTEGER NOT NULL DEFAULT 0, " +
+                            "lastReadAt INTEGER NOT NULL, createdAt INTEGER NOT NULL, " +
+                            "languageMode TEXT NOT NULL DEFAULT 'zh', " +
+                            "sourceLanguage TEXT NOT NULL DEFAULT 'zh', " +
+                            "format TEXT NOT NULL DEFAULT 'txt', coverPath TEXT)"
+                    )
+                    db.execSQL(
+                        "CREATE TABLE chapters (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "bookId INTEGER NOT NULL, title TEXT NOT NULL, section TEXT, " +
+                            "chapterIndex INTEGER NOT NULL, content TEXT NOT NULL, " +
+                            "translatedContent TEXT, status INTEGER NOT NULL, errorMessage TEXT, " +
+                            "translationRunId INTEGER NOT NULL DEFAULT 0, " +
+                            "FOREIGN KEY(bookId) REFERENCES books(id) ON DELETE CASCADE)"
+                    )
+                    db.execSQL("CREATE INDEX index_books_lastReadChapterId ON books(lastReadChapterId)")
+                    db.execSQL("CREATE INDEX index_chapters_bookId ON chapters(bookId)")
+                    db.execSQL(
+                        "CREATE TABLE llm_profiles (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "name TEXT NOT NULL, apiKey TEXT NOT NULL, apiBase TEXT NOT NULL, model TEXT NOT NULL, " +
+                            "chapterMaxChars INTEGER NOT NULL, maxOutputTokens INTEGER NOT NULL, " +
+                            "enableThinking INTEGER NOT NULL, enableExplainThinking INTEGER NOT NULL, " +
+                            "autoTranslateNext INTEGER NOT NULL, temperature REAL NOT NULL, topP REAL NOT NULL, " +
+                            "isActive INTEGER NOT NULL)"
+                    )
+                    db.execSQL(
+                        "INSERT INTO books (id, title, filePath, totalChapters, lastReadChapterId, lastReadOffset, lastReadAt, createdAt) " +
+                            "VALUES (1, '测试书', '/sdcard/a.txt', 2, 1, 42, 1000, 2000)"
+                    )
+                }
+
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            })
+            .build()
+        return factory.create(configuration).writableDatabase
+    }
+
     private fun columns(db: SupportSQLiteDatabase, table: String): Set<String> {
         val result = mutableSetOf<String>()
         db.query("PRAGMA table_info($table)").use { c ->
             while (c.moveToNext()) result.add(c.getString(1))
+        }
+        return result
+    }
+
+    private fun tables(db: SupportSQLiteDatabase): Set<String> {
+        val result = mutableSetOf<String>()
+        db.query("SELECT name FROM sqlite_master WHERE type='table'").use { c ->
+            while (c.moveToNext()) result.add(c.getString(0))
         }
         return result
     }

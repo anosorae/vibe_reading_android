@@ -7,19 +7,22 @@ import androidx.room.RoomDatabase
 import com.vibereading.app.data.local.dao.BookDao
 import com.vibereading.app.data.local.dao.ChapterDao
 import com.vibereading.app.data.local.dao.LlmProfileDao
+import com.vibereading.app.data.local.dao.ReadingTimeDao
 import com.vibereading.app.data.local.entity.BookEntity
 import com.vibereading.app.data.local.entity.ChapterEntity
 import com.vibereading.app.data.local.entity.LlmProfileEntity
+import com.vibereading.app.data.local.entity.ReadingTimeEntity
 
 @Database(
-    entities = [BookEntity::class, ChapterEntity::class, LlmProfileEntity::class],
-    version = 15,
+    entities = [BookEntity::class, ChapterEntity::class, LlmProfileEntity::class, ReadingTimeEntity::class],
+    version = 16,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun chapterDao(): ChapterDao
     abstract fun llmProfileDao(): LlmProfileDao
+    abstract fun readingTimeDao(): ReadingTimeDao
 
     companion object {
         @Volatile
@@ -220,6 +223,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v15→v16：新增 reading_time_daily 表，阅读时长按天 × 按书聚合（UPSERT 累加）。 */
+        val MIGRATION_15_16 = object : androidx.room.migration.Migration(15, 16) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS reading_time_daily (
+                        bookId INTEGER NOT NULL,
+                        epochDay INTEGER NOT NULL,
+                        seconds INTEGER NOT NULL,
+                        PRIMARY KEY(bookId, epochDay),
+                        FOREIGN KEY(bookId) REFERENCES books(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_reading_time_daily_bookId ON reading_time_daily(bookId)")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -227,7 +246,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "vibe_reading"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                     .build()
                 INSTANCE = instance
                 instance

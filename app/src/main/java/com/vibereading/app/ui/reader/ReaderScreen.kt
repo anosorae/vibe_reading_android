@@ -21,6 +21,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
@@ -167,7 +170,9 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
             pagerSession.syncProgressBeforeFlush(isPagerMode, window, vm::updateProgress)
         },
         flushProgress = vm::flushProgress,
-        onBack = onBack
+        onBack = onBack,
+        resumeReadingTime = vm::resumeReadingTime,
+        pauseReadingTime = vm::pauseReadingTime
     )
 
     val overlayVisibleState = rememberUpdatedState(anyOverlayVisible)
@@ -230,6 +235,7 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     Box(
         Modifier.fillMaxSize().background(background)
             .onGloballyPositioned { overlayRuntime.containerWindowOffset = it.positionInWindow() }
+            .readingTimeInteractions(vm::onReadingInteraction)
             .readerContentGestures(
                 isPagerMode, settings.pageFlipMode, pagerState, window, selectionState,
                 curlController, gestureState, screenActions, gestureKey
@@ -243,3 +249,25 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     }
     ReaderModalOverlays(overlayModel, screenActions)
 }
+
+/**
+ * 阅读时长交互信号：Initial 隧道观察根布局的全部指针事件（按下/移动/滚轮），
+ * 只观察不消费，不影响任何现有手势。目录/设置等弹层是独立窗口、其中触摸不经此，
+ * 由打开按钮的触摸与章节跳转事件兜底重置（口径：任何交互后 2 分钟无操作即暂停计时）。
+ * key 用 Unit：闭包只会捕获首个 lambda 实例，vm 与其方法在整个屏幕存续期内不变。
+ */
+private fun Modifier.readingTimeInteractions(onInteract: () -> Unit): Modifier =
+    pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                if (event.type == PointerEventType.Press ||
+                    event.type == PointerEventType.Move ||
+                    event.type == PointerEventType.Scroll ||
+                    event.type == PointerEventType.PanMove
+                ) {
+                    onInteract()
+                }
+            }
+        }
+    }

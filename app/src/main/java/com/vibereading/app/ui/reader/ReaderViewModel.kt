@@ -11,6 +11,7 @@ import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.LlmProfileRepository
 import com.vibereading.app.data.repository.ReadingSettingsSaver
+import com.vibereading.app.data.repository.ReadingTimeRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.DictEntry
@@ -76,7 +77,8 @@ class ReaderViewModel(
     private val dictDatabase: DictDatabase? = null,
     private val wordExplainService: WordExplainService? = null,
     appContext: Context,
-    coordinator: TranslationCoordinator? = null
+    coordinator: TranslationCoordinator? = null,
+    readingTimeRepo: ReadingTimeRepository? = null
 ) : ViewModel(), LlmEditHost {
 
     private val _uiState = MutableStateFlow(ReaderUiState())
@@ -85,6 +87,15 @@ class ReaderViewModel(
     /** 当前阅读章节 ID 的独立流；combine 协调器状态时用它做 active 判定，
      *  避免 navigateTo 改 activeChapterId 但协调器 _state 未变时桥接不重评估。 */
     private val activeChapterIdFlow = MutableStateFlow<Long?>(null)
+
+    // 阅读时长计时器：仓库为 null（旧测试直构）时不计时
+    private val readingTime = readingTimeRepo?.let { repo ->
+        ReadingTimeTracker(
+            bookId = bookId,
+            scope = viewModelScope,
+            sink = { id, day, delta -> repo.addSeconds(id, day, delta) }
+        )
+    }
 
     // 生产环境与 Web 伴读共用进程级协调器；测试可注入独立实例。
     // 同章互斥、异章并行，阅读焦点只决定展示哪个任务状态。
@@ -211,6 +222,24 @@ class ReaderViewModel(
         if (!firstContentReady.value) {
             firstContentReady.value = true
         }
+        readingTime?.start()
+    }
+
+    // ── 阅读时长计时（口径见 ReadingTimeTracker；交互信号 = 触摸 + 翻页/滚动/跳转） ──
+
+    /** 任何阅读交互：重置空闲计时器。由 ReaderScreen 根级指针观察与位置变化入口调用。 */
+    fun onReadingInteraction() {
+        readingTime?.onInteraction()
+    }
+
+    /** ON_START：恢复计时。 */
+    fun resumeReadingTime() {
+        readingTime?.onForeground()
+    }
+
+    /** ON_STOP / 退出阅读器：落盘未满心跳的余量。 */
+    suspend fun pauseReadingTime() {
+        readingTime?.onBackground()
     }
 
     /** 一次性原子恢复（书籍信息 + 章节列表双就绪才执行）：先读 Book 位置快照，再恢复章节与偏移。 */
@@ -242,6 +271,7 @@ class ReaderViewModel(
 
     /** 用户主动跳转；分页位置由当前排版器根据 offset 派生。 */
     fun navigateTo(chapterId: Long, offset: Int = 0, persist: Boolean = true) {
+        onReadingInteraction()
         viewModelScope.launch {
             val chapter = chapterRepo.getChapterById(bookId, chapterId) ?: return@launch
             // 切到别的章：由 flow 收集器统一触发；留在同一章（目录点当前章）时再试一次，
@@ -263,11 +293,12 @@ class ReaderViewModel(
         }
     }
 
-    /** 统一记录当前内容位置；分页和滚动都调用同一个入口。 */
+    /** 统一记录当前内容位置；分页和滚动都调用同一个入口。翻页/滚动本身就是阅读交互。 */
     fun updateProgress(chapterId: Long, offset: Int) {
         val chapter = _uiState.value.chapters.firstOrNull { it.id == chapterId } ?: return
         val position = ReadingPosition(chapterId, offset.coerceIn(0, chapter.content.length))
         if (position == _uiState.value.position) return
+        onReadingInteraction()
         _uiState.update { it.copy(position = position, activeChapterId = chapterId, activeChapter = chapter) }
         activeChapterIdFlow.value = chapterId
         enqueueProgress(position)
@@ -576,7 +607,8 @@ class ReaderViewModel(
         private val dictDatabase: DictDatabase? = null,
         private val wordExplainService: WordExplainService? = null,
         private val appContext: Context,
-        private val coordinator: TranslationCoordinator? = null
+        private val coordinator: TranslationCoordinator? = null,
+        private val readingTimeRepo: ReadingTimeRepository? = null
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -590,7 +622,8 @@ class ReaderViewModel(
                 dictDatabase,
                 wordExplainService,
                 appContext,
-                coordinator
+                coordinator,
+                readingTimeRepo
             ) as T
         }
     }

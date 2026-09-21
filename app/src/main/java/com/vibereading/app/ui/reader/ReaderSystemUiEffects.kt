@@ -31,7 +31,9 @@ fun ReaderSystemUiEffects(
     scope: CoroutineScope,
     syncProgress: () -> Unit,
     flushProgress: suspend () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    resumeReadingTime: () -> Unit = {},
+    pauseReadingTime: suspend () -> Unit = {}
 ): () -> Unit {
     val lifecycleOwner = LocalLifecycleOwner.current
     val view = LocalView.current
@@ -43,6 +45,8 @@ fun ReaderSystemUiEffects(
     // 转发，观察者拿到的恒为最新组合的闭包（含当前 window/isPagerMode）。
     val currentSyncProgress by rememberUpdatedState(syncProgress)
     val currentFlushProgress by rememberUpdatedState(flushProgress)
+    val currentResumeReadingTime by rememberUpdatedState(resumeReadingTime)
+    val currentPauseReadingTime by rememberUpdatedState(pauseReadingTime)
 
     val restoreSystemBars = {
         activity?.window?.let { window ->
@@ -57,6 +61,8 @@ fun ReaderSystemUiEffects(
         syncProgress()
         scope.launch {
             flushProgress()
+            // 时长余量在返回导航前落盘完成（挂起等待写入，避免 ViewModel 清理竞态丢写）
+            currentPauseReadingTime()
             onBack()
         }
         Unit
@@ -64,9 +70,16 @@ fun ReaderSystemUiEffects(
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                currentSyncProgress()
-                scope.launch { currentFlushProgress() }
+            when (event) {
+                Lifecycle.Event.ON_START -> currentResumeReadingTime()
+                Lifecycle.Event.ON_STOP -> {
+                    currentSyncProgress()
+                    scope.launch {
+                        currentFlushProgress()
+                        currentPauseReadingTime()
+                    }
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

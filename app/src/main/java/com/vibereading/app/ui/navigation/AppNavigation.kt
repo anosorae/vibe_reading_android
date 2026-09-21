@@ -21,6 +21,7 @@ import com.vibereading.app.data.dict.DictDatabase
 import com.vibereading.app.data.repository.BookRepository
 import com.vibereading.app.data.repository.ChapterRepository
 import com.vibereading.app.data.repository.LlmProfileRepository
+import com.vibereading.app.data.repository.ReadingTimeRepository
 import com.vibereading.app.data.repository.SettingsRepository
 import com.vibereading.app.log.CrashMark
 import com.vibereading.app.ui.bookshelf.BookshelfScreen
@@ -80,6 +81,8 @@ fun AppNavigation() {
     val chapterRepo = remember { ChapterRepository(db.chapterDao()) }
     val settingsRepo = remember { SettingsRepository(application) }
     val llmProfileRepo = remember { LlmProfileRepository(db.llmProfileDao(), settingsRepo) }
+    // 阅读时长：阅读器心跳写入，统计页聚合展示
+    val readingTimeRepo = remember { ReadingTimeRepository(db.readingTimeDao()) }
     // 进程级共享的 LLM 服务实例（翻译 + 单词解释由同一个对象承担）
     val llmService = application.llmApiService
     val translationCoordinator = remember { TranslationCoordinatorProvider.get(application) }
@@ -129,7 +132,7 @@ fun AppNavigation() {
                     )
                 )
                 val statsVm: StatisticsViewModel = viewModel(
-                    factory = StatisticsViewModel.Factory(bookRepo)
+                    factory = StatisticsViewModel.Factory(bookRepo, readingTimeRepo)
                 )
                 AppShell(
                     bookshelfVm = vm,
@@ -167,7 +170,8 @@ fun AppNavigation() {
                         bookId, bookRepo, chapterRepo, settingsRepo, llmProfileRepo, llmService, dictDatabase,
                         wordExplainService = llmService,
                         appContext = application,
-                        coordinator = translationCoordinator
+                        coordinator = translationCoordinator,
+                        readingTimeRepo = readingTimeRepo
                     )
                 )
                 Box(Modifier.fillMaxSize().then(

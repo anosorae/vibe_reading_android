@@ -1,8 +1,14 @@
 package com.vibereading.app.ui.reader
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -70,11 +76,12 @@ class ReadingTimeTrackerTest {
     }
 
     @Test
-    fun `onBackground 落盘余量并暂停后台累计`() = runBlocking {
+    fun `后台同步暂停并通过 flush 落盘余量`() = runBlocking {
         val tracker = newTracker()
         tracker.start()
         advanceSeconds(45, tracker)
         tracker.onBackground()
+        tracker.flush()
         assertEquals(listOf(Triple(7L, day, 45L)), writes)
         // 后台期间（无交互也不计数）：不产生任何写入
         advanceSeconds(120, tracker)
@@ -84,6 +91,43 @@ class ReadingTimeTrackerTest {
         tracker.onInteraction()
         advanceSeconds(59, tracker)
         assertEquals(1, writes.size) // 59 < 60 未满心跳
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `后台写入挂起期间返回前台仍继续累计`() = runTest {
+        val writeGate = CompletableDeferred<Unit>()
+        val tracker = ReadingTimeTracker(
+            bookId = 7L,
+            scope = backgroundScope,
+            sink = { bookId, epochDay, delta ->
+                writeGate.await()
+                writes += Triple(bookId, epochDay, delta)
+            },
+            elapsedRealtimeMs = { testScheduler.currentTime },
+            currentEpochDay = { day }
+        )
+        tracker.start()
+        runCurrent()
+        advanceTimeBy(45_000)
+        runCurrent()
+        val pause = launch {
+            tracker.onBackground()
+            tracker.flush()
+        }
+        runCurrent()
+        advanceTimeBy(10_000)
+        runCurrent()
+
+        tracker.onForeground()
+        tracker.onInteraction()
+        writeGate.complete(Unit)
+        pause.join()
+        advanceTimeBy(10_000)
+        runCurrent()
+        tracker.flush()
+
+        assertEquals(listOf(45L, 10L), writes.map { it.third })
     }
 
     @Test

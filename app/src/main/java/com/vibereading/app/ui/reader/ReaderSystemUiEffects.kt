@@ -33,7 +33,8 @@ fun ReaderSystemUiEffects(
     flushProgress: suspend () -> Unit,
     onBack: () -> Unit,
     resumeReadingTime: () -> Unit = {},
-    pauseReadingTime: suspend () -> Unit = {}
+    pauseReadingTime: () -> Unit = {},
+    flushReadingTime: suspend () -> Unit = {}
 ): () -> Unit {
     val lifecycleOwner = LocalLifecycleOwner.current
     val view = LocalView.current
@@ -47,6 +48,7 @@ fun ReaderSystemUiEffects(
     val currentFlushProgress by rememberUpdatedState(flushProgress)
     val currentResumeReadingTime by rememberUpdatedState(resumeReadingTime)
     val currentPauseReadingTime by rememberUpdatedState(pauseReadingTime)
+    val currentFlushReadingTime by rememberUpdatedState(flushReadingTime)
 
     val restoreSystemBars = {
         activity?.window?.let { window ->
@@ -59,10 +61,10 @@ fun ReaderSystemUiEffects(
     val leaveReader: () -> Unit = {
         restoreSystemBars()
         syncProgress()
+        currentPauseReadingTime()
         scope.launch {
+            currentFlushReadingTime()
             flushProgress()
-            // 时长余量在返回导航前落盘完成（挂起等待写入，避免 ViewModel 清理竞态丢写）
-            currentPauseReadingTime()
             onBack()
         }
         Unit
@@ -73,10 +75,11 @@ fun ReaderSystemUiEffects(
             when (event) {
                 Lifecycle.Event.ON_START -> currentResumeReadingTime()
                 Lifecycle.Event.ON_STOP -> {
+                    currentPauseReadingTime()
                     currentSyncProgress()
                     scope.launch {
+                        currentFlushReadingTime()
                         currentFlushProgress()
-                        currentPauseReadingTime()
                     }
                 }
                 else -> Unit

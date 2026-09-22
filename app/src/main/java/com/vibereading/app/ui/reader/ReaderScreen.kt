@@ -172,7 +172,8 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
         flushProgress = vm::flushProgress,
         onBack = onBack,
         resumeReadingTime = vm::resumeReadingTime,
-        pauseReadingTime = vm::pauseReadingTime
+        pauseReadingTime = vm::pauseReadingTime,
+        flushReadingTime = vm::flushReadingTime
     )
 
     val overlayVisibleState = rememberUpdatedState(anyOverlayVisible)

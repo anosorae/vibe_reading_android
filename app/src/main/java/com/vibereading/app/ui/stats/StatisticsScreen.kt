@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.vibereading.app.ui.bookshelf.percentLabel
 import com.vibereading.app.ui.components.IconCircle
 import com.vibereading.app.ui.components.SoftCard
@@ -74,6 +75,11 @@ internal fun StatisticsScreen(
 ) {
     val state by vm.uiState.collectAsState()
     val stableInsets = LocalStableSystemBarInsets.current
+
+    LifecycleStartEffect(vm) {
+        vm.onForeground()
+        onStopOrDispose { vm.onBackground() }
+    }
 
     Scaffold(
         modifier = modifier,

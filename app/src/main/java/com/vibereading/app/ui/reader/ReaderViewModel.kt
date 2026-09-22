@@ -237,9 +237,14 @@ class ReaderViewModel(
         readingTime?.onForeground()
     }
 
-    /** ON_STOP / 退出阅读器：落盘未满心跳的余量。 */
-    suspend fun pauseReadingTime() {
+    /** ON_STOP / 退出阅读器：先同步停表，不让旧写入覆盖新的前台状态。 */
+    fun pauseReadingTime() {
         readingTime?.onBackground()
+    }
+
+    /** 暂停后落盘未满心跳的余量；返回导航前等待完成。 */
+    suspend fun flushReadingTime() {
+        readingTime?.flush()
     }
 
     /** 一次性原子恢复（书籍信息 + 章节列表双就绪才执行）：先读 Book 位置快照，再恢复章节与偏移。 */

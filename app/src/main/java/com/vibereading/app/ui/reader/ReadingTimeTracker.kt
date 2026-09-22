@@ -66,9 +66,8 @@ class ReadingTimeTracker(
         foreground = true
     }
 
-    /** ON_STOP：落盘未满心跳的余量并暂停计时（后台期间不累计）。 */
-    suspend fun onBackground() {
-        flush()
+    /** ON_STOP：同步暂停计时；余量由调用方随后 flush，不等待写库再改变前后台状态。 */
+    fun onBackground() {
         foreground = false
     }
 

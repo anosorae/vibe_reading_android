@@ -2,9 +2,7 @@ package com.vibereading.app.ui.reader
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
@@ -13,7 +11,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -28,9 +25,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import com.vibereading.app.domain.model.ReadingSettings
 import com.vibereading.app.ui.reader.components.CatalogGroup
 import com.vibereading.app.ui.reader.components.LlmSettingsSheetActions
@@ -43,6 +39,18 @@ import com.vibereading.app.ui.theme.ReaderBgPresets
 
 @Composable
 fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val viewportSize = IntSize(
+            width = with(density) { maxWidth.roundToPx() },
+            height = with(density) { maxHeight.roundToPx() }
+        )
+        ReaderScreenContent(vm, onBack, viewportSize)
+    }
+}
+
+@Composable
+private fun ReaderScreenContent(vm: ReaderViewModel, onBack: () -> Unit, viewportSize: IntSize) {
     val state by vm.uiState.collectAsState()
     val llmEdit by vm.llmEditState.collectAsState()
     val context = LocalContext.current
@@ -71,7 +79,7 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
     val pageStyle = remember(settings, density, state.mode, cnFont, enFont) {
         PageStyle.of(settings, density, state.mode, cnFont, enFont)
     }
-    val layout = rememberReaderLayoutSpec(settings, pageStyle, palette)
+    val layout = rememberReaderLayoutSpec(settings, pageStyle, palette, viewportSize)
     // 分页指纹只含**影响排版**的字段：当前章的 id 与译文长度。不含 status/errorMessage——
     // 翻译状态变化（IN_PROGRESS→DONE）若重建窗口，pagerState.pageCount 会在程序化跳章后突变，
     // 表现为「下一章跳到最后一页」；后台预译下一章写库也不会改当前章指纹，画面不跳动，
@@ -121,11 +129,12 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
             )
         )
     }
-    LaunchedEffect(state.mode) { curlController.cancelAndCleanup() }
+    LaunchedEffect(state.mode, viewportSize) { curlController.cancelAndCleanup() }
 
     val bookHasNoChapters = state.chaptersLoaded && state.chapters.isEmpty()
     val opening = !bookHasNoChapters && (
         !state.restoreReady || (isPagerMode && window.pageCount == 0) ||
+            (isPagerMode && pagerSession.isRestyling) ||
             (!isPagerMode && state.chapters.isNotEmpty() && scrollSession.chunks.isEmpty())
         )
     LaunchedEffect(opening) {
@@ -230,7 +239,8 @@ fun ReaderScreen(vm: ReaderViewModel, onBack: () -> Unit) {
         background, accent, themeAccent, llmEdit
     )
     val gestureKey = ReaderGestureLayoutKey(
-        settings.paddingH, settings.paddingV, layout.geometry.statusBarPx, layout.geometry.navBarPx
+        settings.paddingH, settings.paddingV, layout.geometry.statusBarPx, layout.geometry.navBarPx,
+        viewportSize
     )
 
     Box(

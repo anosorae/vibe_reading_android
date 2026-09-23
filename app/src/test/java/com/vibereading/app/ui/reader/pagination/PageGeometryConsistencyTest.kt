@@ -2,6 +2,7 @@ package com.vibereading.app.ui.reader.pagination
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
@@ -17,6 +18,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vibereading.app.domain.model.Chapter
@@ -85,9 +88,12 @@ class PageGeometryConsistencyTest {
         bottomJustify = false // 关闭底部对齐：lineHeightExtra=0，位图直接画 mainLayout
     )
 
-    private fun geometry() = ReaderPageGeometry.of(
-        screenWidthPx = screenW,
-        screenHeightPx = screenH,
+    private fun geometry(
+        widthPx: Int = screenW,
+        heightPx: Int = screenH
+    ) = ReaderPageGeometry.of(
+        screenWidthPx = widthPx,
+        screenHeightPx = heightPx,
         statusBarPx = statusBarPx,
         navBarPx = navBarPx,
         padHPx = padHPx,
@@ -153,6 +159,68 @@ class PageGeometryConsistencyTest {
             bounds.top.value,
             0.5f
         )
+    }
+
+    @Test
+    fun measuredViewportHeight_controlsPaginationAndBottomContentBoundary() {
+        val chapter = Chapter(
+            id = 1L, bookId = 1, title = "第一章", section = null, chapterIndex = 0,
+            content = (1..80).joinToString("\n\n") { "第${it}段正文内容，用于验证根容器实际高度决定分页容量。" }
+        )
+        val testMeasurer = newMeasurer()
+        lateinit var measuredGeometry: ReaderPageGeometry
+        lateinit var pageUnits: List<PageUnit>
+
+        compose.setContent {
+            val testDensity = LocalDensity.current
+            BoxWithConstraints(Modifier.requiredSize(360.dp, 640.dp).testTag(TAG_BOUNDED_ROOT)) {
+                val viewportSize = IntSize(
+                    with(testDensity) { maxWidth.roundToPx() },
+                    with(testDensity) { maxHeight.roundToPx() }
+                )
+                val layout = com.vibereading.app.ui.reader.rememberReaderLayoutSpec(
+                    com.vibereading.app.domain.model.ReadingSettings(),
+                    style,
+                    ReaderPalette.of(isDark = false),
+                    viewportSize
+                )
+                val window = androidx.compose.runtime.remember(layout.geometry) {
+                    BookWindow(
+                        chapters = listOf(chapter),
+                        style = style,
+                        mode = "zh",
+                        contentWidthPx = layout.geometry.contentWidthPx,
+                        contentHeightPx = layout.geometry.contentHeightPx,
+                        measurer = testMeasurer,
+                        backgroundMeasurer = { testMeasurer },
+                        displayDensity = density
+                    ).also { it.recenterSync(chapter.id) }
+                }
+                measuredGeometry = layout.geometry
+                pageUnits = window.pageUnits(0)
+                PageRenderer(
+                    units = pageUnits,
+                    mode = "zh",
+                    layout = layout,
+                    interactions = ReaderContentInteractions()
+                )
+            }
+        }
+        compose.waitForIdle()
+
+        val rootSize = compose.onNodeWithTag(TAG_BOUNDED_ROOT).fetchSemanticsNode().size
+        assertEquals("分页几何应使用 Compose 实际测得的根视口宽度", rootSize.width, measuredGeometry.screenWidthPx)
+        assertEquals("分页几何应使用 Compose 实际测得的根视口高度", rootSize.height, measuredGeometry.screenHeightPx)
+        assertTrue("测试根容器必须明显小于测试设备视口", measuredGeometry.screenHeightPx < screenH)
+
+        val blocks = PageLayoutPlanner.plan(
+            units = pageUnits,
+            style = style,
+            density = densityObj,
+            contentWidthPx = measuredGeometry.contentWidthPx,
+            mode = "zh"
+        )
+        assertTrue("分页后的首屏计划不得越过根容器扣边后的内容区", blocks.last().bottomPx <= measuredGeometry.contentHeightPx + 1f)
     }
 
     // ── 2. 标题块高度：Compose 渲染与排版/位图同口径 ──
@@ -712,6 +780,7 @@ class PageGeometryConsistencyTest {
     }
 
     private companion object {
+        const val TAG_BOUNDED_ROOT = "bounded-reader-root"
         const val TAG_NO_SECTION = "title-no-section"
         const val TAG_WITH_SECTION = "title-with-section"
 

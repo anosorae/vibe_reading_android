@@ -108,6 +108,23 @@ class BookWindowRestyleTest {
     }
 
     @Test
+    fun restyle_heightOnlyChangeRepaginatesAndPreservesOffset() = runBlocking {
+        val w = window(widthPx = 1000f, heightPx = 1900f)
+        w.recenterSync(2)
+        val chapter = w.chapterOfPage(w.pageCount / 2)!!
+        val offset = w.offsetOfPage(w.pageCount / 2)!!.first
+        val oldPageCount = w.pageCount
+
+        w.restyle(style(widthPx = 1000f), 1000f, newContentHeightPx = 1400f)
+
+        assertTrue("高度缩小后每页容量不得增加导致总页数减少", w.pageCount >= oldPageCount)
+        assertTrue("窗口应记录新的可用高度", w.matchesStyle(style(widthPx = 1000f), 1000f, 1400f))
+        val newIndex = w.indexOf(chapter, offset.toLong())
+        assertNotNull("高度变化后原文 offset 应仍能定位", newIndex)
+        assertEquals("高度变化后仍落在原章节", chapter, w.chapterOfPage(newIndex!!))
+    }
+
+    @Test
     fun restyle_cancelledJob_doesNotSwap() = runBlocking {
         val w = window(widthPx = 1000f, heightPx = 1900f)
         w.recenterSync(2)

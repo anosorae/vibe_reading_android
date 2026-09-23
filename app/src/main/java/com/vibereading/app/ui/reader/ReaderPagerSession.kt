@@ -31,6 +31,8 @@ class ReaderPagerSession internal constructor(
         internal set
     var windowSliding by mutableStateOf(false)
         internal set
+    var isRestyling by mutableStateOf(false)
+        internal set
 
     fun jumpTo(id: Long, offset: Int = 0, navigate: (Long, Int) -> Unit) {
         jumpTarget = id
@@ -110,6 +112,7 @@ fun rememberReaderPagerSession(
         val chapterId = window.chapterOfPage(pagerState.currentPage) ?: state.activeChapterId
         val offset = window.offsetOfPage(pagerState.currentPage)?.first ?: state.position?.offset ?: 0
         session.windowSliding = true
+        session.isRestyling = true
         try {
             window.restyle(pageStyle, contentWidthPx, contentHeightPx)
             val index = chapterId?.let { window.indexOf(it, offset.toLong()) ?: window.indexOf(it, 0) }
@@ -117,6 +120,7 @@ fun rememberReaderPagerSession(
             if (pagerState.currentPage != index) pagerState.scrollToPage(index)
         } finally {
             session.windowSliding = false
+            session.isRestyling = false
         }
     }
 

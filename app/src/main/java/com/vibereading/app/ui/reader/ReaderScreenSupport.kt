@@ -1,14 +1,15 @@
 package com.vibereading.app.ui.reader
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.vibereading.app.domain.model.Chapter
 import com.vibereading.app.domain.model.ReadingSettings
@@ -19,7 +20,8 @@ internal data class ReaderGestureLayoutKey(
     val paddingH: Int,
     val paddingV: Int,
     val statusBarPx: Int,
-    val navBarPx: Int
+    val navBarPx: Int,
+    val viewportSize: IntSize
 )
 
 /**
@@ -33,17 +35,18 @@ internal data class ReaderGestureLayoutKey(
  */
 internal val readerProcessGeneration: Long = System.nanoTime()
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun rememberReaderLayoutSpec(
     settings: ReadingSettings,
     pageStyle: PageStyle,
-    palette: ReaderPalette
+    palette: ReaderPalette,
+    viewportSize: IntSize
 ): ReaderLayoutSpec {
     val density = LocalDensity.current
-    val context = LocalContext.current
     val direction = LocalLayoutDirection.current
-    val rawStatus = WindowInsets.systemBars.getTop(density)
-    val rawNav = WindowInsets.systemBars.getBottom(density)
+    val rawStatus = WindowInsets.systemBarsIgnoringVisibility.getTop(density)
+    val rawNav = WindowInsets.systemBarsIgnoringVisibility.getBottom(density)
     val rawCutoutTop = WindowInsets.displayCutout.getTop(density)
     val rawCutoutLeft = WindowInsets.displayCutout.getLeft(density, direction)
     val rawCutoutRight = WindowInsets.displayCutout.getRight(density, direction)
@@ -60,9 +63,8 @@ internal fun rememberReaderLayoutSpec(
     val status = maxOf(statusCache.intValue, cutoutTopCache.intValue)
     val padH = with(density) { settings.paddingH.dp.roundToPx() }
     val padV = with(density) { settings.paddingV.dp.roundToPx() }
-    val metrics = context.resources.displayMetrics
     val geometry = ReaderPageGeometry.of(
-        metrics.widthPixels, metrics.heightPixels, status, navCache.intValue, padH, padV
+        viewportSize.width, viewportSize.height, status, navCache.intValue, padH, padV
     )
     return remember(
         pageStyle, palette, geometry, settings.paddingH, settings.paddingV,
